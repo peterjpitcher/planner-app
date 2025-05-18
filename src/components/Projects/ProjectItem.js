@@ -419,14 +419,19 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
         if (editSetter) editSetter(false);
         return;
     }
+
+    const valueToProcess = optionalValue !== undefined ? optionalValue : currentValue;
+
     let processedValue;
     if (isDate) {
-      processedValue = currentValue ? currentValue : null;
+      processedValue = valueToProcess ? valueToProcess : null;
     } else if (isArray) {
-      processedValue = currentValue.split(',').map(s => s.trim()).filter(s => s);
+      const valToString = Array.isArray(valueToProcess) ? valueToProcess.join(',') : String(valueToProcess || '');
+      processedValue = valToString.split(',').map(s => s.trim()).filter(s => s);
     } else {
-      processedValue = (typeof currentValue === 'string' ? currentValue.trim() : currentValue);
+      processedValue = (typeof valueToProcess === 'string' ? valueToProcess.trim() : valueToProcess);
     }
+
     let processedOriginalValue;
     if (isDate) {
       processedOriginalValue = originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : null;

@@ -148,75 +148,81 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   const itemPriorityClass = getStandaloneTaskPriorityStyling(task.priority);
 
   return (
-    <div className={`p-2 border-b border-gray-200 flex items-start gap-2 text-sm rounded-md mb-1 ${itemPriorityClass} ${task.is_completed ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'}`}>
+    <div className={`p-1.5 border-b border-gray-200 flex items-start gap-2 rounded-md mb-1 ${itemPriorityClass} ${task.is_completed ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'}`}>
       <input 
         type="checkbox" 
         checked={task.is_completed}
         onChange={handleToggleComplete}
-        className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0"
+        className="mt-0.5 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0"
       />
-      <div className="flex-grow">
-        {isEditingName ? (
-          <input 
-            type="text" 
-            value={currentName}
-            onChange={(e) => setCurrentName(e.target.value)}
-            onBlur={handleNameUpdate}
-            onKeyDown={(e) => e.key === 'Enter' && handleNameUpdate() || e.key === 'Escape' && (setCurrentName(task.name), setIsEditingName(false))}
-            className="w-full text-sm p-0.5 border-b border-indigo-500 focus:outline-none"
-            autoFocus
-          />
-        ) : (
-          <p 
-            className={`font-medium text-gray-800 ${task.is_completed ? 'line-through' : 'cursor-text hover:bg-gray-100'}`}
-            onClick={() => !task.is_completed && setIsEditingName(true)}
-          >
-            {currentName}
-          </p>
-        )}
-        {project && <p className="text-xs text-gray-500">Project: {project.name}</p>}
-        
-        <div className="flex items-center gap-2 mt-0.5">
-            {isEditingDueDate ? (
-                <input 
-                    type="date" 
-                    value={currentDueDate}
-                    onChange={(e) => setCurrentDueDate(e.target.value)}
-                    onBlur={handleDueDateUpdate}
-                    onKeyDown={(e) => e.key === 'Enter' && handleDueDateUpdate() || e.key === 'Escape' && (setCurrentDueDate(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : ''), setIsEditingDueDate(false))}
-                    className="text-xs p-0.5 border-b border-indigo-500 focus:outline-none w-32"
-                    autoFocus
-                />
-            ) : (
-                <span 
-                    className={`${dueDateInfo.classes} ${!task.is_completed ? 'cursor-text hover:bg-gray-100 rounded px-0.5' : ''}`}
-                    onClick={() => !task.is_completed && setIsEditingDueDate(true)}
-                >
-                    {dueDateInfo.text}
-                </span>
+      <div className="flex-grow min-w-0">
+        <div className="flex items-center justify-between">
+          {isEditingName ? (
+            <input 
+              type="text" 
+              value={currentName}
+              onChange={(e) => setCurrentName(e.target.value)}
+              onBlur={handleNameUpdate}
+              onKeyDown={(e) => e.key === 'Enter' && handleNameUpdate() || e.key === 'Escape' && (setCurrentName(task.name), setIsEditingName(false))}
+              className="flex-grow text-sm p-0.5 border-b border-indigo-500 focus:outline-none mr-1"
+              autoFocus
+            />
+          ) : (
+            <p 
+              className={`text-sm font-medium text-gray-800 truncate flex-grow mr-1 ${task.is_completed ? 'line-through' : 'cursor-text hover:bg-gray-100'}`}
+              onClick={() => !task.is_completed && setIsEditingName(true)}
+              title={currentName}
+            >
+              {currentName}
+            </p>
+          )}
+          <div className="flex-shrink-0 flex items-center">
+            {!task.is_completed && !isEditingName && !isEditingDueDate && (
+              <PencilIcon 
+                  className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                  onClick={() => setIsEditingName(true)}
+                  title="Edit task"
+              />
             )}
-            {task.priority && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap ${priorityColors[task.priority] || 'bg-gray-100 text-gray-600'}`}>
-                    {task.priority}
-                </span>
+            {task.is_completed && (
+              <CheckCircleIcon className="h-5 w-5 text-green-500" title="Completed" />
             )}
+          </div>
         </div>
-
-      </div>
-      <div className="flex flex-col items-end flex-shrink-0 ml-2">
-        {!task.is_completed && !isEditingName && !isEditingDueDate && (
-          <PencilIcon 
-              className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer mb-1"
-              onClick={() => setIsEditingName(true)} // Default to editing name first
-              title="Edit task"
-          />
-        )}
-         {task.is_completed && (
-           <CheckCircleIcon className="h-5 w-5 text-green-500 mb-1" title="Completed" />
-         )}
-         <span className="text-gray-400 text-2xs whitespace-nowrap hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
-            {updatedAgo}
-        </span>
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs mt-0.5">
+          {isEditingDueDate ? (
+              <input 
+                  type="date" 
+                  value={currentDueDate}
+                  onChange={(e) => setCurrentDueDate(e.target.value)}
+                  onBlur={handleDueDateUpdate}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDueDateUpdate() || e.key === 'Escape' && (setCurrentDueDate(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : ''), setIsEditingDueDate(false))}
+                  className="text-xs p-0.5 border-b border-indigo-500 focus:outline-none w-28"
+                  autoFocus
+              />
+          ) : (
+              <span 
+                  className={`${dueDateInfo.classes} ${!task.is_completed ? 'cursor-text hover:bg-gray-100 rounded px-0.5 -mx-0.5' : ''}`}
+                  onClick={() => !task.is_completed && setIsEditingDueDate(true)}
+                  title={task.due_date ? format(parseISO(task.due_date), 'MMM d, yyyy') : 'No due date'}
+              >
+                  {dueDateInfo.text}
+              </span>
+          )}
+          {task.priority && (
+              <span className={`px-1.5 py-0.5 rounded-full whitespace-nowrap text-2xs ${priorityColors[task.priority] || 'bg-gray-100 text-gray-600'}`}>
+                  {task.priority}
+              </span>
+          )}
+           {project && (
+            <span className="text-gray-500 truncate" title={`Project: ${project.name}`}>
+              Proj: {project.name}
+            </span>
+          )}
+          <span className="text-gray-400 text-2xs whitespace-nowrap hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
+              {updatedAgo}
+          </span>
+        </div>
       </div>
     </div>
   );

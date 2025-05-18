@@ -194,6 +194,9 @@ This section tracks the features implemented and the planned next steps based on
         *   "Updated X ago" text hidden on `xs` screens. Description truncation reviewed.
     *   `StandaloneTaskList.js` (within its internal `StandaloneTaskItem`):
         *   "Updated X ago" text added and hidden on `xs` screens.
+        *   Layout refactored for a more compact, two-line display with improved truncation and element positioning.
+*   **Bug Fixes:**
+    *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
 
 ### Remaining PRD Features (Next Steps):
 
