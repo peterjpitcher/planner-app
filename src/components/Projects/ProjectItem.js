@@ -668,15 +668,15 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
                   </div>
               ) : (
                   <div 
-                      className={`flex items-center gap-1 text-xs whitespace-nowrap ${dueDateDisplayStatus.classes} ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : ''}`}
+                      className={`flex items-center gap-1 text-xs whitespace-nowrap ${dueDateDisplayStatus.classes} ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : 'text-gray-400'}`}
                       onClick={(e) => {
                           if (isProjectCompletedOrCancelled || isEditingPriority || isEditingStakeholders) return;
                           e.stopPropagation(); 
                           setIsEditingDueDate(true);
                       }}
-                      title={dueDateDisplayStatus.fullDate || 'Set due date'}
+                      title={isProjectCompletedOrCancelled ? dueDateDisplayStatus.fullDate || 'Due date not editable' : dueDateDisplayStatus.fullDate || 'Set due date'}
                   >
-                      <span>{dueDateDisplayStatus.text}</span>
+                      <span className="text-gray-600">Due Date</span>
                       {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders && <PencilIcon className="w-3 h-3 opacity-60" />}
                   </div>
               )}
@@ -698,24 +698,18 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
                   />
               ) : (
                   <span 
-                      className={`truncate max-w-[100px] sm:max-w-[150px] ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : ''} ${!currentStakeholdersText ? 'italic text-gray-400' : ''}`}
+                      className={`flex items-center gap-1 ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : 'text-gray-400'} ${!currentStakeholdersText ? 'italic' : ''}`}
                       onClick={(e) => {
                           if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate) return;
                           e.stopPropagation(); 
                           setIsEditingStakeholders(true);
                       }}
-                      title={currentStakeholdersText || 'Add stakeholders'}
+                      title={isProjectCompletedOrCancelled ? currentStakeholdersText || 'Stakeholders not editable' : currentStakeholdersText || 'Add stakeholders'}
                   >
-                      {currentStakeholdersText || 'None'}
+                      <span className="text-gray-600">Stakeholders</span>
                        {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate && <PencilIcon className="w-3 h-3 opacity-50 inline ml-0.5" />}
                   </span>
               )}
-          </div>
-
-          {/* Updated At - Displayed only on small screens and up, hidden on xs */}
-          {/* This specific Updated Ago was part of the right-aligned controls, let's ensure it's also hidden on xs or shown appropriately */}
-          <div className="text-xs text-gray-500 mt-1 hidden sm:block">
-              Updated {updatedAgo}
           </div>
 
           <div className="relative order-last sm:order-none ml-auto sm:ml-0">
