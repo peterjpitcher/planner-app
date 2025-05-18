@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
+import { quickPickOptions } from '@/lib/dateUtils'; // Import quickPickOptions
 
 export default function AddProjectForm({ onProjectAdded, onClose }) {
   const { user } = useAuth();
@@ -99,6 +100,19 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
           onChange={(e) => setDueDate(e.target.value)}
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
         />
+        {/* Quick Pick Date Buttons */}
+        <div className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {quickPickOptions.map(option => (
+            <button
+              key={option.label}
+              type="button"
+              onClick={() => setDueDate(option.getValue())}
+              className="px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300 text-center"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div>

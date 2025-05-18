@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval } from 'date-fns';
+import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { PencilIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 
@@ -40,6 +40,19 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   return { text, classes, sortKey };
 };
 
+const getStandaloneTaskPriorityStyling = (priority) => {
+  switch (priority) {
+    case 'High':
+      return 'border-l-2 border-red-400 bg-red-50';
+    case 'Medium':
+      return 'border-l-2 border-yellow-400 bg-yellow-50';
+    case 'Low':
+      return 'border-l-2 border-green-400 bg-green-50';
+    default:
+      return 'border-l-2 border-gray-300 bg-gray-50'; // Default style for tasks without a known priority or other cases
+  }
+};
+
 const getPriorityValue = (priority) => {
     switch (priority) {
       case 'High': return 1;
@@ -62,6 +75,9 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   }, [task]);
 
   const dueDateInfo = getTaskDueDateStatus(task.due_date, isEditingDueDate, currentDueDate);
+  const updatedAgo = task.updated_at 
+    ? formatDistanceToNowStrict(parseISO(task.updated_at), { addSuffix: true })
+    : 'never';
 
   const handleNameUpdate = async () => {
     if (currentName.trim() === task.name) {
@@ -129,8 +145,10 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
     Low: 'bg-green-100 text-green-700',
   };
 
+  const itemPriorityClass = getStandaloneTaskPriorityStyling(task.priority);
+
   return (
-    <div className={`p-2 border-b border-gray-200 flex items-start gap-2 text-sm ${task.is_completed ? 'opacity-50' : ''}`}>
+    <div className={`p-2 border-b border-gray-200 flex items-start gap-2 text-sm rounded-md mb-1 ${itemPriorityClass} ${task.is_completed ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'}`}>
       <input 
         type="checkbox" 
         checked={task.is_completed}
@@ -185,16 +203,21 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
         </div>
 
       </div>
-      {!task.is_completed && !isEditingName && !isEditingDueDate && (
-        <PencilIcon 
-            className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer flex-shrink-0 mt-0.5"
-            onClick={() => setIsEditingName(true)} // Default to editing name first
-            title="Edit task"
-        />
-      )}
-       {task.is_completed && (
-         <CheckCircleIcon className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" title="Completed" />
-       )}
+      <div className="flex flex-col items-end flex-shrink-0 ml-2">
+        {!task.is_completed && !isEditingName && !isEditingDueDate && (
+          <PencilIcon 
+              className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer mb-1"
+              onClick={() => setIsEditingName(true)} // Default to editing name first
+              title="Edit task"
+          />
+        )}
+         {task.is_completed && (
+           <CheckCircleIcon className="h-5 w-5 text-green-500 mb-1" title="Completed" />
+         )}
+         <span className="text-gray-400 text-2xs whitespace-nowrap hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
+            {updatedAgo}
+        </span>
+      </div>
     </div>
   );
 }

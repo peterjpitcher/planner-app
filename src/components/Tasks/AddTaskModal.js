@@ -4,7 +4,7 @@ import AddTaskForm from './AddTaskForm';
 
 export default function AddTaskModal({ projectId, onClose, onTaskAdded }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900 bg-opacity-10 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
       {/* Increased z-index to ensure it's above ProjectItem potentially higher z-index elements */}
       <div className="bg-white p-5 rounded-lg shadow-xl w-full max-w-md max-h-[80vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
         <div className="flex justify-between items-center mb-4 flex-shrink-0">

@@ -182,6 +182,14 @@ This section tracks the features implemented and the planned next steps based on
     *   Corrected `AuthContext.js` `useEffect` cleanup for `onAuthStateChange` listener (`authListener.subscription.unsubscribe()`).
     *   Resolved Supabase error "Could not find the 'last_activity_at' column" by removing `last_activity_at` from all update objects in `ProjectItem.js`, relying on `updated_at`.
     *   Fixed React Hook order error in `DashboardPage.js` by moving `filteredProjects` `useMemo` before early returns.
+*   **Mobile Responsiveness (Phase 1):**
+    *   `ProjectItem.js`:
+        *   Stakeholder display adjusted for `xs` screens: Shows full name for 1, names for 2, or "Name +N more" for >2. Full list on `sm+`.
+        *   "Updated X ago" text hidden on `xs` screens.
+    *   `TaskItem.js`:
+        *   "Updated X ago" text hidden on `xs` screens. Description truncation reviewed.
+    *   `StandaloneTaskList.js` (within its internal `StandaloneTaskItem`):
+        *   "Updated X ago" text added and hidden on `xs` screens.
 
 ### Remaining PRD Features (Next Steps):
 

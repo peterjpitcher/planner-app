@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
+import { quickPickOptions } from '@/lib/dateUtils';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon } from '@heroicons/react/24/outline';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
@@ -11,13 +12,13 @@ import AddNoteForm from '@/components/Notes/AddNoteForm';
 const getTaskPriorityClasses = (priority) => {
   switch (priority) {
     case 'High':
-      return 'border-l-2 border-red-400 bg-red-50/50';
+      return 'border-l-2 border-red-400 bg-red-50';
     case 'Medium':
-      return 'border-l-2 border-yellow-400 bg-yellow-50/50';
+      return 'border-l-2 border-yellow-400 bg-yellow-50';
     case 'Low':
-      return 'border-l-2 border-green-400 bg-green-50/50';
+      return 'border-l-2 border-green-400 bg-green-50';
     default:
-      return 'border-l-2 border-gray-300 bg-gray-50/50';
+      return 'border-l-2 border-gray-300 bg-gray-50';
   }
 };
 
@@ -258,80 +259,83 @@ export default function TaskItem({ task, onTaskUpdated }) {
                     onChange={handleTaskDescriptionChange}
                     onBlur={handleTaskDescriptionUpdate}
                     onKeyDown={handleTaskDescriptionKeyDown}
-                    className="ml-1 block w-full text-xs border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-1 resize-none flex-grow min-w-[100px]"
-                    rows="1" 
+                    className="text-xs text-gray-600 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 w-full min-h-[2em] resize-none"
+                    rows="1"
                     autoFocus
-                    placeholder="Description..."
                   />
-                ) : currentTaskDescription ? (
-                  <p 
-                    onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)}
-                    className={`text-xs text-gray-500 italic truncate max-w-[200px] sm:max-w-[300px] ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} flex-shrink min-w-0`}
+                ) : (
+                  <span 
+                    onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
+                    className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''} truncate`}
                     title={currentTaskDescription}
                   >
-                    - {currentTaskDescription}
-                  </p>
-                ) : !isCompleted && (
-                   <span onClick={() => !isEditingTaskName && setIsEditingTaskDescription(true)} className={`text-xs text-gray-400 italic ${editableTextClasses(false)} flex-shrink-0`}>
-                      - add description
-                   </span>
+                    {currentTaskDescription || (isEditingTaskName ? '' : 'No description')}
+                  </span>
                 )
               )}
             </div>
           </div>
         </div>
 
-        {/* Priority, Due Date, and Edit Icons Container */}
-        <div className="flex items-center space-x-1.5 sm:space-x-2 mt-1 sm:mt-0 flex-shrink-0 self-start sm:self-center pl-6 sm:pl-0">
-          {/* Priority Display */}
-          <span className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${
-            task.priority === 'High' ? 'bg-red-100 text-red-700' :
-            task.priority === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-            task.priority === 'Low' ? 'bg-green-100 text-green-700' :
-            'bg-gray-100 text-gray-600'
-          }`}>
+        {/* Priority, Due Date, Notes Toggle & Updated At - flex-shrink-0 to prevent shrinking */}
+        <div className="flex items-center space-x-2 sm:space-x-3 text-xs mt-1 sm:mt-0 pl-[2.125rem] sm:pl-0 flex-shrink-0">
+          <span className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-opacity-20"
+            // Basic color based on priority text for now, can be more specific if needed
+            style={{
+              backgroundColor: task.priority === 'High' ? 'rgba(239, 68, 68, 0.1)' : 
+                               task.priority === 'Medium' ? 'rgba(245, 158, 11, 0.1)' : 
+                               task.priority === 'Low' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(107, 114, 128, 0.1)',
+              color: task.priority === 'High' ? 'rgb(185, 28, 28)' : 
+                     task.priority === 'Medium' ? 'rgb(194, 102, 7)' : 
+                     task.priority === 'Low' ? 'rgb(4, 120, 87)' : 'rgb(55, 65, 81)',
+            }}
+          >
             {getPriorityText(task.priority)}
           </span>
 
-          {/* Due Date Display/Edit */}
           {isEditingDueDate ? (
-            <div className="flex items-center">
+            <div className="flex flex-col items-start">
               <input
                 type="date"
                 value={currentDueDate}
                 onChange={handleDueDateChange}
                 onBlur={handleDueDateUpdate}
                 onKeyDown={handleDueDateInputKeyDown}
-                className="text-2xs border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 py-0.5 px-1"
+                className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 px-1.5 w-[130px]"
                 autoFocus
               />
+              <div className="mt-1 grid grid-cols-3 gap-1 w-[130px]">
+                  {quickPickOptions.slice(0,3).map(opt => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => {
+                        const newDate = opt.getDate();
+                        setCurrentDueDate(format(newDate, 'yyyy-MM-dd'));
+                      }}
+                      className="text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full py-0.5 px-1 text-center"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
             </div>
           ) : (
-            <div 
-              className={`flex items-center cursor-pointer hover:bg-gray-100 p-0.5 rounded-sm group ${dueDateStatusToDisplay.classes}`}
-              onClick={() => !isCompleted && setIsEditingDueDate(true)}
-              title={`Due date: ${task.due_date ? format(new Date(task.due_date), 'MMM d, yyyy') : 'Not set'}`}
+            <span 
+              onClick={() => !isCompleted && setIsEditingDueDate(true)} 
+              className={`${dueDateStatusToDisplay.classes} ${!isCompleted ? 'cursor-pointer hover:text-indigo-700' : ''}`}
+              title={dueDateStatusToDisplay.text}
             >
-              <span className="text-2xs">{dueDateStatusToDisplay.text}</span>
-              {!isCompleted && (
-                <PencilIcon className="h-2.5 w-2.5 ml-0.5 text-gray-400 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-              )}
-            </div>
+              {dueDateStatusToDisplay.text}
+            </span>
           )}
-
-          {/* Last Updated Timestamp */}
-          <span className="text-2xs text-gray-400 whitespace-nowrap" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
+          
+          <button onClick={() => setShowNotes(!showNotes)} className="text-gray-400 hover:text-indigo-600">
+            <ChatBubbleLeftEllipsisIcon className="h-4 w-4" />
+          </button>
+          <span className="text-gray-400 text-2xs hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
             {updatedAgo}
           </span>
-
-          {/* Notes Toggle Icon - smaller */}
-          <button 
-            onClick={() => setShowNotes(!showNotes)}
-            className="p-0.5 rounded-full hover:bg-gray-200 text-gray-500 hover:text-indigo-600 transition-colors"
-            title={showNotes ? "Hide Notes" : "Show Notes"}
-          >
-            <ChatBubbleLeftEllipsisIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-          </button>
         </div>
       </div>
 

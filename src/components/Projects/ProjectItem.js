@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
+import { quickPickOptions } from '@/lib/dateUtils';
 import { 
   ChevronDownIcon, ChevronUpIcon, PlusCircleIcon, EyeIcon, EyeSlashIcon, 
   ChatBubbleLeftEllipsisIcon, ClipboardDocumentIcon, EllipsisVerticalIcon,
@@ -84,7 +85,7 @@ const getStatusClasses = (status) => {
 export default function ProjectItem({ project, onProjectDataChange, onProjectDeleted }) {
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
-  const [showTasks, setShowTasks] = useState(false);
+  const [showTasks, setShowTasks] = useState(true);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [showProjectNotes, setShowProjectNotes] = useState(false);
@@ -186,6 +187,50 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
     ? formatDistanceToNowStrict(parseISO(project.updated_at), { addSuffix: true })
     : 'never';
 
+  const renderStakeholders = () => {
+    if (!project.stakeholders || project.stakeholders.length === 0) {
+      return <span className="text-gray-500">No stakeholders</span>;
+    }
+    const stakeholderList = project.stakeholders;
+
+    // Mobile: xs screens
+    if (typeof window !== 'undefined' && window.innerWidth < 640) { // Approximating sm breakpoint
+      if (stakeholderList.length === 1) {
+        return <span className="truncate">{stakeholderList[0]}</span>;
+      }
+      if (stakeholderList.length === 2) {
+        return <span className="truncate">{`${stakeholderList[0]}, ${stakeholderList[1]}`}</span>;
+      }
+      return <span className="truncate">{`${stakeholderList[0]} +${stakeholderList.length - 1} more`}</span>;
+    }
+
+    // Desktop: sm and larger screens
+    return stakeholderList.map((sh, index) => (
+      <span key={index} className="inline-block bg-gray-200 rounded-full px-2 py-0.5 text-xs font-medium text-gray-700 mr-1 mb-1">
+        {sh}
+      </span>
+    ));
+  };
+
+  const updateParentProjectTimestamp = async () => {
+    if (!project || !project.id) {
+      console.warn('Cannot update project timestamp: project or project.id is missing.');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', project.id);
+      if (error) {
+        console.error('Error updating project timestamp in DB:', error);
+        // Potentially alert the user or log more formally
+      }
+    } catch (err) {
+      console.error('Exception while updating project timestamp:', err);
+    }
+  };
+
   const handleTaskAdded = (newTask) => {
     setTasks(prevTasks => [newTask, ...prevTasks].sort((a, b) => {
         if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
@@ -193,6 +238,7 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
     }));
     setShowAddTaskModal(false);
     if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
+    updateParentProjectTimestamp();
   };
 
   const handleTaskUpdated = (updatedTask) => { 
@@ -203,6 +249,7 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
         })
     );
     if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
+    updateParentProjectTimestamp();
   };
 
   const handleDeleteProject = async () => {
@@ -505,159 +552,201 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
               </h3>
             )}
           </div>
+          <div className="mt-1 ml-7 sm:flex sm:items-center sm:space-x-3 text-xs">
+            {/* Stakeholders for mobile (xs) */}
+            <div className="sm:hidden flex items-center text-gray-600 mb-1">
+              <UserGroupIcon className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" />
+              <div className="truncate">
+                {renderStakeholders()} 
+              </div>
+            </div>
+            {/* Stakeholders for desktop (sm and up) */}
+            <div className="hidden sm:flex items-center text-gray-600">
+              <UserGroupIcon className="h-4 w-4 mr-1 text-gray-500" />
+              {project.stakeholders && project.stakeholders.length > 0 
+                ? project.stakeholders.join(', ') 
+                : <span className="text-gray-400">No stakeholders</span>}
+            </div>
+            
+            {/* Separator, Due Date, Updated Ago for sm and up screens */}
+            <div className="hidden sm:flex items-center space-x-3">
+              <span className="text-gray-400">•</span>
+              <div className={`${dueDateDisplayStatus.classes}`}>
+                  {dueDateDisplayStatus.text}
+              </div>
+              <span className="text-gray-400">•</span>
+              <div className="text-xs text-gray-500">
+                  Updated {updatedAgo}
+              </div>
+            </div>
 
-          <div className="flex items-center gap-x-2 gap-y-1 sm:gap-x-3 flex-wrap justify-start sm:justify-end flex-shrink-0">
-            <div className="relative order-1 sm:order-none">
-              <button
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate || isEditingStakeholders) return;
-                  setShowStatusDropdown(!showStatusDropdown); 
-                }}
-                disabled={isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate || isEditingStakeholders}
-                className={`text-xs font-medium px-2 py-1 rounded-full flex items-center whitespace-nowrap ${projectStatusClasses} ${isProjectCompletedOrCancelled ? 'cursor-not-allowed' : 'hover:opacity-80'}`}
-              >
-                {currentStatus} <ChevronDownIcon className="w-3 h-3 ml-1 opacity-70"/>
-              </button>
-              {showStatusDropdown && !isProjectCompletedOrCancelled && (
-                <div className="absolute right-0 mt-1 w-36 bg-white rounded-md shadow-lg z-20 border border-gray-200 py-0.5">
-                  {projectStatusOptions.map(option => (
-                    <button
-                      key={option}
-                      onClick={(e) => { e.stopPropagation(); handleChangeProjectStatus(option); }}
-                      className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 focus:bg-gray-100"
-                    >
-                      {option}
-                    </button>
-                  ))}
+            {/* Due Date and Updated Ago for xs screens (stacked) */}
+            <div className="sm:hidden mt-1">
+                <div className={`${dueDateDisplayStatus.classes} mb-0.5`}>
+                    {dueDateDisplayStatus.text}
                 </div>
-              )}
+                {/* Updated Ago is intentionally not shown on xs screens to save space */}
             </div>
+          </div>
+        </div>
 
-            <div className="relative order-2 sm:order-none">
-              {isEditingPriority && !isProjectCompletedOrCancelled ? (
-                <select
-                  value={currentPriority}
-                  onChange={(e) => { 
-                      setCurrentPriority(e.target.value); 
-                      handlePriorityUpdate(e.target.value);
-                      setIsEditingPriority(false);
-                  }}
-                  onBlur={() => setIsEditingPriority(false)}
-                  onKeyDown={handlePriorityInputKeyDown}
-                  className={`${commonInputClasses} w-28`}
-                  autoFocus
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {priorityOptions.map(p => <option key={p} value={p}>{p} Priority</option>)}
-                </select>
-              ) : (
-                <span 
-                  className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${currentPriority === 'High' ? 'bg-red-100 text-red-700' : currentPriority === 'Medium' ? 'bg-yellow-100 text-yellow-700' : currentPriority === 'Low' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'} ${!isProjectCompletedOrCancelled && !isEditingDueDate && !isEditingStakeholders ? 'cursor-pointer hover:opacity-80' : ''}`}
-                  onClick={(e) => {
-                    if (isProjectCompletedOrCancelled || isEditingDueDate || isEditingStakeholders) return;
-                    e.stopPropagation(); 
-                    setIsEditingPriority(true);
-                  }}
-                >
-                  {currentPriority}
-                </span>
-              )}
-            </div>
+        <div className="flex items-center gap-x-2 gap-y-1 sm:gap-x-3 flex-wrap justify-start sm:justify-end flex-shrink-0">
+          <div className="relative order-1 sm:order-none">
+            <button
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate || isEditingStakeholders) return;
+                setShowStatusDropdown(!showStatusDropdown); 
+              }}
+              disabled={isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate || isEditingStakeholders}
+              className={`text-xs font-medium px-2 py-1 rounded-full flex items-center whitespace-nowrap ${projectStatusClasses} ${isProjectCompletedOrCancelled ? 'cursor-not-allowed' : 'hover:opacity-80'}`}
+            >
+              {currentStatus} <ChevronDownIcon className="w-3 h-3 ml-1 opacity-70"/>
+            </button>
+            {showStatusDropdown && !isProjectCompletedOrCancelled && (
+              <div className="absolute right-0 mt-1 w-36 bg-white rounded-md shadow-lg z-20 border border-gray-200 py-0.5">
+                {projectStatusOptions.map(option => (
+                  <button
+                    key={option}
+                    onClick={(e) => { e.stopPropagation(); handleChangeProjectStatus(option); }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 focus:bg-gray-100"
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-            <div className="relative order-3 sm:order-none">
-                {isEditingDueDate && !isProjectCompletedOrCancelled ? (
-                    <input
-                        type="date"
-                        value={currentDueDate}
-                        onChange={handleDueDateChange}
-                        onBlur={handleDueDateUpdate}
-                        onKeyDown={handleDueDateInputKeyDown}
-                        className={`${commonInputClasses} w-32`}
-                        autoFocus
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                ) : (
-                    <div 
-                        className={`flex items-center gap-1 text-xs whitespace-nowrap ${dueDateDisplayStatus.classes} ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : ''}`}
-                        onClick={(e) => {
-                            if (isProjectCompletedOrCancelled || isEditingPriority || isEditingStakeholders) return;
-                            e.stopPropagation(); 
-                            setIsEditingDueDate(true);
-                        }}
-                        title={dueDateDisplayStatus.fullDate || 'Set due date'}
-                    >
-                        <span>{dueDateDisplayStatus.text}</span>
-                        {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders && <PencilIcon className="w-3 h-3 opacity-60" />}
-                    </div>
-                )}
-            </div>
+          <div className="relative order-2 sm:order-none">
+            <select
+              value={currentPriority}
+              onChange={(e) => { 
+                  setCurrentPriority(e.target.value); 
+                  handlePriorityUpdate(e.target.value);
+                  setIsEditingPriority(false);
+              }}
+              onBlur={() => setIsEditingPriority(false)}
+              onKeyDown={handlePriorityInputKeyDown}
+              className={`${commonInputClasses} w-28`}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+            >
+              {priorityOptions.map(p => <option key={p} value={p}>{p} Priority</option>)}
+            </select>
+          </div>
 
-            <div className="relative order-4 sm:order-none flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
-                <UserGroupIcon className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
-                {isEditingStakeholders && !isProjectCompletedOrCancelled ? (
-                    <input
-                        type="text"
-                        value={currentStakeholdersText}
-                        onChange={handleStakeholdersChange}
-                        onBlur={handleStakeholdersUpdate}
-                        onKeyDown={handleStakeholdersInputKeyDown}
-                        className={`${commonInputClasses} w-full sm:w-32`}
-                        placeholder="e.g., Team A, Client"
-                        autoFocus
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                ) : (
-                    <span 
-                        className={`truncate max-w-[100px] sm:max-w-[150px] ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : ''} ${!currentStakeholdersText ? 'italic text-gray-400' : ''}`}
-                        onClick={(e) => {
-                            if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate) return;
-                            e.stopPropagation(); 
-                            setIsEditingStakeholders(true);
-                        }}
-                        title={currentStakeholdersText || 'Add stakeholders'}
-                    >
-                        {currentStakeholdersText || 'None'}
-                         {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate && <PencilIcon className="w-3 h-3 opacity-50 inline ml-0.5" />}
-                    </span>
-                )}
-            </div>
-
-            {/* Last Updated Info */}
-            <div className="order-5 sm:order-none flex items-center text-2xs text-gray-400 whitespace-nowrap" title={`Last updated: ${project.updated_at ? format(parseISO(project.updated_at), 'Pp') : 'N/A'}`}>
-                <span className="italic">{updatedAgo}</span>
-            </div>
-
-            <div className="relative order-last sm:order-none ml-auto sm:ml-0">
-                <button 
-                    onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen);}}
-                    className="p-1.5 rounded-full hover:bg-gray-200 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
-                    aria-haspopup="true" aria-expanded={isMenuOpen}
-                    title="More actions"
-                >
-                    <EllipsisVerticalIcon className="h-5 w-5"/>
-                </button>
-                {isMenuOpen && (
-                    <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-30 border border-gray-200 py-1" role="menu">
-                        <button onClick={(e) => {e.stopPropagation(); setShowProjectNotes(!showProjectNotes); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                           <ChatBubbleLeftEllipsisIcon className="h-4 w-4"/> {showProjectNotes ? 'Hide' : 'Show'} Notes
-                        </button>
-                        <button onClick={(e) => {e.stopPropagation(); handleCopyProjectData();}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                           <ClipboardDocumentIcon className="h-4 w-4"/> {copyStatus} Data
-                        </button>
-                        {!isProjectCompletedOrCancelled && (
-                            <button onClick={(e) => {e.stopPropagation(); setShowAddTaskModal(true); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                               <PlusCircleIcon className="h-4 w-4"/> Add Task
+          <div className="relative order-3 sm:order-none">
+              {isEditingDueDate && !isProjectCompletedOrCancelled ? (
+                  <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+                      <input
+                          type="date"
+                          value={currentDueDate}
+                          onChange={handleDueDateChange}
+                          onKeyDown={handleDueDateInputKeyDown}
+                          onBlur={() => createUpdateHandler('due_date', currentDueDate, project.due_date, setCurrentDueDate, setIsEditingDueDate, false, true)()}
+                          className="text-xs p-1 border border-gray-300 rounded-md w-full"
+                          autoFocus
+                      />
+                      {/* Quick Pick Date Buttons for Inline Edit - ProjectItem */}
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {quickPickOptions.map(option => (
+                            <button
+                              key={option.label}
+                              type="button"
+                              onClick={() => {
+                                const newDate = option.getValue();
+                                setCurrentDueDate(newDate);
+                                createUpdateHandler('due_date', newDate, project.due_date, setCurrentDueDate, setIsEditingDueDate, false, true)();
+                              }}
+                              className="px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                            >
+                              {option.label}
                             </button>
-                        )}
-                         <div className="my-1 border-t border-gray-100"></div>
-                        <button onClick={(e) => {e.stopPropagation(); handleDeleteProject();}} className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
-                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c1.153 0 2.243.032 3.223.094C7.572 6.21 7.994 6.5 8.382 6.962a4.928 4.928 0 0 1 .664.986M14.74 9h-2.556M14.74 9L6.26 9m9.968-3.21c-.664.006-1.32.028-1.973.064M4.772 5.79c-.023.009-.045.017-.067.026M4.772 5.79L3 19.673C3 20.805 3.794 21.75 4.839 21.75H19.16c1.046 0 1.84-0.945 1.84-2.077L19.23 5.79m-14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c1.153 0 2.243.032 3.223.094C7.572 6.21 7.994 6.5 8.382 6.962a4.928 4.928 0 0 1 .664.986" /></svg>
-                           Delete Project
-                        </button>
-                    </div>
-                )}
-            </div>
+                          ))}
+                      </div>
+                  </div>
+              ) : (
+                  <div 
+                      className={`flex items-center gap-1 text-xs whitespace-nowrap ${dueDateDisplayStatus.classes} ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : ''}`}
+                      onClick={(e) => {
+                          if (isProjectCompletedOrCancelled || isEditingPriority || isEditingStakeholders) return;
+                          e.stopPropagation(); 
+                          setIsEditingDueDate(true);
+                      }}
+                      title={dueDateDisplayStatus.fullDate || 'Set due date'}
+                  >
+                      <span>{dueDateDisplayStatus.text}</span>
+                      {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders && <PencilIcon className="w-3 h-3 opacity-60" />}
+                  </div>
+              )}
+          </div>
+
+          <div className="relative order-4 sm:order-none flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
+              <UserGroupIcon className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
+              {isEditingStakeholders && !isProjectCompletedOrCancelled ? (
+                  <input
+                      type="text"
+                      value={currentStakeholdersText}
+                      onChange={handleStakeholdersChange}
+                      onBlur={handleStakeholdersUpdate}
+                      onKeyDown={handleStakeholdersInputKeyDown}
+                      className={`${commonInputClasses} w-full sm:w-32`}
+                      placeholder="e.g., Team A, Client"
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                  />
+              ) : (
+                  <span 
+                      className={`truncate max-w-[100px] sm:max-w-[150px] ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : ''} ${!currentStakeholdersText ? 'italic text-gray-400' : ''}`}
+                      onClick={(e) => {
+                          if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate) return;
+                          e.stopPropagation(); 
+                          setIsEditingStakeholders(true);
+                      }}
+                      title={currentStakeholdersText || 'Add stakeholders'}
+                  >
+                      {currentStakeholdersText || 'None'}
+                       {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate && <PencilIcon className="w-3 h-3 opacity-50 inline ml-0.5" />}
+                  </span>
+              )}
+          </div>
+
+          {/* Updated At - Displayed only on small screens and up, hidden on xs */}
+          {/* This specific Updated Ago was part of the right-aligned controls, let's ensure it's also hidden on xs or shown appropriately */}
+          <div className="text-xs text-gray-500 mt-1 hidden sm:block">
+              Updated {updatedAgo}
+          </div>
+
+          <div className="relative order-last sm:order-none ml-auto sm:ml-0">
+              <button 
+                  onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen);}}
+                  className="p-1.5 rounded-full hover:bg-gray-200 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
+                  aria-haspopup="true" aria-expanded={isMenuOpen}
+                  title="More actions"
+              >
+                  <EllipsisVerticalIcon className="h-5 w-5"/>
+              </button>
+              {isMenuOpen && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-30 border border-gray-200 py-1" role="menu">
+                      <button onClick={(e) => {e.stopPropagation(); setShowProjectNotes(!showProjectNotes); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                         <ChatBubbleLeftEllipsisIcon className="h-4 w-4"/> {showProjectNotes ? 'Hide' : 'Show'} Notes
+                      </button>
+                      <button onClick={(e) => {e.stopPropagation(); handleCopyProjectData();}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                         <ClipboardDocumentIcon className="h-4 w-4"/> {copyStatus} Data
+                      </button>
+                      {!isProjectCompletedOrCancelled && (
+                          <button onClick={(e) => {e.stopPropagation(); setShowAddTaskModal(true); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                             <PlusCircleIcon className="h-4 w-4"/> Add Task
+                          </button>
+                      )}
+                       <div className="my-1 border-t border-gray-100"></div>
+                      <button onClick={(e) => {e.stopPropagation(); handleDeleteProject();}} className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c1.153 0 2.243.032 3.223.094C7.572 6.21 7.994 6.5 8.382 6.962a4.928 4.928 0 0 1 .664.986M14.74 9h-2.556M14.74 9L6.26 9m9.968-3.21c-.664.006-1.32.028-1.973.064M4.772 5.79c-.023.009-.045.017-.067.026M4.772 5.79L3 19.673C3 20.805 3.794 21.75 4.839 21.75H19.16c1.046 0 1.84-0.945 1.84-2.077L19.23 5.79m-14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c1.153 0 2.243.032 3.223.094C7.572 6.21 7.994 6.5 8.382 6.962a4.928 4.928 0 0 1 .664.986" /></svg>
+                         Delete Project
+                      </button>
+                  </div>
+              )}
           </div>
         </div>
 

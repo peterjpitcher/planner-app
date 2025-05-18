@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
+import { quickPickOptions } from '@/lib/dateUtils';
 
 export default function AddTaskForm({ projectId, onTaskAdded, onClose }) {
   const { user } = useAuth();
@@ -119,6 +120,19 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose }) {
             <option value="Low">Low</option>
           </select>
         </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {quickPickOptions.map(option => (
+          <button
+            key={option.label}
+            type="button"
+            onClick={() => setDueDate(option.getValue())}
+            className="px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300 text-center"
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
 
       {error && <p className="text-sm text-red-600">Error: {error}</p>}
