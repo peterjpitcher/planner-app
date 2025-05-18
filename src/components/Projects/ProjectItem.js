@@ -82,10 +82,10 @@ const getStatusClasses = (status) => {
   }
 };
 
-export default function ProjectItem({ project, onProjectDataChange, onProjectDeleted }) {
+export default function ProjectItem({ project, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }) {
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
-  const [showTasks, setShowTasks] = useState(true);
+  const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [showProjectNotes, setShowProjectNotes] = useState(false);
@@ -108,6 +108,12 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
   const [currentPriority, setCurrentPriority] = useState(project ? project.priority : 'Medium');
   const [isEditingStakeholders, setIsEditingStakeholders] = useState(false);
   const [currentStakeholdersText, setCurrentStakeholdersText] = useState(project && project.stakeholders ? project.stakeholders.join(', ') : '');
+
+  useEffect(() => {
+    if (areAllTasksExpanded !== undefined) {
+      setShowTasks(areAllTasksExpanded);
+    }
+  }, [areAllTasksExpanded]);
 
   useEffect(() => {
     if (project) {

@@ -178,6 +178,10 @@ This section tracks the features implemented and the planned next steps based on
     *   Filter buttons show counts and turn red if matching projects exist.
     *   A `StandaloneTaskList` component added to the right sidebar on the dashboard, showing all non-completed user tasks.
     *   Tasks in `StandaloneTaskList` are grouped by "Overdue", "Today", "This Week", "Later", and "No Due Date", each with a group header.
+*   **UI/UX - Project Task Visibility:**
+    *   Added a global "Expand All Tasks" / "Collapse All Tasks" button on the `DashboardPage.js`.
+    *   This button controls the visibility of task lists for all projects simultaneously.
+    *   Individual project task list toggles in `ProjectItem.js` still function independently after a global action.
 *   **Error Fixes & Refinements:**
     *   Corrected `AuthContext.js` `useEffect` cleanup for `onAuthStateChange` listener (`authListener.subscription.unsubscribe()`).
     *   Resolved Supabase error "Could not find the 'last_activity_at' column" by removing `last_activity_at` from all update objects in `ProjectItem.js`, relying on `updated_at`.

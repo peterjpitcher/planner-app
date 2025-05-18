@@ -5,7 +5,7 @@ import ProjectItem from './ProjectItem';
 // Define priority order for rendering groups
 // const PRIORITY_ORDER = ['High', 'Medium', 'Low', 'Other']; // No longer needed
 
-export default function ProjectList({ projects, onProjectDataChange, onProjectDeleted }) {
+export default function ProjectList({ projects, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }) {
   // Check if there are any projects across all groups
   // const isEmpty = PRIORITY_ORDER.every(groupKey => 
   //   !groupedProjects[groupKey] || groupedProjects[groupKey].length === 0
@@ -53,6 +53,7 @@ export default function ProjectList({ projects, onProjectDataChange, onProjectDe
           project={project} 
           onProjectDataChange={onProjectDataChange} 
           onProjectDeleted={onProjectDeleted} 
+          areAllTasksExpanded={areAllTasksExpanded}
         />
       ))}
     </div>

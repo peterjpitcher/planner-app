@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 import ProjectList from '@/components/Projects/ProjectList';
 import AddProjectModal from '@/components/Projects/AddProjectModal';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
-import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIcon, ClockIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
+import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIcon, ClockIcon, CalendarDaysIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc } from 'date-fns';
 
 export default function DashboardPage() {
@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [allUserTasks, setAllUserTasks] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
+  const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true); // New state for expand/collapse all
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [selectedStakeholder, setSelectedStakeholder] = useState('All Stakeholders');
   
@@ -47,16 +48,26 @@ export default function DashboardPage() {
     setIsLoadingData(true);
     try {
       // Fetch projects
-      let projectQuery = supabase
+      let projectQueryBase = supabase
         .from('projects')
         .select('*')
         .eq('user_id', user.id);
-      // Initial filter for completed projects is applied here before sorting
-      if (!showCompletedProjects) {
-        projectQuery = projectQuery.neq('status', 'Completed').neq('status', 'Cancelled');
+
+      let finalProjectQuery;
+      if (showCompletedProjects) {
+        // Fetch all projects (Completed, Cancelled, and others)
+        finalProjectQuery = projectQueryBase;
+      } else {
+        // Fetch only projects that are NOT Completed and NOT Cancelled
+        finalProjectQuery = projectQueryBase
+          .neq('status', 'Completed')
+          .neq('status', 'Cancelled');
       }
-      projectQuery = projectQuery.order('due_date', { ascending: true, nullsFirst: false });
-      const { data: projectData, error: projectError } = await projectQuery;
+
+      // Apply ordering to the determined query
+      finalProjectQuery = finalProjectQuery.order('due_date', { ascending: true, nullsFirst: false });
+
+      const { data: projectData, error: projectError } = await finalProjectQuery;
       if (projectError) throw projectError;
 
       // Client-side sort for secondary priority sorting if due dates are the same
@@ -187,6 +198,10 @@ export default function DashboardPage() {
     fetchData();
   };
 
+  const toggleExpandAllTasks = () => {
+    setAreAllTasksExpanded(prev => !prev);
+  };
+
   const uniqueStakeholders = Array.from(
     new Set(projects.flatMap(p => p.stakeholders || []).filter(sh => sh && sh.trim() !== ''))
   ).sort();
@@ -275,7 +290,7 @@ export default function DashboardPage() {
                   </select>
                 </div>
                 
-                <div className="flex md:justify-start items-center pt-5">
+                <div className="flex md:justify-start items-center pt-5 space-x-3">
                     <button
                         onClick={() => { setShowCompletedProjects(prev => !prev); }}
                         className="flex items-center text-sm text-gray-600 hover:text-indigo-600 p-2 rounded-md hover:bg-gray-100"
@@ -283,6 +298,14 @@ export default function DashboardPage() {
                     >
                         {showCompletedProjects ? <EyeSlashIcon className="h-5 w-5 mr-1.5" /> : <EyeIcon className="h-5 w-5 mr-1.5" />}
                         {showCompletedProjects ? 'Hide Completed/Cancelled' : 'Show Completed/Cancelled'}
+                    </button>
+                    <button
+                        onClick={toggleExpandAllTasks}
+                        className="flex items-center text-sm text-gray-600 hover:text-indigo-600 p-2 rounded-md hover:bg-gray-100"
+                        title={areAllTasksExpanded ? "Collapse all project task lists" : "Expand all project task lists"}
+                    >
+                        {areAllTasksExpanded ? <ArrowsPointingInIcon className="h-5 w-5 mr-1.5" /> : <ArrowsPointingOutIcon className="h-5 w-5 mr-1.5" />}
+                        {areAllTasksExpanded ? 'Collapse All Tasks' : 'Expand All Tasks'}
                     </button>
                 </div>
               </div>
@@ -310,6 +333,7 @@ export default function DashboardPage() {
                   projects={baseFilteredProjects}
                   onProjectDataChange={handleProjectDataChanged} 
                   onProjectDeleted={handleProjectDataChanged} 
+                  areAllTasksExpanded={areAllTasksExpanded}
                 />
                 ) : (
                 <div className="text-center py-10 bg-white p-6 rounded-lg shadow">
