@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { quickPickOptions } from '@/lib/dateUtils';
@@ -13,6 +13,13 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose }) {
   const [priority, setPriority] = useState('Medium'); // Default priority for tasks
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const nameInputRef = useRef(null);
+  useEffect(() => {
+    if (nameInputRef.current) {
+      nameInputRef.current.focus();
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -76,6 +83,7 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose }) {
           onChange={(e) => setName(e.target.value)}
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
           required
+          ref={nameInputRef}
         />
       </div>
 

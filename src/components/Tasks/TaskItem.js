@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { quickPickOptions } from '@/lib/dateUtils';
@@ -103,6 +103,13 @@ export default function TaskItem({ task, onTaskUpdated }) {
     }
   }, [showNotes, task, fetchNotes]);
   
+  const taskNameInputRef = useRef(null);
+  useEffect(() => {
+    if (isEditingTaskName && taskNameInputRef.current) {
+      taskNameInputRef.current.focus();
+    }
+  }, [isEditingTaskName]);
+
   // Early return AFTER all hooks
   if (!task) return null;
 
@@ -239,7 +246,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
                   onBlur={handleTaskNameUpdate}
                   onKeyDown={handleTaskNameInputKeyDown}
                   className="text-sm font-medium text-gray-900 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 flex-grow min-w-[50px]"
-                  autoFocus
+                  ref={taskNameInputRef}
                 />
               ) : (
                 <span 

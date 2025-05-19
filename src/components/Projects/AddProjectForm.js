@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { quickPickOptions } from '@/lib/dateUtils'; // Import quickPickOptions
@@ -14,6 +14,27 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
   const [description, setDescription] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [tasks, setTasks] = useState([
+    { name: '', description: '', dueDate: '', priority: 'Medium' }
+  ]);
+  const [taskErrors, setTaskErrors] = useState([]);
+
+  const nameInputRef = useRef(null);
+  useEffect(() => {
+    if (nameInputRef.current) {
+      nameInputRef.current.focus();
+    }
+  }, []);
+
+  const handleTaskChange = (idx, field, value) => {
+    setTasks(tasks => tasks.map((t, i) => i === idx ? { ...t, [field]: value } : t));
+  };
+  const handleAddTask = () => {
+    setTasks(tasks => [...tasks, { name: '', description: '', dueDate: '', priority: 'Medium' }]);
+  };
+  const handleRemoveTask = (idx) => {
+    setTasks(tasks => tasks.filter((_, i) => i !== idx));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,6 +46,10 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
         setError('Project name is required.');
         return;
     }
+    // Validate tasks
+    const newTaskErrors = tasks.map(t => !t.name.trim() ? 'Task name is required.' : null);
+    setTaskErrors(newTaskErrors);
+    if (newTaskErrors.some(Boolean)) return;
 
     setError(null);
     setLoading(true);
@@ -32,29 +57,47 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
     const projectData = {
       user_id: user.id,
       name: name.trim(),
-      due_date: dueDate || null, // Handle empty date string
+      due_date: dueDate || null,
       priority,
-      stakeholders: stakeholders.split(',').map(s => s.trim()).filter(s => s), // Convert to array, remove empty strings
+      stakeholders: stakeholders.split(',').map(s => s.trim()).filter(s => s),
       description: description.trim() || null,
-      status: 'Open', // Default status
+      status: 'Open',
     };
 
     try {
-      const { data, error: insertError } = await supabase
+      const { data: project, error: insertError } = await supabase
         .from('projects')
         .insert([projectData])
-        .select() // To get the newly created record back
-        .single(); // Assuming we insert one record and want it back
-
+        .select()
+        .single();
       if (insertError) throw insertError;
-
-      if (data) {
-        onProjectAdded(data); // Pass the newly created project back to the dashboard
+      if (project) {
+        // Add tasks if any
+        const tasksToAdd = tasks.filter(t => t.name.trim());
+        let taskInsertError = null;
+        if (tasksToAdd.length > 0) {
+          const { error: taskError } = await supabase
+            .from('tasks')
+            .insert(tasksToAdd.map(t => ({
+              project_id: project.id,
+              user_id: user.id,
+              name: t.name.trim(),
+              description: t.description.trim() || null,
+              due_date: t.dueDate || null,
+              priority: t.priority,
+            })));
+          if (taskError) taskInsertError = taskError;
+        }
+        onProjectAdded(project);
+        if (taskInsertError) {
+          setError('Project created, but some tasks failed to be added: ' + taskInsertError.message);
+        } else {
+          onClose();
+        }
       }
-      onClose(); // Close the modal/form on success
     } catch (err) {
-      console.error('Error adding project:', err);
-      setError(err.message || 'Failed to add project.');
+      console.error('Error adding project or tasks:', err);
+      setError(err.message || 'Failed to add project or tasks.');
     } finally {
       setLoading(false);
     }
@@ -73,6 +116,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
           onChange={(e) => setName(e.target.value)}
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
           required
+          ref={nameInputRef}
         />
       </div>
 
@@ -143,6 +187,51 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
           placeholder="e.g., Jane Doe, John Smith"
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
         />
+      </div>
+
+      <div className="border-t pt-4 mt-4">
+        <h3 className="text-md font-semibold text-gray-800 mb-2">Add Tasks (optional)</h3>
+        {tasks.map((task, idx) => (
+          <div key={idx} className="mb-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                placeholder="Task name*"
+                value={task.name}
+                onChange={e => handleTaskChange(idx, 'name', e.target.value)}
+                className="flex-1 px-2 py-1 border border-gray-300 rounded-md text-sm"
+                required
+              />
+              <button type="button" onClick={() => handleRemoveTask(idx)} className="text-xs text-red-500 hover:underline" disabled={tasks.length === 1}>Remove</button>
+            </div>
+            {taskErrors[idx] && <p className="text-xs text-red-500 mt-1">{taskErrors[idx]}</p>}
+            <textarea
+              placeholder="Description (optional)"
+              value={task.description}
+              onChange={e => handleTaskChange(idx, 'description', e.target.value)}
+              className="mt-2 w-full px-2 py-1 border border-gray-300 rounded-md text-xs"
+              rows={2}
+            />
+            <div className="flex gap-2 mt-2">
+              <input
+                type="date"
+                value={task.dueDate}
+                onChange={e => handleTaskChange(idx, 'dueDate', e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded-md text-xs"
+              />
+              <select
+                value={task.priority}
+                onChange={e => handleTaskChange(idx, 'priority', e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded-md text-xs"
+              >
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+          </div>
+        ))}
+        <button type="button" onClick={handleAddTask} className="text-indigo-600 hover:underline text-sm">+ Add another task</button>
       </div>
 
       {error && <p className="text-sm text-red-600">Error: {error}</p>}
