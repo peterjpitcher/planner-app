@@ -271,7 +271,7 @@ export default function DashboardPage() {
       <div className="flex-grow w-full py-6 px-4">
         <div className="lg:flex lg:gap-6">
           {/* Left column: Filters and Project List */}
-          <div className="lg:w-2/3 mb-6 lg:mb-0">
+          <div className="lg:w-2/3 mb-6 lg:mb-0 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
             <section className="bg-white p-4 rounded-lg shadow mb-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-end">
                 <div>
@@ -351,7 +351,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Right column: Standalone Task List */}
-          <aside className="lg:w-1/3 lg:sticky lg:top-24 h-full lg:max-h-[calc(100vh-7rem)]">
+          <aside className="lg:w-1/3 lg:sticky lg:top-24 h-full lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
             {isLoadingData ? (
                 <div className="bg-white shadow rounded-lg p-4 text-center">
                     <p className="text-sm text-gray-500">Loading tasks...</p>
