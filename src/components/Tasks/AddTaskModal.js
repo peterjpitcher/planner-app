@@ -2,7 +2,7 @@
 
 import AddTaskForm from './AddTaskForm';
 
-export default function AddTaskModal({ projectId, onClose, onTaskAdded }) {
+export default function AddTaskModal({ projectId, onClose, onTaskAdded, defaultPriority }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
       {/* Increased z-index to ensure it's above ProjectItem potentially higher z-index elements */}
@@ -18,7 +18,7 @@ export default function AddTaskModal({ projectId, onClose, onTaskAdded }) {
           </button>
         </div>
         <div className="overflow-y-auto flex-grow">
-          <AddTaskForm projectId={projectId} onTaskAdded={onTaskAdded} onClose={onClose} />
+          <AddTaskForm projectId={projectId} onTaskAdded={onTaskAdded} onClose={onClose} defaultPriority={defaultPriority} />
         </div>
       </div>
     </div>

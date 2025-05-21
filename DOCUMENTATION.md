@@ -198,6 +198,13 @@ This section tracks the features implemented and the planned next steps based on
 *   **Bug Fixes:**
     *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
 
+*   **UI Interactivity - Task Panel to Project List Navigation:**
+    *   In the "Upcoming Tasks" panel (`StandaloneTaskList.js`), project names are now clickable.
+    *   Clicking a project name scrolls the corresponding project in the "Your Projects" list (`ProjectList.js`) into view and applies a temporary visual highlight.
+    *   This is achieved using a new React Context (`TargetProjectContext`) to communicate the `targetProjectId` between the two components.
+    *   `ProjectList.js` uses `useEffect` and `refs` to identify and manipulate the target project item, and `scrollIntoView()` for navigation.
+    *   When the last open task in a project (`ProjectItem.js`) is marked as complete, an alert notifies the user, and the project is then highlighted and scrolled into view, prompting for next actions (add tasks or update project status).
+
 ### Remaining PRD Features (Next Steps):
 
 *   Identifying and potentially removing unused database fields from the UI (user request).

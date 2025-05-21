@@ -1,11 +1,50 @@
 'use client';
 
+import { useEffect, useRef, createRef } from 'react';
 import ProjectItem from './ProjectItem';
+import { useTargetProject } from '@/contexts/TargetProjectContext';
 
 // Define priority order for rendering groups
 // const PRIORITY_ORDER = ['High', 'Medium', 'Low', 'Other']; // No longer needed
 
 export default function ProjectList({ projects, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }) {
+  const { targetProjectId, setTargetProjectId } = useTargetProject();
+  const projectRefs = useRef({});
+
+  // Ensure refs are created for each project
+  useEffect(() => {
+    projects.forEach(project => {
+      if (!projectRefs.current[project.id]) {
+        projectRefs.current[project.id] = createRef();
+      }
+    });
+    // Optional: Clean up refs for projects that no longer exist, if necessary
+  }, [projects]);
+
+  useEffect(() => {
+    if (targetProjectId && projectRefs.current[targetProjectId] && projectRefs.current[targetProjectId].current) {
+      const targetElement = projectRefs.current[targetProjectId].current;
+      
+      targetElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+
+      // Apply a temporary highlight
+      targetElement.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2', 'transition-all', 'duration-1500', 'ease-out');
+      // targetElement.style.transition = 'outline 0.5s ease-in-out';
+      // targetElement.style.outline = '2px solid blue';
+
+      const timer = setTimeout(() => {
+        targetElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2', 'transition-all', 'duration-1500', 'ease-out');
+        // targetElement.style.outline = '';
+        setTargetProjectId(null); // Clear the target project ID
+      }, 1500); // Highlight duration
+
+      return () => clearTimeout(timer); // Cleanup timer
+    }
+  }, [targetProjectId, setTargetProjectId, projects]);
+
   // Check if there are any projects across all groups
   // const isEmpty = PRIORITY_ORDER.every(groupKey => 
   //   !groupedProjects[groupKey] || groupedProjects[groupKey].length === 0
@@ -50,10 +89,12 @@ export default function ProjectList({ projects, onProjectDataChange, onProjectDe
       {projects.map(project => (
         <ProjectItem 
           key={project.id} 
+          ref={projectRefs.current[project.id]}
           project={project} 
           onProjectDataChange={onProjectDataChange} 
           onProjectDeleted={onProjectDeleted} 
           areAllTasksExpanded={areAllTasksExpanded}
+          // isTargeted={project.id === targetProjectId} // We can pass this if ProjectItem handles its own highlight
         />
       ))}
     </div>

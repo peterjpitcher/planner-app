@@ -15,7 +15,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState([
-    { name: '', description: '', dueDate: '', priority: 'Medium' }
+    { name: '', description: '', dueDate: '', priority: '' }
   ]);
   const [taskErrors, setTaskErrors] = useState([]);
 
@@ -30,7 +30,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
     setTasks(tasks => tasks.map((t, i) => i === idx ? { ...t, [field]: value } : t));
   };
   const handleAddTask = () => {
-    setTasks(tasks => [...tasks, { name: '', description: '', dueDate: '', priority: 'Medium' }]);
+    setTasks(tasks => [...tasks, { name: '', description: '', dueDate: '', priority: '' }]);
   };
   const handleRemoveTask = (idx) => {
     setTasks(tasks => tasks.filter((_, i) => i !== idx));
@@ -84,7 +84,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
               name: t.name.trim(),
               description: t.description.trim() || null,
               due_date: t.dueDate || null,
-              priority: t.priority,
+              priority: t.priority || priority,
             })));
           if (taskError) taskInsertError = taskError;
         }
@@ -220,7 +220,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
                 className="px-2 py-1 border border-gray-300 rounded-md text-xs"
               />
               <select
-                value={task.priority}
+                value={task.priority || priority}
                 onChange={e => handleTaskChange(idx, 'priority', e.target.value)}
                 className="px-2 py-1 border border-gray-300 rounded-md text-xs"
               >

@@ -1,5 +1,6 @@
 import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext' // Adjust path as necessary
+import { TargetProjectProvider } from '@/contexts/TargetProjectContext'
 
 export const metadata = {
   title: 'Planner App',
@@ -11,7 +12,9 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <AuthProvider>
-          {children}
+          <TargetProjectProvider>
+            {children}
+          </TargetProjectProvider>
         </AuthProvider>
       </body>
     </html>

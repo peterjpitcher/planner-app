@@ -5,12 +5,12 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { quickPickOptions } from '@/lib/dateUtils';
 
-export default function AddTaskForm({ projectId, onTaskAdded, onClose }) {
+export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPriority }) {
   const { user } = useAuth();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState('Medium'); // Default priority for tasks
+  const [priority, setPriority] = useState(defaultPriority || 'Medium');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -130,16 +130,21 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose }) {
         </div>
       </div>
 
-      <div className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="mt-2 flex flex-wrap gap-2 w-full">
         {quickPickOptions.map(option => (
-          <button
+          <span
             key={option.label}
-            type="button"
+            role="button"
+            tabIndex={0}
             onClick={() => setDueDate(option.getValue())}
-            className="px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300 text-center"
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') setDueDate(option.getValue());
+            }}
+            className="px-2 py-1 rounded-full bg-gray-200 text-xs font-medium text-gray-700 cursor-pointer hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 select-none"
+            style={{ minWidth: 60, textAlign: 'center' }}
           >
             {option.label}
-          </button>
+          </span>
         ))}
       </div>
 

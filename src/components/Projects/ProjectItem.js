@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, forwardRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { quickPickOptions } from '@/lib/dateUtils';
@@ -14,6 +14,7 @@ import AddTaskModal from '@/components/Tasks/AddTaskModal';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
 import ProjectCompletionModal from './ProjectCompletionModal';
+import { useTargetProject } from '@/contexts/TargetProjectContext';
 
 const getPriorityClasses = (priority) => {
   switch (priority) {
@@ -82,7 +83,7 @@ const getStatusClasses = (status) => {
   }
 };
 
-export default function ProjectItem({ project, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }) {
+const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
@@ -108,6 +109,8 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
   const [currentPriority, setCurrentPriority] = useState(project ? project.priority : 'Medium');
   const [isEditingStakeholders, setIsEditingStakeholders] = useState(false);
   const [currentStakeholdersText, setCurrentStakeholdersText] = useState(project && project.stakeholders ? project.stakeholders.join(', ') : '');
+
+  const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
     if (areAllTasksExpanded !== undefined) {
@@ -238,24 +241,38 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
   };
 
   const handleTaskAdded = (newTask) => {
-    setTasks(prevTasks => [newTask, ...prevTasks].sort((a, b) => {
+    const newTasks = [newTask, ...tasks].sort((a, b) => {
         if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
         return 0;
-    }));
+    });
+    setTasks(newTasks);
     setShowAddTaskModal(false);
     if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
     updateParentProjectTimestamp();
   };
 
   const handleTaskUpdated = (updatedTask) => { 
-    setTasks(prevTasks => prevTasks.map(t => t.id === updatedTask.id ? updatedTask : t)
+    const updatedTasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t)
         .sort((a, b) => {
             if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
             return 0;
-        })
-    );
+        });
+    setTasks(updatedTasks);
+
     if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
     updateParentProjectTimestamp();
+
+    // Check if all tasks are now complete for this project
+    if (updatedTask.is_completed && project) {
+      const allTasksForProjectNowComplete = updatedTasks.every(t => t.is_completed);
+      if (allTasksForProjectNowComplete && updatedTasks.length > 0) { // Ensure there were tasks to begin with
+        // Use a timeout to allow the UI to update and then show the alert/scroll
+        setTimeout(() => {
+          alert(`Project '${project.name}' now has no open tasks. Consider adding new tasks or updating the project status.`);
+          setTargetProjectId(project.id);
+        }, 100); // Small delay for UI updates
+      }
+    }
   };
 
   const handleDeleteProject = async () => {
@@ -523,7 +540,10 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
   const completedTasksCount = tasks.length - openTasksCount;
 
   return (
-    <div className={`rounded-lg shadow-md mb-3 transition-all duration-300 ease-in-out hover:shadow-lg ${projectPriorityClasses} ${isProjectCompletedOrCancelled ? 'opacity-70' : ''}`}>
+    <div 
+      ref={ref}
+      id={`project-item-${project.id}`}
+      className={`rounded-lg shadow-md mb-3 transition-all duration-300 ease-in-out hover:shadow-lg ${projectPriorityClasses} ${isProjectCompletedOrCancelled ? 'opacity-70' : ''}`}>
       <div 
         className="p-2.5 sm:p-3 border-b border-gray-200 cursor-pointer" 
         onClick={() => !isMenuOpen && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingStakeholders && setShowTasks(!showTasks)} 
@@ -858,6 +878,7 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
       {showAddTaskModal && (
         <AddTaskModal
           projectId={project.id}
+          defaultPriority={project.priority}
           onClose={() => setShowAddTaskModal(false)}
           onTaskAdded={handleTaskAdded}
         />
@@ -871,4 +892,8 @@ export default function ProjectItem({ project, onProjectDataChange, onProjectDel
       />
     </div>
   );
-}
+});
+
+ProjectItem.displayName = 'ProjectItem';
+
+export default ProjectItem;

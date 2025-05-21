@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { PencilIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { useTargetProject } from '@/contexts/TargetProjectContext';
 
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
@@ -67,7 +68,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   const [currentName, setCurrentName] = useState(task.name);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [currentDueDate, setCurrentDueDate] = useState(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '');
-  // No priority editing in this simple list for now, just display
+  const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
     setCurrentName(task.name);
@@ -147,6 +148,12 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
 
   const itemPriorityClass = getStandaloneTaskPriorityStyling(task.priority);
 
+  const handleProjectClick = () => {
+    if (project && project.id) {
+      setTargetProjectId(project.id);
+    }
+  };
+
   return (
     <div className={`p-1.5 border-b border-gray-200 flex items-start gap-2 rounded-md mb-1 ${itemPriorityClass} ${task.is_completed ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'}`}>
       <input 
@@ -215,7 +222,11 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               </span>
           )}
            {project && (
-            <span className="text-gray-500 truncate" title={`Project: ${project.name}`}>
+            <span 
+              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer truncate"
+              title={`Go to project: ${project.name}`}
+              onClick={handleProjectClick}
+            >
               Proj: {project.name}
             </span>
           )}

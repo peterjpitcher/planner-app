@@ -202,7 +202,15 @@ export default function TaskItem({ task, onTaskUpdated }) {
 
   const handleTaskNameUpdate = createUpdateHandler('name', currentTaskName, task ? task.name : '', setCurrentTaskName, setIsEditingTaskName);
   const handleTaskDescriptionUpdate = createUpdateHandler('description', currentTaskDescription, task ? task.description : '', setCurrentTaskDescription, setIsEditingTaskDescription);
-  const handleDueDateUpdate = createUpdateHandler('due_date', currentDueDate, task ? task.due_date : null, setCurrentDueDate, setIsEditingDueDate, true);
+  const handleDueDateUpdate = (overrideValue) =>
+    createUpdateHandler(
+      'due_date',
+      overrideValue !== undefined ? overrideValue : currentDueDate,
+      task ? task.due_date : null,
+      setCurrentDueDate,
+      setIsEditingDueDate,
+      true
+    )();
 
   const createKeyDownHandler = (updateHandler, originalValue, setter, editSetter, isDate = false) => (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { 
@@ -217,7 +225,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
   
   const handleTaskNameInputKeyDown = createKeyDownHandler(handleTaskNameUpdate, task ? task.name : '', setCurrentTaskName, setIsEditingTaskName);
   const handleTaskDescriptionKeyDown = createKeyDownHandler(handleTaskDescriptionUpdate, task ? task.description : '', setCurrentTaskDescription, setIsEditingTaskDescription);
-  const handleDueDateInputKeyDown = createKeyDownHandler(handleDueDateUpdate, task ? task.due_date : null, setCurrentDueDate, setIsEditingDueDate, true);
+  const handleDueDateInputKeyDown = createKeyDownHandler(handleDueDateUpdate, task ? task.due_date : null, setCurrentDueDate, setIsEditingDueDate);
 
   const itemBaseClasses = "p-1.5 rounded-md shadow-sm mb-1.5 flex flex-col transition-all hover:shadow-md";
   const completedItemVisualClasses = isCompleted ? "opacity-60 hover:opacity-80" : "";
@@ -311,21 +319,31 @@ export default function TaskItem({ task, onTaskUpdated }) {
                 className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 px-1.5 w-[130px]"
                 autoFocus
               />
-              <div className="mt-1 grid grid-cols-3 gap-1 w-[130px]">
-                  {quickPickOptions.slice(0,3).map(opt => (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => {
-                        const newDate = opt.getDate();
-                        setCurrentDueDate(format(newDate, 'yyyy-MM-dd'));
-                      }}
-                      className="text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full py-0.5 px-1 text-center"
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-2 flex flex-wrap gap-2 w-full">
+                {quickPickOptions.map(opt => (
+                  <span
+                    key={opt.label}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      const newDate = format(opt.getValue(), 'yyyy-MM-dd');
+                      setCurrentDueDate(newDate);
+                      handleDueDateUpdate(newDate);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        const newDate = format(opt.getValue(), 'yyyy-MM-dd');
+                        setCurrentDueDate(newDate);
+                        handleDueDateUpdate(newDate);
+                      }
+                    }}
+                    className="px-2 py-1 rounded-full bg-gray-200 text-xs font-medium text-gray-700 cursor-pointer hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 select-none"
+                    style={{ minWidth: 60, textAlign: 'center' }}
+                  >
+                    {opt.label}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : (
             <span 
