@@ -11,16 +11,16 @@ import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIc
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc } from 'date-fns';
 
 export default function DashboardPage() {
+  // All hooks must be called at the top level, before any conditional returns.
   const { user, session, loading, signOut } = useAuth();
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [allUserTasks, setAllUserTasks] = useState([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
-  const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true); // New state for expand/collapse all
+  const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true);
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [selectedStakeholder, setSelectedStakeholder] = useState('All Stakeholders');
-  
   const [activeDashboardFilters, setActiveDashboardFilters] = useState({
     overdue: false,
     noTasks: false,
@@ -33,77 +33,37 @@ export default function DashboardPage() {
       case 'High': return 1;
       case 'Medium': return 2;
       case 'Low': return 3;
-      default: return 4; // Other/undefined priorities last
+      default: return 4;
     }
   };
-
-  useEffect(() => {
-    if (!loading && (!user || !session)) {
-      router.replace('/login');
-    }
-  }, [user, session, loading, router]);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoadingData(true);
     try {
-      // Fetch projects
-      let projectQueryBase = supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user.id);
-
-      let finalProjectQuery;
-      if (showCompletedProjects) {
-        // Fetch all projects (Completed, Cancelled, and others)
-        finalProjectQuery = projectQueryBase;
-      } else {
-        // Fetch only projects that are NOT Completed and NOT Cancelled
-        finalProjectQuery = projectQueryBase
-          .neq('status', 'Completed')
-          .neq('status', 'Cancelled');
-      }
-
-      // Apply ordering to the determined query
+      let projectQueryBase = supabase.from('projects').select('*').eq('user_id', user.id);
+      let finalProjectQuery = showCompletedProjects 
+        ? projectQueryBase 
+        : projectQueryBase.neq('status', 'Completed').neq('status', 'Cancelled');
       finalProjectQuery = finalProjectQuery.order('due_date', { ascending: true, nullsFirst: false });
-
       const { data: projectData, error: projectError } = await finalProjectQuery;
       if (projectError) throw projectError;
 
-      // Client-side sort for secondary priority sorting if due dates are the same
       const finalSortedProjects = (projectData || []).sort((a, b) => {
         const dateA = a.due_date ? parseISO(a.due_date) : null;
         const dateB = b.due_date ? parseISO(b.due_date) : null;
-        
-        // Handle cases where one due date is null and the other isn't (respecting nullsFirst: false logic from DB)
-        if (dateA === null && dateB !== null) return 1; // a (null) comes after b (not null)
-        if (dateA !== null && dateB === null) return -1; // a (not null) comes before b (null)
-
-        // If both are null or both are not null and dates are different, use compareAsc
-        if (dateA && dateB && dateA.getTime() !== dateB.getTime()) {
-          // This should ideally be covered by DB sort, but as a fallback or for exact same date values
-          // This part might be redundant if DB sort is perfect for due_date including time.
-          // Let's assume due_date is just a date, so different dates are handled by DB.
-        }
-
-        // If due dates are effectively the same (both null or same date value), then sort by priority
+        if (dateA === null && dateB !== null) return 1;
+        if (dateA !== null && dateB === null) return -1;
         const priorityA = getPriorityValue(a.priority);
         const priorityB = getPriorityValue(b.priority);
-        if (priorityA !== priorityB) {
-          return priorityA - priorityB;
-        }
-        return 0; // Keep original order if due dates and priorities are identical
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return 0;
       });
       setProjects(finalSortedProjects);
 
-      // Fetch all user tasks
-      const { data: taskData, error: taskError } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', user.id);
+      const { data: taskData, error: taskError } = await supabase.from('tasks').select('*').eq('user_id', user.id);
       if (taskError) throw taskError;
       setAllUserTasks(taskData || []);
-
     } catch (error) {
       console.error('Error fetching data:', error);
       setProjects([]);
@@ -111,57 +71,37 @@ export default function DashboardPage() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [user, showCompletedProjects]); // showCompletedProjects is a dependency for re-fetching
+  }, [user, showCompletedProjects]);
 
   useEffect(() => {
     if (user) {
       fetchData();
     }
-  }, [user, fetchData]); // fetchData includes showCompletedProjects, so it's covered
+  }, [user, fetchData]);
+  
+  useEffect(() => {
+    if (!loading && (!user || !session)) {
+      router.replace('/login');
+    }
+  }, [user, session, loading, router]);
 
   const twoWeeksAgo = useMemo(() => subWeeks(new Date(), 2), []);
 
   const projectAnalysis = useMemo(() => {
-    const overdue = [];
-    const noTasks = [];
-    const untouched = [];
-    const noDueDate = [];
-
+    const overdue = [], noTasks = [], untouched = [], noDueDate = [];
     projects.forEach(p => {
-      // Overdue check
-      if (p.due_date && isPast(parseISO(p.due_date)) && p.status !== 'Completed' && p.status !== 'Cancelled') {
-        overdue.push(p.id);
-      }
-
+      if (p.due_date && isPast(parseISO(p.due_date)) && p.status !== 'Completed' && p.status !== 'Cancelled') overdue.push(p.id);
       const tasksForProject = allUserTasks.filter(t => t.project_id === p.id);
-      // No tasks check
-      if (tasksForProject.length === 0) {
-        noTasks.push(p.id);
-      }
-
-      // Untouched check
+      if (tasksForProject.length === 0) noTasks.push(p.id);
       const projectLastUpdated = parseISO(p.updated_at);
       let projectIsUntouched = projectLastUpdated < twoWeeksAgo;
       if (projectIsUntouched && tasksForProject.length > 0) {
-        const anyRecentTask = tasksForProject.some(t => parseISO(t.updated_at) >= twoWeeksAgo);
-        if (anyRecentTask) {
-          projectIsUntouched = false; 
-        }
+        if (tasksForProject.some(t => parseISO(t.updated_at) >= twoWeeksAgo)) projectIsUntouched = false;
       }
-      if (projectIsUntouched) {
-        untouched.push(p.id);
-      }
-
-      // No Due Date check (project itself OR any of its tasks)
+      if (projectIsUntouched) untouched.push(p.id);
       let projectOrTaskHasNoDueDate = !p.due_date;
-      if (!projectOrTaskHasNoDueDate) { // If project has a due date, check tasks
-        if (tasksForProject.some(t => !t.due_date)) {
-          projectOrTaskHasNoDueDate = true;
-        }
-      }
-      if (projectOrTaskHasNoDueDate) {
-        noDueDate.push(p.id);
-      }
+      if (!projectOrTaskHasNoDueDate && tasksForProject.some(t => !t.due_date)) projectOrTaskHasNoDueDate = true;
+      if (projectOrTaskHasNoDueDate) noDueDate.push(p.id);
     });
     return { overdue, noTasks, untouched, noDueDate };
   }, [projects, allUserTasks, twoWeeksAgo]);
@@ -171,44 +111,98 @@ export default function DashboardPage() {
     if (selectedStakeholder !== 'All Stakeholders') {
       tempProjects = tempProjects.filter(p => p.stakeholders && p.stakeholders.includes(selectedStakeholder));
     }
-    if (activeDashboardFilters.overdue) {
-      tempProjects = tempProjects.filter(p => projectAnalysis.overdue.includes(p.id));
-    }
-    if (activeDashboardFilters.noTasks) {
-      tempProjects = tempProjects.filter(p => projectAnalysis.noTasks.includes(p.id));
-    }
-    if (activeDashboardFilters.untouched) {
-      tempProjects = tempProjects.filter(p => projectAnalysis.untouched.includes(p.id));
-    }
-    if (activeDashboardFilters.noDueDate) {
-      tempProjects = tempProjects.filter(p => projectAnalysis.noDueDate.includes(p.id));
-    }
+    if (activeDashboardFilters.overdue) tempProjects = tempProjects.filter(p => projectAnalysis.overdue.includes(p.id));
+    if (activeDashboardFilters.noTasks) tempProjects = tempProjects.filter(p => projectAnalysis.noTasks.includes(p.id));
+    if (activeDashboardFilters.untouched) tempProjects = tempProjects.filter(p => projectAnalysis.untouched.includes(p.id));
+    if (activeDashboardFilters.noDueDate) tempProjects = tempProjects.filter(p => projectAnalysis.noDueDate.includes(p.id));
     return tempProjects;
   }, [projects, selectedStakeholder, activeDashboardFilters, projectAnalysis]);
 
-  if (loading || isLoadingData) { // Use combined loading state
+  const handleProjectAdded = useCallback((newProject) => {
+    if (!newProject || !newProject.id) {
+      console.error('Attempted to add invalid project', newProject);
+      fetchData(); 
+      return;
+    }
+    setProjects(prevProjects => {
+      const updated = [newProject, ...prevProjects];
+      return updated.sort((a, b) => {
+        const dateA = a.due_date ? parseISO(a.due_date) : null;
+        const dateB = b.due_date ? parseISO(b.due_date) : null;
+        if (dateA === null && dateB !== null) return 1;
+        if (dateA !== null && dateB === null) return -1;
+        const priorityA = getPriorityValue(a.priority);
+        const priorityB = getPriorityValue(b.priority);
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return 0; 
+      });
+    });
+    setShowAddProjectModal(false);
+  }, [fetchData]); // Added fetchData to dependency array
+  
+  const handleGenericDataRefreshNeeded = useCallback(() => {
+    fetchData();
+  }, [fetchData]); // Added fetchData to dependency array
+
+  const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project') => {
+    if (itemType === 'task_added') {
+      const newTask = changedData;
+      setAllUserTasks(prevTasks => [newTask, ...prevTasks].sort((a,b) => compareAsc(parseISO(a.created_at), parseISO(b.created_at)) ));
+      setProjects(prevProjects => 
+        prevProjects.map(p => p.id === newTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p)
+      );
+    } else if (itemType === 'task_updated') {
+      const updatedTask = changedData;
+      setAllUserTasks(prevTasks => prevTasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+      setProjects(prevProjects => 
+        prevProjects.map(p => p.id === updatedTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p)
+      );
+    } else if (itemType === 'project_status_changed' || itemType === 'project_details_changed') {
+      const updatedProjectPartial = changedData;
+      setProjects(prevProjects => 
+        prevProjects.map(p => p.id === itemId ? { ...p, ...updatedProjectPartial, updated_at: new Date().toISOString() } : p)
+        .filter(p => showCompletedProjects || (p.status !== 'Completed' && p.status !== 'Cancelled'))
+         .sort((a, b) => {
+            const dateA = a.due_date ? parseISO(a.due_date) : null;
+            const dateB = b.due_date ? parseISO(b.due_date) : null;
+            if (dateA === null && dateB !== null) return 1;
+            if (dateA !== null && dateB === null) return -1;
+            const priorityA = getPriorityValue(a.priority);
+            const priorityB = getPriorityValue(b.priority);
+            if (priorityA !== priorityB) return priorityA - priorityB;
+            return 0; 
+          })
+      );
+    } else {
+      fetchData(); 
+    }
+  }, [showCompletedProjects, fetchData]); // Added fetchData to dependency array
+
+  const handleProjectDeleted = useCallback((deletedProjectId) => {
+    setProjects(prevProjects => prevProjects.filter(p => p.id !== deletedProjectId));
+    setAllUserTasks(prevTasks => prevTasks.filter(t => t.project_id !== deletedProjectId));
+  }, []);
+
+  const toggleExpandAllTasks = useCallback(() => {
+    setAreAllTasksExpanded(prev => !prev);
+  }, []);
+
+  const uniqueStakeholders = useMemo(() => Array.from(
+    new Set(projects.flatMap(p => p.stakeholders || []).filter(sh => sh && sh.trim() !== ''))
+  ).sort(), [projects]);
+
+  const toggleDashboardFilter = useCallback((filterName) => {
+    setActiveDashboardFilters(prev => ({ ...prev, [filterName]: !prev[filterName] }));
+  }, []);
+  
+  // Conditional return must be AFTER all hook definitions
+  if (loading || isLoadingData) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <p>Loading dashboard...</p>
       </div>
     );
   }
-  
-  const handleProjectDataChanged = () => { // Renamed from handleProjectAdded for generic refresh
-    fetchData();
-  };
-
-  const toggleExpandAllTasks = () => {
-    setAreAllTasksExpanded(prev => !prev);
-  };
-
-  const uniqueStakeholders = Array.from(
-    new Set(projects.flatMap(p => p.stakeholders || []).filter(sh => sh && sh.trim() !== ''))
-  ).sort();
-
-  const toggleDashboardFilter = (filterName) => {
-    setActiveDashboardFilters(prev => ({ ...prev, [filterName]: !prev[filterName] }));
-  };
   
   const FilterButton = ({ filterKey, icon, label, count }) => {
     const isActive = activeDashboardFilters[filterKey];
@@ -217,23 +211,18 @@ export default function DashboardPage() {
       <button
         onClick={() => toggleDashboardFilter(filterKey)}
         className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors
-          ${isActive 
-            ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-300' 
-            : hasItems 
-              ? 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200' 
-              : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-          }
-          ${!hasItems && !isActive ? 'opacity-60 cursor-not-allowed' : ''}
-        `}
+          ${isActive ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-300' 
+            : hasItems ? 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200' 
+            : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}
+          ${!hasItems && !isActive ? 'opacity-60 cursor-not-allowed' : ''}`}
         disabled={!hasItems && !isActive}
-        title={isActive ? `Deactivate '${label}' filter` : `Activate '${label}' filter (${count} items)`}
-      >
-        {icon}
-        <span>{label}</span>
+        title={isActive ? `Deactivate '${label}' filter` : `Activate '${label}' filter (${count} items)`}>
+        {icon}<span>{label}</span>
         <span className={`px-1.5 py-0.5 rounded-full text-xs ml-1 ${isActive ? 'bg-white text-indigo-600' : hasItems ? 'bg-red-200 text-red-800' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
       </button>
     );
-  };
+  }; // FilterButton should also be defined before the main return if it uses hooks, or outside if it doesn't.
+     // In this case, it's a simple component not using hooks, so its position is fine here as a helper within DashboardPage.
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
@@ -247,8 +236,7 @@ export default function DashboardPage() {
             <div className="flex items-center space-x-3 mt-3 sm:mt-0">
                 <button 
                     onClick={() => setShowAddProjectModal(true)}
-                    className="flex items-center px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm"
-                >
+                    className="flex items-center px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm">
                     <PlusCircleIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5" />
                     New Project
                 </button>
@@ -258,8 +246,7 @@ export default function DashboardPage() {
                     await signOut();
                     router.push('/login');
                     }}
-                    className="px-3 py-2 bg-red-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-red-600 transition-colors shadow-sm"
-                >
+                    className="px-3 py-2 bg-red-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-red-600 transition-colors shadow-sm">
                     Sign Out
                 </button>
                 )}
@@ -281,8 +268,7 @@ export default function DashboardPage() {
                     name="stakeholder-filter"
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
                     value={selectedStakeholder}
-                    onChange={(e) => setSelectedStakeholder(e.target.value)}
-                  >
+                    onChange={(e) => setSelectedStakeholder(e.target.value)}>
                     <option value="All Stakeholders">All Stakeholders</option>
                     {uniqueStakeholders.map(stakeholder => (
                       <option key={stakeholder} value={stakeholder}>{stakeholder}</option>
@@ -292,18 +278,16 @@ export default function DashboardPage() {
                 
                 <div className="flex md:justify-start items-center pt-5 space-x-3">
                     <button
-                        onClick={() => { setShowCompletedProjects(prev => !prev); }}
+                        onClick={() => { setShowCompletedProjects(prev => !prev); /* This will trigger re-fetch via fetchData dependency */ }}
                         className="flex items-center text-sm text-gray-600 hover:text-indigo-600 p-2 rounded-md hover:bg-gray-100"
-                        title={showCompletedProjects ? "Hide completed/cancelled projects" : "Show completed/cancelled projects"}
-                    >
+                        title={showCompletedProjects ? "Hide completed/cancelled projects" : "Show completed/cancelled projects"}>
                         {showCompletedProjects ? <EyeSlashIcon className="h-5 w-5 mr-1.5" /> : <EyeIcon className="h-5 w-5 mr-1.5" />}
                         {showCompletedProjects ? 'Hide Completed/Cancelled' : 'Show Completed/Cancelled'}
                     </button>
                     <button
                         onClick={toggleExpandAllTasks}
                         className="flex items-center text-sm text-gray-600 hover:text-indigo-600 p-2 rounded-md hover:bg-gray-100"
-                        title={areAllTasksExpanded ? "Collapse all project task lists" : "Expand all project task lists"}
-                    >
+                        title={areAllTasksExpanded ? "Collapse all project task lists" : "Expand all project task lists"}>
                         {areAllTasksExpanded ? <ArrowsPointingInIcon className="h-5 w-5 mr-1.5" /> : <ArrowsPointingOutIcon className="h-5 w-5 mr-1.5" />}
                         {areAllTasksExpanded ? 'Collapse All Tasks' : 'Expand All Tasks'}
                     </button>
@@ -331,8 +315,8 @@ export default function DashboardPage() {
                 ) : baseFilteredProjects.length > 0 ? (
                 <ProjectList 
                   projects={baseFilteredProjects}
-                  onProjectDataChange={handleProjectDataChanged} 
-                  onProjectDeleted={handleProjectDataChanged} 
+                  onProjectDataChange={handleProjectDataChange} 
+                  onProjectDeleted={handleProjectDeleted} 
                   areAllTasksExpanded={areAllTasksExpanded}
                 />
                 ) : (
@@ -360,7 +344,7 @@ export default function DashboardPage() {
                 <StandaloneTaskList 
                     allUserTasks={allUserTasks} 
                     projects={projects} 
-                    onTaskUpdateNeeded={handleProjectDataChanged} 
+                    onTaskUpdateNeeded={(updatedTask) => handleProjectDataChange(updatedTask.id, updatedTask, 'task_updated')}
                 />
             )}
           </aside>
@@ -371,7 +355,7 @@ export default function DashboardPage() {
         <AddProjectModal 
           isOpen={showAddProjectModal}
           onClose={() => setShowAddProjectModal(false)} 
-          onProjectAdded={handleProjectDataChanged}
+          onProjectAdded={handleProjectAdded}
         />
       )}
     </div>

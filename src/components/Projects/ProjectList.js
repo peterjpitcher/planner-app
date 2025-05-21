@@ -10,6 +10,7 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 export default function ProjectList({ projects, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }) {
   const { targetProjectId, setTargetProjectId } = useTargetProject();
   const projectRefs = useRef({});
+  const actionedProjectIdRef = useRef(null); // Tracks the ID that caused the last scroll/highlight action
 
   // Ensure refs are created for each project
   useEffect(() => {
@@ -22,26 +23,41 @@ export default function ProjectList({ projects, onProjectDataChange, onProjectDe
   }, [projects]);
 
   useEffect(() => {
-    if (targetProjectId && projectRefs.current[targetProjectId] && projectRefs.current[targetProjectId].current) {
-      const targetElement = projectRefs.current[targetProjectId].current;
-      
-      targetElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      });
+    if (!targetProjectId) {
+      actionedProjectIdRef.current = null;
+      return; 
+    }
 
-      // Apply a temporary highlight
-      targetElement.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2', 'transition-all', 'duration-1500', 'ease-out');
-      // targetElement.style.transition = 'outline 0.5s ease-in-out';
-      // targetElement.style.outline = '2px solid blue';
+    if (targetProjectId !== actionedProjectIdRef.current) {
+      const targetElement = projectRefs.current[targetProjectId]?.current;
 
-      const timer = setTimeout(() => {
-        targetElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2', 'transition-all', 'duration-1500', 'ease-out');
-        // targetElement.style.outline = '';
-        setTargetProjectId(null); // Clear the target project ID
-      }, 1500); // Highlight duration
+      if (targetElement) {
+        targetElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
 
-      return () => clearTimeout(timer); // Cleanup timer
+        targetElement.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+        actionedProjectIdRef.current = targetProjectId;
+
+        const timer = setTimeout(() => {
+          const currentActionedElement = projectRefs.current[actionedProjectIdRef.current]?.current;
+          if (currentActionedElement) {
+            currentActionedElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+          }
+          
+          if (actionedProjectIdRef.current === targetProjectId) {
+            setTargetProjectId(null);
+          }
+        }, 1000); // Highlight for 1 second
+
+        return () => {
+          clearTimeout(timer);
+          if (targetElement && targetElement.classList.contains('ring-2')) {
+            targetElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+          }
+        };
+      } 
     }
   }, [targetProjectId, setTargetProjectId, projects]);
 

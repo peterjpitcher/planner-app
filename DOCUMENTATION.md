@@ -163,6 +163,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Task names in `TaskItem.js` can be edited in-line.
     *   Task descriptions (`task.description`) in `TaskItem.js` are editable in-line. The `InformationCircleIcon` was removed; editing is triggered by clicking the description text. The description is now displayed more compactly next to the task name.
     *   Task Due Dates are editable in-line in `TaskItem.js` using a date input.
+    *   The quick date-pick buttons (e.g., "Tomorrow", "+2 days") associated with the task due date input in `TaskItem.js` have been removed as they were not functioning correctly and per user request.
 *   **UI Enhancements & Layout:**
     *   `AddProjectForm` moved into `AddProjectModal`. Dashboard has a "New Project" button in the header.
     *   Project list on dashboard takes full width when `AddProjectForm` is not shown.
@@ -186,6 +187,9 @@ This section tracks the features implemented and the planned next steps based on
     *   Corrected `AuthContext.js` `useEffect` cleanup for `onAuthStateChange` listener (`authListener.subscription.unsubscribe()`).
     *   Resolved Supabase error "Could not find the 'last_activity_at' column" by removing `last_activity_at` from all update objects in `ProjectItem.js`, relying on `updated_at`.
     *   Fixed React Hook order error in `DashboardPage.js` by moving `filteredProjects` `useMemo` before early returns.
+    *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
+    *   Fixed "Converting circular structure to JSON" error when updating task due dates using quick-pick buttons in `TaskItem.js`. This was caused by the `onBlur` event on the date input field incorrectly passing the event object to the update handler. The fix involved wrapping the `handleDueDateUpdate` call in an arrow function: `onBlur={() => handleDueDateUpdate()}`.
+    *   Improved stability of task inline editing in `TaskItem.js` for due dates set by quick-pick buttons by refactoring the main `useEffect` to conditionally update local state from props based on editing mode flags.
 *   **Mobile Responsiveness (Phase 1):**
     *   `ProjectItem.js`:
         *   Stakeholder display adjusted for `xs` screens: Shows full name for 1, names for 2, or "Name +N more" for >2. Full list on `sm+`.
@@ -197,13 +201,46 @@ This section tracks the features implemented and the planned next steps based on
         *   Layout refactored for a more compact, two-line display with improved truncation and element positioning.
 *   **Bug Fixes:**
     *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
+    *   Fixed "Converting circular structure to JSON" error when updating task due dates using quick-pick buttons in `TaskItem.js`. This was caused by the `onBlur` event on the date input field incorrectly passing the event object to the update handler. The fix involved wrapping the `handleDueDateUpdate` call in an arrow function: `onBlur={() => handleDueDateUpdate()}`.
+    *   (Duplicate of the above, consolidated into Error Fixes & Refinements) Improved stability of task inline editing in `TaskItem.js` for due dates set by quick-pick buttons by refactoring the main `useEffect` to conditionally update local state from props based on editing mode flags.
 
 *   **UI Interactivity - Task Panel to Project List Navigation:**
     *   In the "Upcoming Tasks" panel (`StandaloneTaskList.js`), project names are now clickable.
-    *   Clicking a project name scrolls the corresponding project in the "Your Projects" list (`ProjectList.js`) into view and applies a temporary visual highlight.
+    *   Clicking a project name scrolls the corresponding project in the "Your Projects" list (`ProjectList.js`) into view and applies a temporary visual highlight (ring effect for 1 second).
     *   This is achieved using a new React Context (`TargetProjectContext`) to communicate the `targetProjectId` between the two components.
-    *   `ProjectList.js` uses `useEffect` and `refs` to identify and manipulate the target project item, and `scrollIntoView()` for navigation.
+    *   `ProjectList.js` uses `useEffect` and `refs` to identify and manipulate the target project item, and `scrollIntoView()` for navigation. The scroll/highlight action is now more robust, only triggering for new target projects to prevent unwanted jumps during general data updates (using an `actionedProjectIdRef`).
     *   When the last open task in a project (`ProjectItem.js`) is marked as complete, an alert notifies the user, and the project is then highlighted and scrolled into view, prompting for next actions (add tasks or update project status).
+    *   To further prevent unwanted scrolling, `ProjectItem.js` now calls `setTargetProjectId(null)` when the user initiates an inline edit for project name, description, due date, priority, or stakeholders. This clears any active scroll target when the user focuses on editing.
+
+*   **Performance & UI Stability - Optimistic Updates:**
+    *   Refactored data handling in `DashboardPage.js` to use optimistic UI updates for most common operations (adding projects, adding/updating tasks, updating project details, deleting projects).
+    *   Instead of re-fetching all data from the database after each change (which caused page jumps), `DashboardPage.js` now updates its local state (`projects` and `allUserTasks` arrays) directly.
+    *   `handleProjectAdded`, `handleProjectDataChange`, and `handleProjectDeleted` in `DashboardPage.js` now perform these local state manipulations.
+    *   `ProjectItem.js` was updated to call the new `onProjectDataChange` prop with specific `itemType` and `changedData` arguments, enabling `DashboardPage.js` to perform the correct granular state update.
+    *   This significantly reduces unnecessary re-renders and improves UI responsiveness, resolving the issue where the page would jump when data was modified.
+    *   Full data re-fetches (`fetchData()`) are now reserved for actions that fundamentally change the dataset, like toggling the display of completed projects.
+    *   Fixed "Rules of Hooks" error in `DashboardPage.js` by ensuring all hooks are called at the top level before any conditional returns.
+
+*   **Notes Functionality:**
+    *   Fixed "Invalid parent type for note" error when adding notes to tasks by ensuring `parentType="task"` prop is correctly passed to `AddNoteForm` from `TaskItem.js`.
+    *   Modified `AddNoteForm.js` to use a single-line `<input type="text">` instead of `<textarea>`.
+    *   Pressing "Enter" in the note input now submits the note.
+    *   Pressing "Escape" in the note input now clears the field.
+    *   The visible submit button for notes has been hidden as "Enter" is the primary interaction.
+    *   **Note Indicators & UX (Tasks):**
+        *   In `TaskItem.js`, after a note is added, the notes section now automatically collapses.
+        *   A note count is displayed next to the `ChatBubbleLeftEllipsisIcon` if notes exist for the task.
+        *   Notes for a task are fetched on component mount/task change to ensure the count is accurate.
+    *   **Note Indicators & UX (Projects - Partially Implemented):**
+        *   In `ProjectItem.js`, the logic to collapse the notes section after adding a note has been implemented in `handleProjectNoteAdded`.
+        *   Logic to fetch project notes on component mount/project change (for accurate count) has been added.
+        *   **Awaiting manual review/correction:** The UI change to move the notes icon and count to the project header (next to expand/collapse tasks and before the kebab menu) was not successfully applied by the automated edit tool. The icon and count are currently incorrectly placed within the kebab menu dropdown.
+    *   **Note Styling:**
+        *   Individual notes displayed via `NoteItem.js` are now smaller (using `text-[0.7rem]` for content and `text-[0.65rem]` for timestamp).
+        *   The background and border have been removed from `NoteItem.js` to allow notes to blend with the parent card's background (e.g. project or task item background).
+        *   Padding around the notes section in `TaskItem.js` and `ProjectItem.js` has been slightly reduced to better suit the smaller note items and ensure no conflicting backgrounds are applied.
+        *   Vertical padding in `NoteItem.js` (`py-0.5`) and removed inter-note spacing in `NoteList.js` (removed `space-y-1`) to make the list of notes more compact.
+        *   The display format for individual notes in `NoteItem.js` is now `Date: Note Content` on a single line (e.g., "MMM d, h:mm a: Your note text here."), achieved by combining them into one paragraph element.
 
 ### Remaining PRD Features (Next Steps):
 

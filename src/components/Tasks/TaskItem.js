@@ -72,15 +72,21 @@ export default function TaskItem({ task, onTaskUpdated }) {
   // All useEffect and useCallback hooks
   useEffect(() => {
     if (task) {
+        // Always update non-editable fields like completion status directly from prop
         setIsCompleted(task.is_completed);
-        setCurrentTaskName(task.name);
-        setCurrentTaskDescription(task.description || '');
-        setCurrentDueDate(task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
-        if (isEditingTaskName && task.name !== currentTaskName) setIsEditingTaskName(false);
-        if (isEditingTaskDescription && (task.description || '') !== currentTaskDescription) setIsEditingTaskDescription(false);
-        if (isEditingDueDate && (task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '') !== currentDueDate) setIsEditingDueDate(false);
+
+        // Only update editable fields from prop if not currently being edited
+        if (!isEditingTaskName) {
+            setCurrentTaskName(task.name);
+        }
+        if (!isEditingTaskDescription) {
+            setCurrentTaskDescription(task.description || '');
+        }
+        if (!isEditingDueDate) {
+            setCurrentDueDate(task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
+        }
     }
-  }, [task, currentTaskName, currentTaskDescription, currentDueDate, isEditingTaskName, isEditingTaskDescription, isEditingDueDate]);
+  }, [task, isEditingTaskName, isEditingTaskDescription, isEditingDueDate]); // Removed currentXXX states from deps
 
   const fetchNotes = useCallback(async () => {
     if (!task || !task.id) return; 
@@ -102,6 +108,14 @@ export default function TaskItem({ task, onTaskUpdated }) {
       fetchNotes();
     }
   }, [showNotes, task, fetchNotes]);
+  
+  // Fetch notes on initial mount or when task.id changes to get note count
+  useEffect(() => {
+    if (task && task.id) {
+      fetchNotes();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]); // fetchNotes is memoized with task, so direct task.id is fine
   
   const taskNameInputRef = useRef(null);
   useEffect(() => {
@@ -125,6 +139,10 @@ export default function TaskItem({ task, onTaskUpdated }) {
 
   const handleNoteAdded = (newNote) => {
     setNotes(prevNotes => [newNote, ...prevNotes]);
+    setShowNotes(false); // Collapse notes section after adding
+    // Optionally, refetch notes if there's a chance of discrepancy or for updated timestamps from DB
+    // fetchNotes(); 
+    // However, optimistic update should be fine for count.
   };
 
   const priorityClasses = getTaskPriorityClasses(task.priority);
@@ -314,36 +332,11 @@ export default function TaskItem({ task, onTaskUpdated }) {
                 type="date"
                 value={currentDueDate}
                 onChange={handleDueDateChange}
-                onBlur={handleDueDateUpdate}
+                onBlur={() => handleDueDateUpdate()}
                 onKeyDown={handleDueDateInputKeyDown}
                 className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 px-1.5 w-[130px]"
                 autoFocus
               />
-              <div className="mt-2 flex flex-wrap gap-2 w-full">
-                {quickPickOptions.map(opt => (
-                  <span
-                    key={opt.label}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      const newDate = format(opt.getValue(), 'yyyy-MM-dd');
-                      setCurrentDueDate(newDate);
-                      handleDueDateUpdate(newDate);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        const newDate = format(opt.getValue(), 'yyyy-MM-dd');
-                        setCurrentDueDate(newDate);
-                        handleDueDateUpdate(newDate);
-                      }
-                    }}
-                    className="px-2 py-1 rounded-full bg-gray-200 text-xs font-medium text-gray-700 cursor-pointer hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 select-none"
-                    style={{ minWidth: 60, textAlign: 'center' }}
-                  >
-                    {opt.label}
-                  </span>
-                ))}
-              </div>
             </div>
           ) : (
             <span 
@@ -355,8 +348,19 @@ export default function TaskItem({ task, onTaskUpdated }) {
             </span>
           )}
           
-          <button onClick={() => setShowNotes(!showNotes)} className="text-gray-400 hover:text-indigo-600">
+          <button 
+            onClick={() => setShowNotes(!showNotes)} 
+            className="relative text-gray-400 hover:text-indigo-600 flex items-center"
+            aria-expanded={showNotes}
+            aria-controls={`notes-section-${task.id}`} // For accessibility
+            disabled={isLoadingNotes} // Disable while loading initial notes for count
+          >
             <ChatBubbleLeftEllipsisIcon className="h-4 w-4" />
+            {notes.length > 0 && (
+              <span className="ml-1 text-xs font-medium text-indigo-600">
+                ({notes.length})
+              </span>
+            )}
           </button>
           <span className="text-gray-400 text-2xs hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
             {updatedAgo}
@@ -366,19 +370,16 @@ export default function TaskItem({ task, onTaskUpdated }) {
 
       {/* Notes Section - now takes full width under the main task line */}
       {showNotes && (
-        <div className="mt-1.5 w-full pl-6">
-          <h4 className="text-xs font-medium text-gray-600 mb-0.5">Notes:</h4>
+        <div id={`notes-section-${task.id}`} className="mt-2 pt-1.5 border-t border-gray-200">
+          <AddNoteForm
+            parentId={task.id}
+            parentType="task"
+            onNoteAdded={handleNoteAdded}
+          />
           {isLoadingNotes ? (
             <p className="text-xs text-gray-500">Loading notes...</p>
           ) : (
-            <>
-              <AddNoteForm 
-                taskId={task.id} 
-                onNoteAdded={handleNoteAdded} 
-                disabled={isCompleted || isUpdatingTask}
-              />
-              <NoteList notes={notes} />
-            </>
+            <NoteList notes={notes} />
           )}
         </div>
       )}

@@ -183,6 +183,14 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     if (showProjectNotes && project && project.id) fetchProjectNotes();
   }, [showProjectNotes, project, fetchProjectNotes]);
 
+  // Fetch project notes on initial mount or when project.id changes to get note count
+  useEffect(() => {
+    if (project && project.id) {
+      fetchProjectNotes();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id]); // fetchProjectNotes is memoized with project, so direct project.id is fine
+
   if (!project) return null;
 
   const projectPriorityClasses = getPriorityClasses(currentPriority);
@@ -243,34 +251,38 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const handleTaskAdded = (newTask) => {
     const newTasks = [newTask, ...tasks].sort((a, b) => {
         if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-        return 0;
+        // Add secondary sort if needed, e.g., by created_at or priority
+        return 0; 
     });
     setTasks(newTasks);
     setShowAddTaskModal(false);
-    if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
-    updateParentProjectTimestamp();
+    if (onProjectDataChange && project && newTask) { // Ensure newTask is valid
+        onProjectDataChange(newTask.project_id, newTask, 'task_added');
+    }
+    // updateParentProjectTimestamp(); // This might be redundant if DashboardPage handles project updated_at
   };
 
   const handleTaskUpdated = (updatedTask) => { 
     const updatedTasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t)
         .sort((a, b) => {
             if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+            // Add secondary sort if needed
             return 0;
         });
     setTasks(updatedTasks);
 
-    if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
-    updateParentProjectTimestamp();
+    if (onProjectDataChange && project && updatedTask) { // Ensure updatedTask is valid
+        onProjectDataChange(updatedTask.project_id, updatedTask, 'task_updated');
+    }
+    // updateParentProjectTimestamp(); // Redundant if DashboardPage handles it
 
-    // Check if all tasks are now complete for this project
     if (updatedTask.is_completed && project) {
       const allTasksForProjectNowComplete = updatedTasks.every(t => t.is_completed);
-      if (allTasksForProjectNowComplete && updatedTasks.length > 0) { // Ensure there were tasks to begin with
-        // Use a timeout to allow the UI to update and then show the alert/scroll
+      if (allTasksForProjectNowComplete && updatedTasks.length > 0) { 
         setTimeout(() => {
           alert(`Project '${project.name}' now has no open tasks. Consider adding new tasks or updating the project status.`);
           setTargetProjectId(project.id);
-        }, 100); // Small delay for UI updates
+        }, 100); 
       }
     }
   };
@@ -291,7 +303,9 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
   const handleProjectNoteAdded = (newNote) => {
     setProjectNotes(prevNotes => [newNote, ...prevNotes]);
-    if (onProjectDataChange && project) onProjectDataChange(project.id, { updated_at: new Date().toISOString() });
+    setShowProjectNotes(false); // Collapse notes section after adding
+    // Inform dashboard that project data (implicitly updated_at for notes) changed
+    onProjectDataChange(project.id, { updated_at: new Date().toISOString() }, 'project_details_changed');
   };
 
   const formatNoteForCopy = (note) => {
@@ -376,7 +390,9 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .single();
       if (error) throw error;
       setCurrentStatus(newStatus);
-      if (onProjectDataChange && project) onProjectDataChange(project.id, { status: newStatus, updated_at: data.updated_at });
+      if (onProjectDataChange && project) { // Pass the full updated project object or essential fields
+          onProjectDataChange(project.id, data, 'project_status_changed');
+      }
       return true;
     } catch (err) {
       console.error('Error updating project status:', err);
@@ -476,8 +492,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           data[field]
         );
         const { last_activity_at, ...restOfUpdateObject } = updateObject;
-        if (onProjectDataChange && project) onProjectDataChange(project.id, restOfUpdateObject);
-        if (field === 'priority') setCurrentPriority(data.priority);
+        if (onProjectDataChange && project) { // Call the DashboardPage callback
+            onProjectDataChange(project.id, data, 'project_details_changed');
+        }
+        if (field === 'priority') setCurrentPriority(data.priority); // Local state for UI
       } else {
          alert(`Failed to update project ${field}. No data returned.`);
          setter(
@@ -539,6 +557,39 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const openTasksCount = tasks.filter(task => !task.is_completed).length;
   const completedTasksCount = tasks.length - openTasksCount;
 
+  const startEditingName = (e) => {
+    if (isProjectCompletedOrCancelled) return;
+    e.stopPropagation();
+    setTargetProjectId(null);
+    setIsEditingName(true);
+  };
+
+  const startEditingDescription = (e) => {
+    if (isProjectCompletedOrCancelled) return;
+    e.stopPropagation();
+    setTargetProjectId(null);
+    setIsEditingDescription(true);
+  };
+
+  const startEditingDueDate = (e) => {
+    if (isProjectCompletedOrCancelled || isEditingPriority || isEditingStakeholders) return;
+    e.stopPropagation();
+    setTargetProjectId(null);
+    setIsEditingDueDate(true);
+  };
+  
+  const startEditingStakeholders = (e) => {
+    if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate) return;
+    e.stopPropagation();
+    setTargetProjectId(null);
+    setIsEditingStakeholders(true);
+  };
+
+  const handlePrioritySelectClick = (e) => {
+    e.stopPropagation();
+    setTargetProjectId(null);
+  };
+
   return (
     <div 
       ref={ref}
@@ -572,11 +623,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
             ) : (
               <h3 
                 className={`text-base sm:text-lg font-semibold text-gray-800 truncate ${!isProjectCompletedOrCancelled ? 'cursor-text hover:bg-gray-100 rounded p-0.5 -m-0.5' : ''} ${currentStatus === 'Completed' ? 'line-through text-gray-500' : ''}`}
-                onClick={(e) => {
-                  if (isProjectCompletedOrCancelled) return;
-                  e.stopPropagation();
-                  setIsEditingName(true);
-                }}
+                onClick={startEditingName}
                 title={project.name}
               >
                 {currentName || 'Unnamed Project'}
@@ -655,13 +702,9 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               onChange={(e) => { 
                   setCurrentPriority(e.target.value); 
                   handlePriorityUpdate(e.target.value);
-                  setIsEditingPriority(false);
               }}
-              onBlur={() => setIsEditingPriority(false)}
-              onKeyDown={handlePriorityInputKeyDown}
               className={`${commonInputClasses} w-28`}
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
+              onClick={handlePrioritySelectClick}
             >
               {priorityOptions.map(p => <option key={p} value={p}>{p} Priority</option>)}
             </select>
@@ -678,6 +721,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                           onBlur={() => createUpdateHandler('due_date', currentDueDate, project.due_date, setCurrentDueDate, setIsEditingDueDate, false, true)()}
                           className="text-xs p-1 border border-gray-300 rounded-md w-full"
                           autoFocus
+                          onClick={(e) => e.stopPropagation()}
                       />
                       {/* Quick Pick Date Buttons for Inline Edit - ProjectItem */}
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -700,11 +744,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               ) : (
                   <div 
                       className={`flex items-center gap-1 text-xs whitespace-nowrap ${dueDateDisplayStatus.classes} ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : 'text-gray-400'}`}
-                      onClick={(e) => {
-                          if (isProjectCompletedOrCancelled || isEditingPriority || isEditingStakeholders) return;
-                          e.stopPropagation(); 
-                          setIsEditingDueDate(true);
-                      }}
+                      onClick={startEditingDueDate}
                       title={isProjectCompletedOrCancelled ? dueDateDisplayStatus.fullDate || 'Due date not editable' : dueDateDisplayStatus.fullDate || 'Set due date'}
                   >
                       <span className="text-gray-600">Due Date</span>
@@ -730,11 +770,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               ) : (
                   <span 
                       className={`flex items-center gap-1 ${!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingDueDate ? 'cursor-pointer hover:bg-gray-100 p-0.5 -m-0.5 rounded' : 'text-gray-400'} ${!currentStakeholdersText ? 'italic' : ''}`}
-                      onClick={(e) => {
-                          if (isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate) return;
-                          e.stopPropagation(); 
-                          setIsEditingStakeholders(true);
-                      }}
+                      onClick={startEditingStakeholders}
                       title={isProjectCompletedOrCancelled ? currentStakeholdersText || 'Stakeholders not editable' : currentStakeholdersText || 'Add stakeholders'}
                   >
                       <span className="text-gray-600">Stakeholders</span>
@@ -754,12 +790,25 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               </button>
               {isMenuOpen && (
                   <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-30 border border-gray-200 py-1" role="menu">
-                      <button onClick={(e) => {e.stopPropagation(); setShowProjectNotes(!showProjectNotes); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                         <ChatBubbleLeftEllipsisIcon className="h-4 w-4"/> {showProjectNotes ? 'Hide' : 'Show'} Notes
-                      </button>
-                      <button onClick={(e) => {e.stopPropagation(); handleCopyProjectData();}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                         <ClipboardDocumentIcon className="h-4 w-4"/> {copyStatus} Data
-                      </button>
+                      <div className="flex items-center">
+                        <button 
+                          onClick={() => setShowProjectNotes(!showProjectNotes)} 
+                          className="p-1 text-gray-500 hover:text-indigo-600 flex items-center"
+                          aria-expanded={showProjectNotes}
+                          aria-controls={`project-notes-section-${project.id}`}
+                          disabled={isLoadingProjectNotes}
+                        >
+                          <ChatBubbleLeftEllipsisIcon className="h-5 w-5" />
+                          {projectNotes.length > 0 && (
+                            <span className="ml-1 text-xs font-medium text-indigo-600">
+                              ({projectNotes.length})
+                            </span>
+                          )}
+                        </button>
+                        <button onClick={handleCopyProjectData} className="p-1 text-gray-500 hover:text-indigo-600">
+                          <ClipboardDocumentIcon className="h-5 w-5" />
+                        </button>
+                      </div>
                       {!isProjectCompletedOrCancelled && (
                           <button onClick={(e) => {e.stopPropagation(); setShowAddTaskModal(true); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
                              <PlusCircleIcon className="h-4 w-4"/> Add Task
@@ -791,21 +840,14 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           ) : currentDescription ? (
             <p 
               className={`text-xs text-gray-600 whitespace-pre-wrap break-words ${!isProjectCompletedOrCancelled ? 'cursor-text hover:bg-gray-50 p-0.5 -m-0.5 rounded' : 'text-gray-500'}`}
-              onClick={(e) => {
-                if (isProjectCompletedOrCancelled) return;
-                e.stopPropagation();
-                setIsEditingDescription(true);
-              }}
+              onClick={startEditingDescription}
             >
               {currentDescription}
             </p>
           ) : !isProjectCompletedOrCancelled ? (
             <p 
               className="text-xs text-gray-400 italic cursor-text hover:bg-gray-50 p-0.5 -m-0.5 rounded"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingDescription(true);
-              }}
+              onClick={startEditingDescription}
             >
               Add project description...
             </p>
@@ -857,11 +899,12 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           </div>
       )}
 
+      {/* Project Notes Section */}
       {showProjectNotes && (
-        <div className="border-t border-gray-200 px-3 sm:px-4 py-3 bg-white">
+        <div id={`project-notes-section-${project.id}`} className="border-t border-gray-200 px-3 sm:px-4 py-1.5">
           <h4 className="text-xs font-semibold text-gray-700 mb-1.5">Project Notes</h4>
           <AddNoteForm
-            projectId={project.id}
+            parentId={project.id}
             onNoteAdded={handleProjectNoteAdded}
             disabled={isProjectCompletedOrCancelled}
           />

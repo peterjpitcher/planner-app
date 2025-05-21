@@ -8,7 +8,7 @@ export default function NoteList({ notes }) {
   }
 
   return (
-    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto pr-1">
+    <div className="mt-2 max-h-48 overflow-y-auto pr-1">
       {notes.map(note => (
         <NoteItem key={note.id} note={note} />
       ))}
