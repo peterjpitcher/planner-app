@@ -248,63 +248,69 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
   [projects]);
 
   const groupedAndSortedTasks = useMemo(() => {
-    if (!allUserTasks) return {};
-
-    const today = startOfDay(new Date());
-    const endOfToday = endOfDay(today);
-    const startOfTomorrow = addDays(today, 1);
-    const endOfThisWeek = endOfDay(addDays(today, 7)); // End of 7 days from today
-
     const groups = {
       overdue: [],
       today: [],
       thisWeek: [],
       later: [],
-      noDate: [],
+      noDueDate: [],
     };
 
-    const sorted = [...allUserTasks]
-      .filter(task => !task.is_completed)
-      .sort((a, b) => { // Pre-sort for consistent order within groups
-        const dueDateA = a.due_date ? parseISO(a.due_date) : null;
-        const dueDateB = b.due_date ? parseISO(b.due_date) : null;
-        const priorityA = getPriorityValue(a.priority);
-        const priorityB = getPriorityValue(b.priority);
-        if (dueDateA && dueDateB) {
-          if (dueDateA < dueDateB) return -1;
-          if (dueDateA > dueDateB) return 1;
-        } else if (dueDateA) return -1;
-        else if (dueDateB) return 1;
-        if (priorityA !== priorityB) return priorityA - priorityB;
-        return 0;
-      });
+    const today = startOfDay(new Date());
+    const endOfThisWeek = endOfDay(addDays(today, 6 - today.getDay())); // Assuming week starts Sunday for getDay()
 
-    sorted.forEach(task => {
+    allUserTasks.forEach(task => {
+      if (task.is_completed) {
+        return; // Skip completed tasks from all active groups
+      }
+
       if (!task.due_date) {
-        groups.noDate.push(task);
+        groups.noDueDate.push(task);
+        return;
+      }
+      
+      let dueDate;
+      // Ensure dueDate is parsed correctly, similar to getTaskDueDateStatus
+      if (typeof task.due_date === 'string' && task.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        dueDate = startOfDay(new Date(task.due_date + 'T00:00:00'));
       } else {
-        const dueDate = startOfDay(parseISO(task.due_date));
-        if (isPast(dueDate) && !isSameDay(dueDate, today)) {
-          groups.overdue.push(task);
-        } else if (isSameDay(dueDate, today)) {
-          groups.today.push(task);
-        } else if (isWithinInterval(dueDate, { start: startOfTomorrow, end: endOfThisWeek })) {
-          groups.thisWeek.push(task);
-        } else {
-          groups.later.push(task);
-        }
+        dueDate = startOfDay(parseISO(task.due_date));
+      }
+
+      if (isPast(dueDate) && !isSameDay(dueDate, today)) { // isPast and not today
+        groups.overdue.push(task);
+      } else if (isSameDay(dueDate, today)) { // isToday
+        groups.today.push(task);
+      } else if (isWithinInterval(dueDate, { start: addDays(today, 1), end: endOfThisWeek })) {
+        groups.thisWeek.push(task);
+      } else { // Later (beyond this week or future dates without specific group yet)
+        groups.later.push(task);
       }
     });
+
+    // Sort tasks within each group by priority then due date
+    for (const groupName in groups) {
+      groups[groupName].sort((a, b) => {
+        const priorityComparison = getPriorityValue(a.priority) - getPriorityValue(b.priority);
+        if (priorityComparison !== 0) return priorityComparison;
+        const dateA = a.due_date ? parseISO(a.due_date) : null;
+        const dateB = b.due_date ? parseISO(b.due_date) : null;
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1; // Tasks with no due date last
+        if (!dateB) return -1;
+        return differenceInDays(dateA, dateB);
+      });
+    }
     return groups;
   }, [allUserTasks]);
 
-  const groupOrder = ['overdue', 'today', 'thisWeek', 'later', 'noDate'];
+  const groupOrder = ['overdue', 'today', 'thisWeek', 'later', 'noDueDate'];
   const groupLabels = {
     overdue: 'Overdue',
     today: 'Today',
     thisWeek: 'This Week',
     later: 'Later',
-    noDate: 'No Due Date',
+    noDueDate: 'No Due Date',
   };
 
   const hasTasksToShow = groupOrder.some(key => groupedAndSortedTasks[key] && groupedAndSortedTasks[key].length > 0);

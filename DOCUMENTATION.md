@@ -120,7 +120,7 @@ This section tracks the features implemented and the planned next steps based on
         *   Checkbox to mark tasks as complete/incomplete.
         *   Visual distinction for completed tasks (strikethrough, reduced opacity).
         *   Database update for `is_completed` and `completed_at` fields.
-        *   Toggle to show/hide completed tasks within a project (`ProjectItem.js`) now correctly hides completed tasks by default. The `TaskList.js` component was updated to filter tasks based on the `showCompletedTasks` prop.
+        *   Toggle to show/hide completed tasks within a project (`ProjectItem.js`) now correctly hides completed tasks by default. The `TaskList.js` component was updated to filter tasks based on the `showCompletedTasks` prop. The prop name passed from `ProjectItem.js` to `TaskList.js` was corrected from `showCompleted` to `showCompletedTasks` to ensure functionality.
         *   Optimistic updates for a responsive UI when changing task completion status.
 *   **UI Enhancements:**
     *   Dashboard layout changed to two columns (projects list on left, add project form on right).
@@ -181,6 +181,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Filter buttons show counts and turn red if matching projects exist.
     *   A `StandaloneTaskList` component added to the right sidebar on the dashboard, showing all non-completed user tasks.
     *   Tasks in `StandaloneTaskList` are grouped by "Overdue", "Today", "This Week", "Later", and "No Due Date", each with a group header.
+    *   Fixed an issue where completed tasks were incorrectly appearing in the "Overdue" (and other active) sections of the `StandaloneTaskList`. The task grouping logic now explicitly excludes tasks marked as `is_completed`.
 *   **UI/UX - Project Task Visibility:**
     *   Added a global "Expand All Tasks" / "Collapse All Tasks" button on the `DashboardPage.js`.
     *   This button controls the visibility of task lists for all projects simultaneously.
@@ -254,5 +255,28 @@ This section tracks the features implemented and the planned next steps based on
 *   Keyboard shortcuts.
 
 This plan will be updated as features are completed and if priorities change.
+
+--- 
+
+## Reporting & Analysis
+
+### Completed Items Report Page (`/completed-report`):
+
+*   A new dedicated page has been created to view completed items.
+*   Accessible via a "Completed Report" button in the main dashboard header.
+*   **Features:**
+    *   **View Selection:** Users can switch between "Day", "Week", and "Month" views.
+    *   **Date Navigation:** "Previous" and "Next" buttons allow navigation through date ranges based on the selected view. The current date range is displayed.
+    *   **Data Fetching:** Fetches completed tasks (with their notes and parent project name), completed projects (with their notes), and all other user notes (with parent task name and project context) from Supabase, filtered by the selected date range. The Supabase query for notes was updated to correctly fetch `tasks(name, project_id(id, name))` to ensure task names are available for notes linked to tasks.
+    *   **Unified Chronological Display:** Completed tasks, completed projects, and other notes created within the period are all displayed together in a single chronological list, grouped by date. This replaces the previous separate section for "Other Notes".
+    *   **Persistent Project Filter Panel:** A left-hand sidebar lists all unique projects relevant to any item (completed tasks, completed projects, other notes) shown in the current report period. Users can use checkboxes to filter the displayed items by project. "Select All" and "Deselect All" options are provided.
+    *   **Item Display:** Items are grouped by date (day, or by day within a week/month depending on view - monthly sub-grouping by week is a TODO). Each item is rendered as a card showing relevant details (name, completion/creation date, description, type indicator, associated notes for tasks/projects). Parent task/project context for notes is now correctly displayed.
+    *   **Copy Report:** A "Copy Report" button formats the currently displayed report content (respecting filters) into plain text and copies it to the clipboard. The report text now reflects the unified list of items and correct parent context for notes.
+    *   **Styling:** The page uses a two-column layout with a sticky header and sidebar for navigation and filtering.
+
+*   **UI/UX - Project Task Visibility:**
+    *   Added a global "Expand All Tasks" / "Collapse All Tasks" button on the `DashboardPage.js`.
+    *   This button controls the visibility of task lists for all projects simultaneously.
+    *   Individual project task list toggles in `ProjectItem.js` still function independently after a global action.
 
 --- 

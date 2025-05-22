@@ -252,7 +252,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     const newTasks = [newTask, ...tasks].sort((a, b) => {
         if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
         // Add secondary sort if needed, e.g., by created_at or priority
-        return 0; 
+        return 0;
     });
     setTasks(newTasks);
     setShowAddTaskModal(false);
@@ -810,10 +810,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                               ({projectNotes.length})
                             </span>
                           )}
-                        </button>
+                      </button>
                         <button onClick={handleCopyProjectData} className="p-1 text-gray-500 hover:text-indigo-600">
                           <ClipboardDocumentIcon className="h-5 w-5" />
-                        </button>
+                      </button>
                       </div>
                       {!isProjectCompletedOrCancelled && (
                           <button onClick={(e) => {e.stopPropagation(); setShowAddTaskModal(true); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
@@ -895,7 +895,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                   tasks={tasks}
                   isLoading={isLoadingTasks}
                   onTaskUpdated={handleTaskUpdated}
-                  showCompleted={showCompletedTasks}
+                  showCompletedTasks={showCompletedTasks}
                   isProjectCompleted={isProjectCompletedOrCancelled}
                 />
               ) : (

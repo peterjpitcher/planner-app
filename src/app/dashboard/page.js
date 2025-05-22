@@ -9,6 +9,7 @@ import AddProjectModal from '@/components/Projects/AddProjectModal';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
 import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIcon, ClockIcon, CalendarDaysIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc } from 'date-fns';
+import Link from 'next/link';
 
 export default function DashboardPage() {
   // All hooks must be called at the top level, before any conditional returns.
@@ -234,6 +235,10 @@ export default function DashboardPage() {
                 {user && <p className="text-xs sm:text-sm text-gray-600">Welcome, {user.email}!</p>}
             </div>
             <div className="flex items-center space-x-3 mt-3 sm:mt-0">
+                <Link href="/completed-report" className="flex items-center px-3 py-2 bg-green-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-green-600 transition-colors shadow-sm">
+                    <CalendarDaysIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5" />
+                    Completed Report
+                </Link>
                 <button 
                     onClick={() => setShowAddProjectModal(true)}
                     className="flex items-center px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm">
