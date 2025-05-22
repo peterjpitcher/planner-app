@@ -303,80 +303,86 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
   const handleProjectNoteAdded = (newNote) => {
     setProjectNotes(prevNotes => [newNote, ...prevNotes]);
-    setShowProjectNotes(false); // Collapse notes section after adding
-    // Inform dashboard that project data (implicitly updated_at for notes) changed
-    onProjectDataChange(project.id, { updated_at: new Date().toISOString() }, 'project_details_changed');
+    setShowProjectNotes(false); // Collapse notes after adding
+    if (onProjectDataChange) onProjectDataChange(project.id, { updated_at: new Date().toISOString() }, 'project_details_changed');
   };
 
   const formatNoteForCopy = (note) => {
-    return `    - Note (ID: ${note.id}, Created: ${format(new Date(note.created_at), 'Pp')}):\n      Content: ${note.content}`;
+    if (!note) return '';
+    // Exclude note.id and other internal IDs if present
+    return `  - Note (${format(new Date(note.created_at), 'MMM d, yyyy h:mm a')}): ${note.content}`;
   };
 
   const handleCopyProjectData = async () => {
+    if (!project) return;
     setCopyStatus('Copying...');
-    let fullText = ``;
-    if (!project) {
-        setCopyStatus('Error');
-        alert('Cannot copy data: project is missing.');
-        return;
+    let projectDataText = `Project Name: ${project.name}\n`;
+    projectDataText += `Status: ${currentStatus}\n`;
+    projectDataText += `Priority: ${currentPriority}\n`;
+    projectDataText += `Due Date: ${project.due_date ? format(new Date(project.due_date), 'MMM d, yyyy') : 'N/A'}\n`;
+    projectDataText += `Description: ${project.description || 'N/A'}\n`;
+    projectDataText += `Stakeholders: ${project.stakeholders && project.stakeholders.length > 0 ? project.stakeholders.join(', ') : 'N/A'}\n`;
+
+    // Fetch and add project notes (excluding IDs)
+    if (projectNotes.length > 0) {
+      projectDataText += `\nProject Notes:\n`;
+      projectNotes.forEach(note => {
+        projectDataText += `${formatNoteForCopy(note)}\n`;
+      });
     }
+
+    projectDataText += `\nTasks:\n`;
+
+    // Fetch all tasks for this project to ensure we have latest, including their notes
     try {
-      if (!showProjectNotes) await fetchProjectNotes();
-      fullText += `Project: ${currentName}\n`;
-      fullText += `ID: ${project.id}\n`;
-      fullText += `Status: ${currentStatus}\n`;
-      fullText += `Priority: ${currentPriority}\n`;
-      fullText += `Due Date: ${currentDueDate ? format(new Date(currentDueDate + 'T00:00:00'), 'yyyy-MM-dd') : 'N/A'}\n`;
-      if (currentDescription) fullText += `Description: ${currentDescription}\n`;
-      const stakeholdersArray = currentStakeholdersText.split(',').map(s => s.trim()).filter(s => s);
-      if (stakeholdersArray.length > 0) {
-        fullText += `Stakeholders: ${stakeholdersArray.join(', ')}\n`;
-      }
-      fullText += `Created At: ${format(new Date(project.created_at), 'Pp')}\n`;
-      fullText += `Last Updated: ${format(new Date(project.updated_at), 'Pp')}\n`;
-      if (projectNotes.length > 0) {
-        fullText += `\nProject Notes (${projectNotes.length}):\n`;
-        projectNotes.forEach(note => { fullText += `${formatNoteForCopy(note)}\n`; });
-      }
-      if (tasks.length > 0) {
-        fullText += `\nTasks (${tasks.length}):\n----------------------------\n`;
-        const sortedTasksForCopy = [...tasks].sort((a, b) => {
-            if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-            const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
-            const priorityA = priorityOrder[a.priority] ?? 3;
-            const priorityB = priorityOrder[b.priority] ?? 3;
-            if (priorityA !== priorityB) return priorityA - priorityB;
-            const dateA = a.due_date ? new Date(a.due_date) : Infinity;
-            const dateB = b.due_date ? new Date(b.due_date) : Infinity;
-            return dateA - dateB;
-        });
-        for (const task of sortedTasksForCopy) {
-          fullText += `\n  Task: ${task.name} (${task.id})\n`;
-          fullText += `    Status: ${task.is_completed ? 'Completed' : 'Open'}${task.is_completed && task.completed_at ? ' on ' + format(new Date(task.completed_at), 'yyyy-MM-dd') : ''}\n`;
-          fullText += `    Priority: ${task.priority || 'N/A'}\n`;
-          fullText += `    Due Date: ${task.due_date ? format(new Date(task.due_date + 'T00:00:00'), 'yyyy-MM-dd') : 'N/A'}\n`;
-          if (task.description) fullText += `    Description: ${task.description.replace(/\n/g, '\n                 ')}\n`;
-          const { data: taskNotesData, error: taskNotesError } = await supabase
-            .from('notes').select('content, created_at, id').eq('task_id', task.id).order('created_at', { ascending: true });
-          if (taskNotesError) console.error('Error fetching task notes for copy:', taskNotesError);
-          if (taskNotesData && taskNotesData.length > 0) {
-            fullText += `    Task Notes (${taskNotesData.length}):\n`;
-            taskNotesData.forEach(note => { fullText += `      - Note (${format(new Date(note.created_at), 'Pp')}): ${note.content}\n`; });
+      const { data: tasksWithDetails, error: tasksError } = await supabase
+        .from('tasks')
+        .select('*, notes(*)') // Fetch tasks and their related notes
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      if (tasksError) throw tasksError;
+
+      if (tasksWithDetails && tasksWithDetails.length > 0) {
+        tasksWithDetails.forEach(taskItem => {
+          // Exclude taskItem.id and taskItem.project_id
+          projectDataText += `  - Task: ${taskItem.name}\n`;
+          projectDataText += `    Description: ${taskItem.description || 'N/A'}\n`;
+          projectDataText += `    Due Date: ${taskItem.due_date ? format(new Date(taskItem.due_date), 'MMM d, yyyy') : 'N/A'}\n`;
+          projectDataText += `    Priority: ${taskItem.priority || 'N/A'}\n`;
+          projectDataText += `    Completed: ${taskItem.is_completed ? 'Yes' : 'No'}\n`;
+          if (taskItem.completed_at && taskItem.is_completed) {
+            projectDataText += `    Completed At: ${format(new Date(taskItem.completed_at), 'MMM d, yyyy h:mm a')}\n`;
           }
-        }
+          
+          // Add task notes (excluding IDs)
+          if (taskItem.notes && taskItem.notes.length > 0) {
+            projectDataText += `    Task Notes:\n`;
+            taskItem.notes.forEach(note => {
+              projectDataText += `    ${formatNoteForCopy(note)}\n`; // Re-use formatNoteForCopy, it already excludes IDs
+            });
+          }
+          projectDataText += `\n`; // Add a blank line between tasks
+        });
       } else {
-        fullText += `\nNo tasks for this project.\n`;
+        projectDataText += `  No tasks for this project.\n`;
       }
-      await navigator.clipboard.writeText(fullText);
+    } catch (err) {
+      console.error('Error fetching tasks and notes for copy:', err);
+      projectDataText += `  Error fetching task details.\n`;
+      setCopyStatus('Error!');
+      setTimeout(() => setCopyStatus('Copy'), 2000);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(projectDataText);
       setCopyStatus('Copied!');
     } catch (err) {
-      console.error('Error copying project data:', err);
-      setCopyStatus('Error');
-      alert('Failed to copy project data.');
-    } finally {
-      setTimeout(() => setCopyStatus('Copy'), 2000);
+      console.error('Failed to copy project data:', err);
+      setCopyStatus('Failed!');
     }
-    setIsMenuOpen(false);
+    setTimeout(() => setCopyStatus('Copy'), 2000);
   };
   
   const updateProjectStatusInDb = async (newStatus) => {

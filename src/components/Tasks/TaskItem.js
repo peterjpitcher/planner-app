@@ -68,6 +68,8 @@ export default function TaskItem({ task, onTaskUpdated }) {
   const [currentTaskDescription, setCurrentTaskDescription] = useState(task ? task.description || '' : '');
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [currentDueDate, setCurrentDueDate] = useState(task && task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
+  const [isEditingPriority, setIsEditingPriority] = useState(false);
+  const [currentPriority, setCurrentPriority] = useState(task ? task.priority || '' : '');
 
   // All useEffect and useCallback hooks
   useEffect(() => {
@@ -85,8 +87,11 @@ export default function TaskItem({ task, onTaskUpdated }) {
         if (!isEditingDueDate) {
             setCurrentDueDate(task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
         }
+        if (!isEditingPriority) {
+            setCurrentPriority(task.priority || '');
+        }
     }
-  }, [task, isEditingTaskName, isEditingTaskDescription, isEditingDueDate]); // Removed currentXXX states from deps
+  }, [task, isEditingTaskName, isEditingTaskDescription, isEditingDueDate, isEditingPriority]); // Added isEditingPriority
 
   const fetchNotes = useCallback(async () => {
     if (!task || !task.id) return; 
@@ -176,6 +181,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
   const handleTaskNameChange = (e) => setCurrentTaskName(e.target.value);
   const handleTaskDescriptionChange = (e) => setCurrentTaskDescription(e.target.value);
   const handleDueDateChange = (e) => setCurrentDueDate(e.target.value);
+  const handlePriorityChange = (e) => setCurrentPriority(e.target.value);
 
   const createUpdateHandler = (field, currentValue, originalValue, setter, editSetter, isDate = false) => async () => {
     // Ensure task exists before trying to update
@@ -229,6 +235,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
       setIsEditingDueDate,
       true
     )();
+  const handlePriorityUpdate = createUpdateHandler('priority', currentPriority, task ? task.priority : '', setCurrentPriority, setIsEditingPriority);
 
   const createKeyDownHandler = (updateHandler, originalValue, setter, editSetter, isDate = false) => (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { 
@@ -244,6 +251,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
   const handleTaskNameInputKeyDown = createKeyDownHandler(handleTaskNameUpdate, task ? task.name : '', setCurrentTaskName, setIsEditingTaskName);
   const handleTaskDescriptionKeyDown = createKeyDownHandler(handleTaskDescriptionUpdate, task ? task.description : '', setCurrentTaskDescription, setIsEditingTaskDescription);
   const handleDueDateInputKeyDown = createKeyDownHandler(handleDueDateUpdate, task ? task.due_date : null, setCurrentDueDate, setIsEditingDueDate);
+  const handlePrioritySelectKeyDown = createKeyDownHandler(handlePriorityUpdate, task ? task.priority : '', setCurrentPriority, setIsEditingPriority);
 
   const itemBaseClasses = "p-1.5 rounded-md shadow-sm mb-1.5 flex flex-col transition-all hover:shadow-md";
   const completedItemVisualClasses = isCompleted ? "opacity-60 hover:opacity-80" : "";
@@ -312,19 +320,37 @@ export default function TaskItem({ task, onTaskUpdated }) {
 
         {/* Priority, Due Date, Notes Toggle & Updated At - flex-shrink-0 to prevent shrinking */}
         <div className="flex items-center space-x-2 sm:space-x-3 text-xs mt-1 sm:mt-0 pl-[2.125rem] sm:pl-0 flex-shrink-0">
-          <span className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-opacity-20"
-            // Basic color based on priority text for now, can be more specific if needed
-            style={{
-              backgroundColor: task.priority === 'High' ? 'rgba(239, 68, 68, 0.1)' : 
-                               task.priority === 'Medium' ? 'rgba(245, 158, 11, 0.1)' : 
-                               task.priority === 'Low' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(107, 114, 128, 0.1)',
-              color: task.priority === 'High' ? 'rgb(185, 28, 28)' : 
-                     task.priority === 'Medium' ? 'rgb(194, 102, 7)' : 
-                     task.priority === 'Low' ? 'rgb(4, 120, 87)' : 'rgb(55, 65, 81)',
-            }}
-          >
-            {getPriorityText(task.priority)}
-          </span>
+          {isEditingPriority ? (
+            <select
+              value={currentPriority}
+              onChange={handlePriorityChange}
+              onBlur={handlePriorityUpdate}
+              onKeyDown={handlePrioritySelectKeyDown}
+              className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 px-1.5"
+              autoFocus
+            >
+              <option value="">No Priority</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          ) : (
+            <span 
+              onClick={() => !isCompleted && setIsEditingPriority(true)}
+              className={`px-1.5 py-0.5 text-xs font-medium rounded-full bg-opacity-20 ${!isCompleted ? 'cursor-pointer hover:opacity-75' : ''}`}
+              style={{
+                backgroundColor: currentPriority === 'High' ? 'rgba(239, 68, 68, 0.1)' : 
+                                 currentPriority === 'Medium' ? 'rgba(245, 158, 11, 0.1)' : 
+                                 currentPriority === 'Low' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(107, 114, 128, 0.1)',
+                color: currentPriority === 'High' ? 'rgb(185, 28, 28)' : 
+                       currentPriority === 'Medium' ? 'rgb(194, 102, 7)' : 
+                       currentPriority === 'Low' ? 'rgb(4, 120, 87)' : 'rgb(55, 65, 81)',
+              }}
+              title={`Priority: ${getPriorityText(currentPriority)}`}
+            >
+              {getPriorityText(currentPriority)}
+            </span>
+          )}
 
           {isEditingDueDate ? (
             <div className="flex flex-col items-start">

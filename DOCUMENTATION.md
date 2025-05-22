@@ -120,7 +120,7 @@ This section tracks the features implemented and the planned next steps based on
         *   Checkbox to mark tasks as complete/incomplete.
         *   Visual distinction for completed tasks (strikethrough, reduced opacity).
         *   Database update for `is_completed` and `completed_at` fields.
-        *   Toggle to show/hide completed tasks within a project (hidden by default).
+        *   Toggle to show/hide completed tasks within a project (`ProjectItem.js`) now correctly hides completed tasks by default. The `TaskList.js` component was updated to filter tasks based on the `showCompletedTasks` prop.
         *   Optimistic updates for a responsive UI when changing task completion status.
 *   **UI Enhancements:**
     *   Dashboard layout changed to two columns (projects list on left, add project form on right).
@@ -141,6 +141,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Task-specific notes are fetched on-demand when the copy button is clicked.
     *   Data is formatted as plain text and copied to the clipboard, with visual feedback provided.
     *   The project's current status is included in the copied text.
+    *   Database IDs (project ID, task IDs, note IDs) are now excluded from the copied text.
 *   **Project Completion & Status Management:**
     *   Projects have a `status` field (e.g., 'Open', 'In Progress', 'On Hold', 'Completed', 'Cancelled') managed via a dropdown menu (`EllipsisVerticalIcon`) in `ProjectItem.js`.
     *   The current project status is visually displayed.
@@ -163,6 +164,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Task names in `TaskItem.js` can be edited in-line.
     *   Task descriptions (`task.description`) in `TaskItem.js` are editable in-line. The `InformationCircleIcon` was removed; editing is triggered by clicking the description text. The description is now displayed more compactly next to the task name.
     *   Task Due Dates are editable in-line in `TaskItem.js` using a date input.
+    *   Task Priorities in `TaskItem.js` can be edited in-line using a select dropdown.
     *   The quick date-pick buttons (e.g., "Tomorrow", "+2 days") associated with the task due date input in `TaskItem.js` have been removed as they were not functioning correctly and per user request.
 *   **UI Enhancements & Layout:**
     *   `AddProjectForm` moved into `AddProjectModal`. Dashboard has a "New Project" button in the header.
