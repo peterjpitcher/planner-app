@@ -106,7 +106,7 @@ export default function DashboardPage() {
       const finalSortedProjects = (projectData || []).sort(sortProjectsByPriorityThenDateDesc);
       setProjects(finalSortedProjects);
 
-      const { data: taskData, error: taskError } = await supabase.from('tasks').select('*').eq('user_id', user.id);
+      const { data: taskData, error: taskError } = await supabase.from('tasks').select('*').eq('user_id', user.id).eq('is_completed', false);
       if (taskError) throw taskError;
       const sortedTasks = (taskData || []).sort(sortTasksByDateDescThenPriority);
       setAllUserTasks(sortedTasks);

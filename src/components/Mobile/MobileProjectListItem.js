@@ -165,6 +165,15 @@ const MobileProjectListItem = ({ project: initialProject, onProjectUpdated, onPr
   const contentTransform = revealed === 'left-complete' ? '-translate-x-24' : revealed === 'right-priority' ? 'translate-x-24' : 'translate-x-0';
   const mainContentWrapperClasses = `transition-transform duration-300 ease-out ${contentTransform}`;
 
+  // Add a sticky bottom menu
+  const StickyBottomMenu = () => (
+    <div className="fixed bottom-0 left-0 right-0 bg-white shadow-md p-2 flex justify-around">
+      <button className="text-blue-500">Home</button>
+      <button className="text-blue-500">Projects</button>
+      <button className="text-blue-500">Tasks</button>
+    </div>
+  );
+
   return (
     <div {...swipeHandlers} className={`${baseCardClasses} ${dynamicCardClasses}`}>
       {(project.status !== 'Completed' && project.status !== 'Cancelled') && (
@@ -224,6 +233,7 @@ const MobileProjectListItem = ({ project: initialProject, onProjectUpdated, onPr
           </button>
         </div>
       )}
+      <StickyBottomMenu />
     </div>
   );
 };
