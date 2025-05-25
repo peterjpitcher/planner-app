@@ -192,6 +192,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Fixed React Hook order error in `DashboardPage.js` by moving `filteredProjects` `useMemo` before early returns.
     *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
     *   Fixed "Converting circular structure to JSON" error when updating task due dates using quick-pick buttons in `TaskItem.js`. This was caused by the `onBlur` event on the date input field incorrectly passing the event object to the update handler. The fix involved wrapping the `handleDueDateUpdate` call in an arrow function: `onBlur={() => handleDueDateUpdate()}`.
+    *   Corrected the "Add & Add Another" button functionality in `AddTaskForm.js`. The button's `onClick` handler was updated to correctly set the `addAnother` state to `true` before calling `handleSubmit`. This ensures the form resets for a new task entry instead of closing the modal, and the button's loading text displays correctly.
     *   Improved stability of task inline editing in `TaskItem.js` for due dates set by quick-pick buttons by refactoring the main `useEffect` to conditionally update local state from props based on editing mode flags.
 *   **Mobile Responsiveness (Phase 1):**
     *   `ProjectItem.js`:
@@ -205,7 +206,7 @@ This section tracks the features implemented and the planned next steps based on
 *   **Bug Fixes:**
     *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
     *   Fixed "Converting circular structure to JSON" error when updating task due dates using quick-pick buttons in `TaskItem.js`. This was caused by the `onBlur` event on the date input field incorrectly passing the event object to the update handler. The fix involved wrapping the `handleDueDateUpdate` call in an arrow function: `onBlur={() => handleDueDateUpdate()}`.
-    *   (Duplicate of the above, consolidated into Error Fixes & Refinements) Improved stability of task inline editing in `TaskItem.js` for due dates set by quick-pick buttons by refactoring the main `useEffect` to conditionally update local state from props based on editing mode flags.
+    *   Corrected the "Add & Add Another" button functionality in `AddTaskForm.js`. The button's `onClick` handler was updated to correctly set the `addAnother` state to `true` before calling `handleSubmit`. This ensures the form resets for a new task entry instead of closing the modal, and the button's loading text displays correctly.
 
 *   **UI Interactivity - Task Panel to Project List Navigation:**
     *   In the "Upcoming Tasks" panel (`StandaloneTaskList.js`), project names are now clickable.

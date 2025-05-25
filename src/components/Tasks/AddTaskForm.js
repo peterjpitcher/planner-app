@@ -178,7 +178,10 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
         </button>
         <button
           type="button"
-          onClick={() => handleSubmit(null, true)}
+          onClick={() => {
+            setAddAnother(true);
+            handleSubmit(null, true);
+          }}
           disabled={loading}
           className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
         >

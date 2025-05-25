@@ -258,11 +258,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         return 0;
     });
     setTasks(newTasks);
-    setShowAddTaskModal(false);
-    if (onProjectDataChange && project && newTask) { // Ensure newTask is valid
-        onProjectDataChange(newTask.project_id, newTask, 'task_added');
-    }
-    // updateParentProjectTimestamp(); // This might be redundant if DashboardPage handles project updated_at
+    onProjectDataChange(project.id, { ...project, updated_at: new Date().toISOString() }, 'task_added', { task: newTask });
   };
 
   const handleTaskUpdated = (updatedTask) => { 
@@ -275,7 +271,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     setTasks(updatedTasks);
 
     if (onProjectDataChange && project && updatedTask) { // Ensure updatedTask is valid
-        onProjectDataChange(updatedTask.project_id, updatedTask, 'task_updated');
+        onProjectDataChange(project.id, updatedTask, 'task_updated');
     }
     // updateParentProjectTimestamp(); // Redundant if DashboardPage handles it
 
