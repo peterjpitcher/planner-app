@@ -32,16 +32,35 @@ const MobileDashboardPage = () => {
         .from('projects')
         .select('*, tasks(id, is_completed)') // Fetch tasks to count open ones
         .eq('user_id', user.id)
-        .not('status', 'in', '("Completed", "Cancelled")') // Filter out completed or cancelled projects
-        .order('priority', { ascending: false })
-        .order('due_date', { ascending: true, nullsFirst: true });
+        .not('status', 'in', '("Completed", "Cancelled")'); // Filter out completed or cancelled projects
 
       if (dbError) throw dbError;
       
-      const projectsWithOpenTaskCount = data.map(p => ({
+      let projectsWithOpenTaskCount = data.map(p => ({
         ...p,
         open_tasks_count: p.tasks ? p.tasks.filter(t => !t.is_completed).length : 0,
       }));
+
+      // Apply comprehensive client-side sorting
+      projectsWithOpenTaskCount.sort((a, b) => {
+        const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
+        const priorityA = priorityOrder[a.priority] || 0;
+        const priorityB = priorityOrder[b.priority] || 0;
+        
+        // Sort by priority descending
+        if (priorityB !== priorityA) return priorityB - priorityA; 
+        
+        // Then sort by due_date ascending (nulls first)
+        const dateA = a.due_date ? new Date(a.due_date) : null;
+        const dateB = b.due_date ? new Date(b.due_date) : null;
+
+        if (dateA === null && dateB === null) return 0; // both null, equal
+        if (dateA === null) return -1; // a is null, sort a first (nulls first)
+        if (dateB === null) return 1;  // b is null, sort b first (nulls first)
+        
+        return dateA - dateB; // Both are dates, sort ascending
+      });
+      
       setProjects(projectsWithOpenTaskCount);
 
     } catch (e) {
@@ -78,19 +97,23 @@ const MobileDashboardPage = () => {
         p.id === updatedProject.id ? { ...p, ...updatedProject, open_tasks_count: updatedProject.open_tasks_count !== undefined ? updatedProject.open_tasks_count : p.open_tasks_count } : p
       );
       // Re-sort based on the primary sort order (priority desc, due_date asc)
-      // This is a simplified client-side sort. For perfect consistency with DB, re-fetch might be better for complex sorts.
       return newProjects.sort((a, b) => {
-        const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1, 'All': 0 }; // 'All' for safety, not expected in actual data
+        const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
         const priorityA = priorityOrder[a.priority] || 0;
         const priorityB = priorityOrder[b.priority] || 0;
-        if (priorityA !== priorityB) return priorityA - priorityB; // Descending priority (Higher number = higher priority)
         
+        // Sort by priority descending
+        if (priorityB !== priorityA) return priorityB - priorityA; 
+        
+        // Then sort by due_date ascending (nulls first)
         const dateA = a.due_date ? new Date(a.due_date) : null;
         const dateB = b.due_date ? new Date(b.due_date) : null;
-        if (dateA && dateB) return dateA - dateB;
-        if (!dateA && dateB) return 1; // nullsFirst: true equivalent (nulls last for asc, so first for desc if we were doing that)
-        if (dateA && !dateB) return -1;
-        return 0;
+
+        if (dateA === null && dateB === null) return 0; // both null, equal
+        if (dateA === null) return -1; // a is null, sort a first (nulls first)
+        if (dateB === null) return 1;  // b is null, sort b first (nulls first)
+        
+        return dateA - dateB; // Both are dates, sort ascending
       });
     });
   }, []);

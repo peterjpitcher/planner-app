@@ -338,3 +338,21 @@ This plan will be updated as features are completed and if priorities change.
     *   Individual project task list toggles in `ProjectItem.js` still function independently after a global action.
 
 --- 
+
+## Mobile Dashboard Sorting:
+*   Projects on the mobile dashboard (`/m/dashboard`) are sorted by priority (High to Low) and then by due date (ascending, with `null` due dates appearing first).
+*   The sorting is now handled client-side within the `fetchProjects` function in `src/app/m/dashboard/page.js` after the data is retrieved from Supabase. This ensures correct sorting for text-based priority fields, as relying on database `ORDER BY` for text fields like 'High', 'Medium', 'Low' can lead to unexpected alphabetical sorting.
+*   The `handleProjectUpdatedFromSwipe` callback in the same file, which handles client-side resorting after a user interaction (e.g., swipe action), uses the identical sorting logic to maintain consistency.
+
+### Planned Next Steps:
+
+*   Identifying and potentially removing unused database fields from the UI (user request).
+*   Global search functionality.
+*   Advanced/specific filtering capabilities (beyond current dashboard filters).
+*   Archive functionality for completed projects.
+*   Basic reporting dashboard.
+*   Keyboard shortcuts.
+
+This plan will be updated as features are completed and if priorities change.
+
+--- 
