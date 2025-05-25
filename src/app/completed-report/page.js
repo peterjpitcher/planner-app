@@ -69,7 +69,7 @@ const CompletedReportPage = () => {
       // Fetch completed tasks within date range
       const { data: tasks, error: tasksError } = await supabase
         .from('tasks')
-        .select('*, project_id (id, name), notes(*)')
+        .select('*, project_id (id, name, stakeholders), notes(*)')
         .eq('user_id', userId)
         .eq('is_completed', true)
         .gte('completed_at', dateRange.startDate.toISOString())
@@ -93,7 +93,7 @@ const CompletedReportPage = () => {
       // Fetch all user notes (not just within period initially, for "Other notes" calculation)
       const { data: notes, error: notesError } = await supabase
         .from('notes')
-        .select('*, tasks(name, project_id (id, name)), projects(id, name)') // Include parent task name and project context
+        .select('*, tasks(name, project_id (id, name, stakeholders)), projects(id, name, stakeholders)')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       if (notesError) throw notesError;
@@ -118,47 +118,49 @@ const CompletedReportPage = () => {
   useEffect(() => {
     const projectsMap = new Map();
     
-    completedTasksData.forEach(task => {
-      if (task.project_id && !projectsMap.has(task.project_id.id)) {
-        // Assuming task.project_id might not have stakeholder info directly
-        // We will rely on completedProjectsData for stakeholder details if available, or make a separate query if necessary
-        projectsMap.set(task.project_id.id, { 
-          id: task.project_id.id, 
-          name: task.project_id.name, 
-          type: 'task_parent' 
-          // stakeholders: task.project_id.stakeholders // This might not be available directly
-        });
-      }
-    });
+    // Process all potential project sources to populate the map for the filter panel
+    // Stakeholder data will be directly on tasks/notes for filtering later
 
     completedProjectsData.forEach(project => {
       if (!projectsMap.has(project.id)) {
         projectsMap.set(project.id, { 
           id: project.id, 
           name: project.name, 
-          type: 'project', 
-          stakeholders: project.stakeholders // Ensure this is fetched
+          // type: 'project', // Type isn't strictly needed for projectsInPeriod anymore if just for display/filtering
+          stakeholders: project.stakeholders // Keep for consistency if used elsewhere, but primary use is now direct from task/note
+        });
+      }
+    });
+
+    completedTasksData.forEach(task => {
+      if (task.project_id && !projectsMap.has(task.project_id.id)) {
+        projectsMap.set(task.project_id.id, { 
+          id: task.project_id.id, 
+          name: task.project_id.name,
+          stakeholders: task.project_id.stakeholders || [] // Will be populated by the new query
         });
       }
     });
     
-    // Also include projects from "other notes" created in this period
     const currentNotesInPeriod = allUserNotes.filter(note => {
         const createdAt = parseISO(note.created_at);
         return createdAt >= dateRange.startDate && createdAt <= dateRange.endDate;
     });
 
     currentNotesInPeriod.forEach(note => {
-        let projectId, projectName;
+        let projectRef = null;
         if (note.tasks && note.tasks.project_id) {
-            projectId = note.tasks.project_id.id;
-            projectName = note.tasks.project_id.name;
+            projectRef = note.tasks.project_id;
         } else if (note.projects) {
-            projectId = note.projects.id;
-            projectName = note.projects.name;
+            projectRef = note.projects;
         }
-        if (projectId && !projectsMap.has(projectId)) {
-            projectsMap.set(projectId, { id: projectId, name: projectName, type: 'note_parent' });
+
+        if (projectRef && !projectsMap.has(projectRef.id)) {
+            projectsMap.set(projectRef.id, { 
+                id: projectRef.id, 
+                name: projectRef.name,
+                stakeholders: projectRef.stakeholders || [] // Will be populated by the new query
+            });
         }
     });
 
@@ -197,32 +199,76 @@ const CompletedReportPage = () => {
     const itemsToGroup = [
       ...completedTasksData
           .filter(task => {
-            const project = projectsInPeriod.find(p => p.id === task.project_id?.id);
-            const isVisible = task.project_id && projectVisibility[task.project_id.id];
-            const isBillHidden = hideBillStakeholder && project?.stakeholders?.includes('Bill');
-            return isVisible && !isBillHidden;
+            // const project = projectsInPeriod.find(p => p.id === task.project_id?.id); // No longer need to find in projectsInPeriod for stakeholders
+            const isVisible = !!(task.project_id && projectVisibility[task.project_id.id]); // Ensure boolean
+            
+            let taskIsBillHidden = false;
+            if (hideBillStakeholder && task.project_id && Array.isArray(task.project_id.stakeholders)) {
+              taskIsBillHidden = task.project_id.stakeholders.includes('Bill');
+            }
+            
+            console.log('[Debug Task Filter]', { 
+              taskId: task.id, 
+              taskName: task.name, 
+              hideBillFlag: hideBillStakeholder, 
+              parentProjectId: task.project_id?.id, 
+              parentProjectName: task.project_id?.name, 
+              parentProjectStakeholders: task.project_id?.stakeholders, 
+              taskIsBillHiddenLogic: taskIsBillHidden, 
+              taskIsVisibleLogic: isVisible, 
+              isPassingThroughFilter: isVisible && !taskIsBillHidden 
+            });
+            return isVisible && !taskIsBillHidden;
           })
           .map(task => ({ ...task, type: 'task', date: parseISO(task.completed_at) })),
       ...completedProjectsData
           .filter(project => {
             const isVisible = projectVisibility[project.id];
+            // Bill filtering for directly completed projects remains the same (uses project.stakeholders)
             const isBillHidden = hideBillStakeholder && project.stakeholders?.includes('Bill');
+            // console.log('[Debug Project Filter]', { projectId: project.id, name: project.name, hideBillFlag: hideBillStakeholder, stakeholders: project.stakeholders, isBillHidden, isVisible, isPassing: isVisible && !isBillHidden });
             return isVisible && !isBillHidden;
           })
           .map(project => ({ ...project, type: 'project', date: parseISO(project.updated_at) })), // Assuming updated_at is completion
-      ...notesInPeriod // Already filtered by projectVisibility in its own useMemo, need to add Bill filter here too
+      ...notesInPeriod
           .filter(note => {
-            let projectStakeholders = [];
+            let noteIsBillHidden = false;
+            let parentProjectForNoteStakeholders = [];
+            let parentProjectForNoteInfo = null; // For logging
+
             if (note.tasks && note.tasks.project_id) {
-              const parentProject = completedProjectsData.find(p => p.id === note.tasks.project_id.id) || projectsInPeriod.find(p => p.id === note.tasks.project_id.id);
-              projectStakeholders = parentProject?.stakeholders || [];
+              parentProjectForNoteStakeholders = note.tasks.project_id.stakeholders || [];
+              parentProjectForNoteInfo = note.tasks.project_id;
             } else if (note.projects) {
-              const parentProject = completedProjectsData.find(p => p.id === note.projects.id) || projectsInPeriod.find(p => p.id === note.projects.id);
-              projectStakeholders = parentProject?.stakeholders || [];
+              parentProjectForNoteStakeholders = note.projects.stakeholders || [];
+              parentProjectForNoteInfo = note.projects;
             }
-            // If note is not linked to a project, it's not filtered by Bill
-            if (!note.tasks && !note.projects) return true;
-            return !(hideBillStakeholder && projectStakeholders.includes('Bill'));
+
+            const isNoteVisibleByProjectParent = 
+                (note.tasks && note.tasks.project_id && projectVisibility[note.tasks.project_id.id]) || 
+                (note.projects && projectVisibility[note.projects.id]) || 
+                (!note.tasks && !note.projects); // Standalone notes are visible if not filtered by Bill
+
+            if (!note.tasks && !note.projects) { // Note not linked to any project
+              console.log('[Debug Note Filter - Standalone]', { noteId: note.id, content: note.content?.substring(0,20), hideBillFlag: hideBillStakeholder, isVisible: isNoteVisibleByProjectParent, isPassing: isNoteVisibleByProjectParent });
+              return isNoteVisibleByProjectParent; 
+            }
+            
+            if (hideBillStakeholder && Array.isArray(parentProjectForNoteStakeholders)) {
+              noteIsBillHidden = parentProjectForNoteStakeholders.includes('Bill');
+            }
+            
+            console.log('[Debug Note Filter - Project-Linked]', { 
+              noteId: note.id, 
+              content: note.content?.substring(0,20), 
+              hideBillFlag: hideBillStakeholder, 
+              parentInfo: parentProjectForNoteInfo ? {id: parentProjectForNoteInfo.id, name: parentProjectForNoteInfo.name, stakeholders: parentProjectForNoteInfo.stakeholders} : null,
+              // projectStakeholders: parentProjectForNoteStakeholders, // Redundant, covered by parentInfo
+              noteIsBillHiddenLogic: noteIsBillHidden, 
+              noteIsVisibleByParentLogic: isNoteVisibleByProjectParent, 
+              isPassingThroughFilter: isNoteVisibleByProjectParent && !noteIsBillHidden 
+            });
+            return isNoteVisibleByProjectParent && !noteIsBillHidden;
           })
           .map(note => ({ ...note, type: 'note', date: parseISO(note.created_at) }))
     ];
@@ -237,7 +283,7 @@ const CompletedReportPage = () => {
       grouped[dayKey].push(item);
     });
     return grouped;
-  }, [completedTasksData, completedProjectsData, notesInPeriod, projectVisibility, hideBillStakeholder, projectsInPeriod]);
+  }, [completedTasksData, completedProjectsData, notesInPeriod, projectVisibility, hideBillStakeholder]);
   
   const handleViewChange = (newViewType) => {
     setViewType(newViewType);
