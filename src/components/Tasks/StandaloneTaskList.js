@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
-import { PencilIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, CheckCircleIcon as OutlineCheckCircleIcon } from '@heroicons/react/24/outline';
+import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 
 // Simplified helper for due date status (can be shared or passed if more complex)
@@ -45,15 +46,16 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
 };
 
 const getStandaloneTaskPriorityStyling = (priority) => {
+  // Returns icon, text color, and card background/border color
   switch (priority) {
     case 'High':
-      return 'border-l-4 border-red-700 bg-red-200';
+      return { icon: <SolidFireIcon className="h-4 w-4 text-red-500" />, textClass: 'text-red-600 font-semibold', cardOuterClass: 'border-l-4 border-red-700 bg-red-200', badgeClass: 'bg-red-600 text-white' };
     case 'Medium':
-      return 'border-l-4 border-yellow-600 bg-yellow-100';
+      return { icon: <SolidExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />, textClass: 'text-yellow-600 font-semibold', cardOuterClass: 'border-l-4 border-yellow-600 bg-yellow-100', badgeClass: 'bg-yellow-500 text-black' };
     case 'Low':
-      return 'border-l-4 border-green-700 bg-green-200';
+      return { icon: <SolidCheckIcon className="h-4 w-4 text-green-500" />, textClass: 'text-green-600', cardOuterClass: 'border-l-4 border-green-700 bg-green-200', badgeClass: 'bg-green-600 text-white' };
     default:
-      return 'border-l-4 border-gray-400 bg-gray-100';
+      return { icon: <SolidClockIcon className="h-4 w-4 text-gray-400" />, textClass: 'text-gray-500', cardOuterClass: 'border-l-4 border-gray-400 bg-gray-100', badgeClass: 'bg-gray-500 text-white' };
   }
 };
 
@@ -170,14 +172,8 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
     }
   };
 
-  const priorityColors = {
-    High: 'bg-red-600 text-white',
-    Medium: 'bg-yellow-500 text-black',
-    Low: 'bg-green-600 text-white',
-    Default: 'bg-gray-500 text-white' // Added a default for safety
-  };
-
-  const itemPriorityClass = getStandaloneTaskPriorityStyling(task.priority);
+  const priorityStyles = getStandaloneTaskPriorityStyling(currentPriority);
+  const itemPriorityClass = priorityStyles.cardOuterClass; // Used for the main div
 
   const handleProjectClick = () => {
     if (project && project.id) {
@@ -223,7 +219,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               />
             )}
             {task.is_completed && (
-              <CheckCircleIcon className="h-5 w-5 text-green-500" title="Completed" />
+              <SolidCheckIcon className="h-5 w-5 text-green-500" title="Completed" />
             )}
           </div>
         </div>
@@ -248,18 +244,12 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               </span>
           )}
           {isEditingPriority ? (
-            <select
+            <select 
               value={currentPriority}
-              onChange={(e) => setCurrentPriority(e.target.value)}
-              onBlur={handlePriorityUpdate}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handlePriorityUpdate();
-                if (e.key === 'Escape') {
-                  setCurrentPriority(task.priority || '');
-                  setIsEditingPriority(false);
-                }
-              }}
-              className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-0.5 px-1"
+              onChange={(e) => setCurrentPriority(e.target.value)} 
+              onBlur={handlePriorityUpdate} 
+              onKeyDown={(e) => e.key === 'Enter' && handlePriorityUpdate() || e.key === 'Escape' && (setCurrentPriority(task.priority || ''), setIsEditingPriority(false))}
+              className="text-xs p-0.5 border-b border-indigo-500 focus:outline-none h-6"
               autoFocus
             >
               <option value="">No Priority</option>
@@ -268,15 +258,14 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               <option value="High">High</option>
             </select>
           ) : (
-            task.priority && (
-              <span 
-                className={`px-1.5 py-0.5 rounded-full whitespace-nowrap text-2xs ${priorityColors[task.priority] || priorityColors.Default} ${!task.is_completed ? 'cursor-pointer hover:opacity-80' : ''}`}
-                onClick={() => !task.is_completed && setIsEditingPriority(true)}
-                title={task.priority}
-              >
-                {task.priority}
-              </span>
-            )
+            <div 
+              className={`flex items-center cursor-pointer hover:bg-gray-100/50 p-0.5 rounded -ml-0.5 ${task.is_completed ? 'pointer-events-none' : ''}`}
+              onClick={() => {if (!task.is_completed) setIsEditingPriority(true);}}
+              title={`Priority: ${currentPriority || 'N/A'}`}
+            >
+              {priorityStyles.icon} 
+              <span className={`ml-0.5 text-xs ${priorityStyles.textClass} ${task.is_completed ? 'text-gray-500' : ''}`}>{currentPriority || 'No Priority'}</span>
+            </div>
           )}
            {project && (
             <span 

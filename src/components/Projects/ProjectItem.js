@@ -9,6 +9,7 @@ import {
   ChatBubbleLeftEllipsisIcon, ClipboardDocumentIcon, EllipsisVerticalIcon,
   PencilIcon, UserGroupIcon, ChevronRightIcon
 } from '@heroicons/react/24/outline';
+import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import TaskList from '@/components/Tasks/TaskList';
 import AddTaskModal from '@/components/Tasks/AddTaskModal';
 import NoteList from '@/components/Notes/NoteList';
@@ -19,13 +20,13 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 const getPriorityClasses = (priority) => {
   switch (priority) {
     case 'High':
-      return 'border-l-4 border-red-700 bg-red-200 text-red-800';
+      return { icon: <SolidFireIcon className="h-5 w-5 text-red-500" />, textClass: 'text-red-600 font-semibold', cardOuterClass: 'border-l-4 border-red-700 bg-red-200 text-red-800' };
     case 'Medium':
-      return 'border-l-4 border-yellow-600 bg-yellow-100 text-yellow-700';
+      return { icon: <SolidExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />, textClass: 'text-yellow-600 font-semibold', cardOuterClass: 'border-l-4 border-yellow-600 bg-yellow-100 text-yellow-700' };
     case 'Low':
-      return 'border-l-4 border-green-700 bg-green-200 text-green-800';
+      return { icon: <SolidCheckIcon className="h-5 w-5 text-green-500" />, textClass: 'text-green-600', cardOuterClass: 'border-l-4 border-green-700 bg-green-200 text-green-800' };
     default:
-      return 'border-l-4 border-gray-400 bg-gray-100 text-gray-700';
+      return { icon: <SolidClockIcon className="h-5 w-5 text-gray-400" />, textClass: 'text-gray-500', cardOuterClass: 'border-l-4 border-gray-400 bg-gray-100 text-gray-700' };
   }
 };
 
@@ -201,7 +202,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
   if (!project) return null;
 
-  const projectPriorityClasses = getPriorityClasses(currentPriority);
+  const priorityStyles = getPriorityClasses(currentPriority);
   const dueDateDisplayStatus = getDueDateStatus(project.due_date, isEditingDueDate, currentDueDate);
   const projectStatusClasses = getStatusClasses(currentStatus);
   const projectStatusOptions = ['Open', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
@@ -607,10 +608,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     <div 
       ref={ref}
       id={`project-item-${project.id}`}
-      className={`rounded-lg shadow-md mb-3 transition-all duration-300 ease-in-out hover:shadow-lg ${projectPriorityClasses} ${isProjectCompletedOrCancelled ? 'opacity-70' : ''} ${needsAttentionStyle}`}>
+      className={`rounded-lg shadow-md mb-3 transition-all duration-300 ease-in-out hover:shadow-lg ${priorityStyles.cardOuterClass} ${isProjectCompletedOrCancelled ? 'opacity-70' : ''} ${needsAttentionStyle}`}>
       <div 
         className="p-2.5 sm:p-3 border-b border-gray-200 cursor-pointer" 
-        onClick={() => !isMenuOpen && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingStakeholders && setShowTasks(!showTasks)} 
+        onClick={() => { setShowTasks(!showTasks); setTargetProjectId(null); }}
         role="button" tabIndex={0} 
         onKeyDown={(e) => {if ((e.key === 'Enter' || e.key === ' ') && !isMenuOpen && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingStakeholders) setShowTasks(!showTasks)}}
       >
@@ -710,17 +711,14 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           </div>
 
           <div className="relative order-2 sm:order-none">
-            <select
-              value={currentPriority}
-              onChange={(e) => { 
-                  setCurrentPriority(e.target.value); 
-                  handlePriorityUpdate(e.target.value);
-              }}
-              className={`${commonInputClasses} w-28`}
-              onClick={handlePrioritySelectClick}
+            <div 
+              className="flex items-center cursor-pointer hover:bg-gray-200/50 p-0.5 rounded" 
+              onClick={(e) => {e.stopPropagation(); setIsEditingPriority(true); setTargetProjectId(null);}}
+              title={`Priority: ${currentPriority || 'N/A'}`}
             >
-              {priorityOptions.map(p => <option key={p} value={p}>{p} Priority</option>)}
-            </select>
+              {priorityStyles.icon}
+              <span className={`ml-1 text-xs ${priorityStyles.textClass}`}>{currentPriority || 'No Priority'}</span>
+            </div>
           </div>
 
           <div className="relative order-3 sm:order-none">

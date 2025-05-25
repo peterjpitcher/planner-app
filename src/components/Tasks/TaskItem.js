@@ -5,20 +5,22 @@ import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, form
 import { supabase } from '@/lib/supabaseClient';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
 
 // Helper to get priority styling
 const getTaskPriorityClasses = (priority) => {
+  // Returns icon, text color, and badge background/text color
   switch (priority) {
     case 'High':
-      return 'border-l-4 border-red-700 bg-red-200';
+      return { icon: <SolidFireIcon className="h-4 w-4 text-red-500" />, textClass: 'text-red-600 font-semibold', cardOuterClass: 'border-l-4 border-red-700 bg-red-200', badgeClass: 'bg-red-600 text-white' };
     case 'Medium':
-      return 'border-l-4 border-yellow-600 bg-yellow-100';
+      return { icon: <SolidExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />, textClass: 'text-yellow-600 font-semibold', cardOuterClass: 'border-l-4 border-yellow-600 bg-yellow-100', badgeClass: 'bg-yellow-500 text-black' };
     case 'Low':
-      return 'border-l-4 border-green-700 bg-green-200';
+      return { icon: <SolidCheckIcon className="h-4 w-4 text-green-500" />, textClass: 'text-green-600', cardOuterClass: 'border-l-4 border-green-700 bg-green-200', badgeClass: 'bg-green-600 text-white' };
     default:
-      return 'border-l-4 border-gray-400 bg-gray-100';
+      return { icon: <SolidClockIcon className="h-4 w-4 text-gray-400" />, textClass: 'text-gray-500', cardOuterClass: 'border-l-4 border-gray-400 bg-gray-100', badgeClass: 'bg-gray-500 text-white' };
   }
 };
 
@@ -154,8 +156,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
     // However, optimistic update should be fine for count.
   };
 
-  const priorityClasses = getTaskPriorityClasses(task.priority);
-  // Display due date status using currentDueDate if editing, otherwise task.due_date
+  const priorityStyles = getTaskPriorityClasses(currentPriority);
   const dueDateStatusToDisplay = getTaskDueDateStatus(isEditingDueDate ? currentDueDate : task.due_date);
 
   const handleToggleComplete = async () => {
@@ -262,89 +263,82 @@ export default function TaskItem({ task, onTaskUpdated }) {
   const editableTextClasses = (isEditState) => `cursor-text hover:bg-gray-100 p-0.5 rounded-sm ${isCompleted && !isEditState ? 'line-through text-gray-500' : 'text-gray-800'}`;
 
   return (
-    <div className={`${itemBaseClasses} ${priorityClasses} ${completedItemVisualClasses}`}>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center w-full">
-        {/* Checkbox, Task Name & Description */}
-        <div className="flex items-start flex-grow min-w-0 mr-2 sm:mr-3">
-          <input
-            type="checkbox"
-            checked={isCompleted}
-            onChange={handleToggleComplete}
-            disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
-            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2.5 mt-0.5 flex-shrink-0"
-          />
-          <div className="flex-grow min-w-0">
-            {/* Flex container for Name and Description to be on the same line */}
-            <div className="flex items-baseline gap-x-1.5">
-              {isEditingTaskName ? (
-                <input
-                  type="text"
-                  value={currentTaskName}
-                  onChange={handleTaskNameChange}
-                  onBlur={handleTaskNameUpdate}
-                  onKeyDown={handleTaskNameInputKeyDown}
-                  className="text-sm font-medium text-gray-900 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 flex-grow min-w-[50px] break-words"
-                  ref={taskNameInputRef}
+    <div 
+      className={`p-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} transition-opacity duration-150 relative group`}
+    >
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={isCompleted}
+          onChange={handleToggleComplete}
+          disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
+          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2.5 mt-0.5 flex-shrink-0"
+        />
+        <div className="flex-grow min-w-0">
+          <div className="flex items-baseline gap-x-1.5">
+            {isEditingTaskName ? (
+              <input
+                type="text"
+                value={currentTaskName}
+                onChange={handleTaskNameChange}
+                onBlur={handleTaskNameUpdate}
+                onKeyDown={handleTaskNameInputKeyDown}
+                className="text-sm font-medium text-gray-900 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 flex-grow min-w-[50px] break-words"
+                ref={taskNameInputRef}
+              />
+            ) : (
+              <span 
+                onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
+                className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0 break-words`}
+                title={currentTaskName}
+              >
+                {currentTaskName || 'Untitled Task'}
+              </span>
+            )}
+
+            {!isEditingTaskName && (
+              isEditingTaskDescription ? (
+                <textarea
+                  value={currentTaskDescription}
+                  onChange={handleTaskDescriptionChange}
+                  onBlur={handleTaskDescriptionUpdate}
+                  onKeyDown={handleTaskDescriptionKeyDown}
+                  className="text-xs text-gray-600 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 w-full min-h-[2em] resize-none break-words"
+                  rows="1"
+                  autoFocus
                 />
               ) : (
                 <span 
-                  onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
-                  className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0 break-words`}
-                  title={currentTaskName}
+                  onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
+                  className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''} truncate`}
+                  title={currentTaskDescription}
                 >
-                  {currentTaskName || 'Untitled Task'}
+                  {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
                 </span>
-              )}
-
-              {/* Task Description - In-line with Name (conditionally) */}
-              {!isEditingTaskName && (
-                isEditingTaskDescription ? (
-                  <textarea
-                    value={currentTaskDescription}
-                    onChange={handleTaskDescriptionChange}
-                    onBlur={handleTaskDescriptionUpdate}
-                    onKeyDown={handleTaskDescriptionKeyDown}
-                    className="text-xs text-gray-600 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 w-full min-h-[2em] resize-none break-words"
-                    rows="1"
-                    autoFocus
-                  />
-                ) : (
-                  <span 
-                    onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
-                    className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''} truncate`}
-                    title={currentTaskDescription}
-                  >
-                    {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
-                  </span>
-                )
-              )}
-            </div>
-          </div>
-          {/* Pencil Icon for Task Name/Description Edit - aligned with StandaloneTaskItem logic */}
-          <div className="flex-shrink-0 ml-2">
-            {!isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && !isEditingPriority && (
-              <PencilIcon 
-                className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
-                onClick={() => {
-                  // Prioritize editing name if description is also not being edited.
-                  // If description is already shown (e.g. because it has content), clicking pencil should still edit name primarily.
-                  setIsEditingTaskName(true);
-                }}
-                title="Edit task details"
-              />
+              )
             )}
           </div>
         </div>
+        <div className="flex-shrink-0 ml-2">
+          {!isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && !isEditingPriority && (
+            <PencilIcon 
+              className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
+              onClick={() => {
+                setIsEditingTaskName(true);
+              }}
+              title="Edit task details"
+            />
+          )}
+        </div>
 
-        {/* Priority, Due Date, Notes Toggle & Updated At - flex-shrink-0 to prevent shrinking */}
         <div className="flex items-center space-x-2 sm:space-x-3 text-xs mt-1 sm:mt-0 pl-[2.125rem] sm:pl-0 flex-shrink-0">
           {isEditingPriority ? (
-            <select
+            <select 
               value={currentPriority}
-              onChange={handlePriorityChange}
-              onBlur={handlePriorityUpdate}
-              onKeyDown={handlePrioritySelectKeyDown}
-              className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 px-1.5"
+              onChange={(e) => setCurrentPriority(e.target.value)} 
+              onBlur={handlePriorityUpdate} 
+              onKeyDown={(e) => e.key === 'Enter' && handlePriorityUpdate() || e.key === 'Escape' && (setCurrentPriority(task.priority || ''), setIsEditingPriority(false))}
+              className="text-xs p-0.5 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 h-6"
               autoFocus
             >
               <option value="">No Priority</option>
@@ -353,18 +347,14 @@ export default function TaskItem({ task, onTaskUpdated }) {
               <option value="High">High</option>
             </select>
           ) : (
-            <span 
-              className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${
-                  task.priority === 'High' ? 'bg-red-600 text-white' :
-                  task.priority === 'Medium' ? 'bg-yellow-500 text-black' :
-                  task.priority === 'Low' ? 'bg-green-600 text-white' :
-                  'bg-gray-500 text-white' // Default high-contrast badge
-              } ${!isCompleted ? 'cursor-pointer hover:opacity-80' : ''}`}
-              onClick={() => !isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && setIsEditingPriority(true)}
-              title={getPriorityText(task.priority)}
+            <div 
+              className={`flex items-center cursor-pointer hover:bg-gray-100/50 p-0.5 rounded -ml-0.5 ${isCompleted ? 'pointer-events-none' : ''}`}
+              onClick={() => {if (!isCompleted) setIsEditingPriority(true);}}
+              title={`Priority: ${currentPriority || 'N/A'}`}
             >
-                {getPriorityText(task.priority)}
-            </span>
+              {priorityStyles.icon} 
+              <span className={`ml-0.5 text-xs ${priorityStyles.textClass} ${isCompleted ? 'text-gray-500' : ''}`}>{currentPriority || 'No Priority'}</span>
+            </div>
           )}
 
           {isEditingDueDate ? (
@@ -393,8 +383,8 @@ export default function TaskItem({ task, onTaskUpdated }) {
             onClick={() => setShowNotes(!showNotes)} 
             className="relative text-gray-400 hover:text-indigo-600 flex items-center"
             aria-expanded={showNotes}
-            aria-controls={`notes-section-${task.id}`} // For accessibility
-            disabled={isLoadingNotes} // Disable while loading initial notes for count
+            aria-controls={`notes-section-${task.id}`}
+            disabled={isLoadingNotes}
           >
             <ChatBubbleLeftEllipsisIcon className="h-4 w-4" />
             {notes.length > 0 && (
@@ -409,7 +399,6 @@ export default function TaskItem({ task, onTaskUpdated }) {
         </div>
       </div>
 
-      {/* Notes Section - now takes full width under the main task line */}
       {showNotes && (
         <div id={`notes-section-${task.id}`} className="mt-2 pt-1.5 border-t border-gray-200">
           <AddNoteForm

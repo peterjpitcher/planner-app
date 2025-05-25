@@ -210,6 +210,15 @@ This section tracks the features implemented and the planned next steps based on
     *   Task notes within `TaskItem.js` are fetched and sorted by creation date ascending.
     *   Tasks within `StandaloneTaskList.js` are sorted by due date ascending, then priority ascending within their respective groups.
 
+*   **Mobile Experience (Phase 1 - Initial Setup):**
+    *   Created a dedicated mobile layout (`src/components/Mobile/MobileLayout.js`) with a mobile-friendly header (title, Add Project, Desktop View link, Logout).
+    *   Created a compact project list item component (`src/components/Mobile/MobileProjectListItem.js`) displaying essential project info (name, status, priority, due date, open task count, stakeholders).
+    *   Implemented the mobile dashboard page (`src/app/m/dashboard/page.js`) which:
+        *   Uses `MobileLayout`.
+        *   Fetches user projects, including a count of open tasks for each.
+        *   Displays projects using `MobileProjectListItem`.
+        *   Handles loading, error, and empty states.
+        *   Integrates the "Add Project" modal from the header.
 *   **UI Interactivity - Task Panel to Project List Navigation:**
     *   In the "Upcoming Tasks" panel (`StandaloneTaskList.js`), project names are now clickable.
     *   Clicking a project name scrolls the corresponding project in the "Your Projects" list (`ProjectList.js`) into view and applies a temporary visual highlight (ring effect for 1 second).
@@ -247,6 +256,52 @@ This section tracks the features implemented and the planned next steps based on
         *   Padding around the notes section in `TaskItem.js` and `ProjectItem.js` has been slightly reduced to better suit the smaller note items and ensure no conflicting backgrounds are applied.
         *   Vertical padding in `NoteItem.js` (`py-0.5`) and removed inter-note spacing in `NoteList.js` (removed `space-y-1`) to make the list of notes more compact.
         *   The display format for individual notes in `NoteItem.js` is now `Date: Note Content` on a single line (e.g., "MMM d, h:mm a: Your note text here."), achieved by combining them into one paragraph element.
+
+*   **Comprehensive Mobile Experience (`/m/...` routes):**
+    *   **Layout & Navigation:**
+        *   Dedicated `MobileLayout.js` (`src/components/Mobile/MobileLayout.js`) providing a consistent header (with app title, Add Project button, Search toggle, Desktop View link, Logout) and a sticky bottom tab bar for "Projects" (`/m/dashboard`) and "Tasks" (`/m/tasks`).
+    *   **Mobile Dashboard (`/m/dashboard`):**
+        *   Lists active (non-Completed/Cancelled) projects using `MobileProjectListItem.js`.
+        *   Projects sorted by Priority (High to Low), then Due Date (Ascending).
+        *   Supports adding new projects via a modal accessible from the header.
+        *   **Filtering:** Includes a toggleable filter section with dropdowns for project `Status` (Open, In Progress, On Hold) and `Priority` (All, High, Medium, Low). Active filter count is displayed, and filters can be cleared.
+        *   Handles loading, error, and empty/no-results states.
+    *   **Mobile Tasks Page (`/m/tasks`):**
+        *   Lists active (non-completed) tasks, grouped by due date categories: "Overdue", "Today", "Tomorrow", "This Week", and "No Due Date".
+        *   Tasks within groups are sorted by Due Date (Ascending), then Priority (High to Low).
+        *   Uses `MobileTaskListItem.js` for display.
+        *   **Filtering:** Includes a toggleable filter section for `Due Date Range` (All, Overdue, Today, etc.) and `Priority`.
+        *   Handles loading, error, and empty/no-results states.
+    *   **Mobile Project Detail Page (`/m/project/[id]`):**
+        *   Displays full details of a selected project: name, description, status, priority, due date, stakeholders.
+        *   Includes a "Back" button, and an "Edit" button navigating to the project edit page.
+        *   Lists all tasks associated with the project using `MobileTaskListItem.js`, showing an open task count.
+        *   Includes an "Add Task" button navigating to the add task page for this project.
+        *   **Project Notes:** Fetches, displays (newest first), and allows adding new notes specific to the project.
+    *   **Mobile Task Detail Page (`/m/task/[id]`):**
+        *   Displays full details for a selected task: name, description, completion status, priority, due date, parent project (clickable link), last updated time.
+        *   Includes a "Back" button, an "Edit" button, and a functional toggle for task completion status.
+        *   **Task Notes:** Fetches, displays (newest first), and allows adding new notes specific to the task.
+    *   **Mobile Project Edit Page (`/m/project/[id]/edit`):**
+        *   Provides a form to edit all major project fields.
+        *   Includes "Save" (navigates back to project detail on success, replacing history entry), "Cancel" (navigates back), and "Delete Project" (with confirmation) buttons.
+    *   **Mobile Add Task Page (`/m/project/[id]/add-task`):**
+        *   Provides a form to add a new task to the specified project.
+        *   Defaults new task priority to the parent project's priority.
+        *   "Save" creates the task and navigates back to the project detail page (replacing history entry).
+    *   **Mobile Task Edit Page (`/m/task/[id]/edit`):**
+        *   Provides a form to edit task name, description, due date, and priority.
+        *   Includes "Save" (navigates back to task detail, replacing history), "Cancel", and "Delete Task" (with confirmation, navigates to parent project or task list) buttons.
+    *   **List Item Components:**
+        *   `MobileProjectListItem.js`: Compact display for project lists. Includes logic for priority icons, due date status, and open task count. Project names wrap if too long.
+            *   **Swipe Actions:** Swipe left reveals "Edit" and "Delete" actions. Callbacks update parent list on deletion.
+        *   `MobileTaskListItem.js`: Compact display for task lists. Includes logic for priority icons and due date status. Task names wrap if too long.
+            *   **Swipe Actions:** Swipe right toggles completion. Swipe left reveals "Edit" and "Delete" actions. Callbacks update parent list on update/deletion.
+    *   **Global Search (Mobile):**
+        *   Search icon in `MobileLayout` header toggles a search input.
+        *   Submitting search navigates to `/m/search?query=...`.
+        *   **Search Results Page (`/m/search`):** Displays matching projects and tasks in separate sections. Uses `Suspense` for `useSearchParams`. Results also support swipe actions.
+    *   **Text Wrapping:** Project and Task names in list items and detail page headers are configured to wrap to prevent layout overflow.
 
 ### Remaining PRD Features (Next Steps):
 
