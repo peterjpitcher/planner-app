@@ -2,13 +2,14 @@
 
 import AddTaskForm from './AddTaskForm';
 
-export default function AddTaskModal({ projectId, onClose, onTaskAdded, defaultPriority }) {
+export default function AddTaskModal({ isOpen, onClose, onTaskAdded, projects }) {
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
-      {/* Increased z-index to ensure it's above ProjectItem potentially higher z-index elements */}
-      <div className="bg-white p-5 rounded-lg shadow-xl w-full max-w-md max-h-[80vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col">
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-gray-800">Add New Task</h2>
+          <h2 className="text-xl sm:text-2xl font-semibold text-gray-800">Add New Task</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
@@ -18,7 +19,16 @@ export default function AddTaskModal({ projectId, onClose, onTaskAdded, defaultP
           </button>
         </div>
         <div className="overflow-y-auto flex-grow">
-          <AddTaskForm projectId={projectId} onTaskAdded={onTaskAdded} onClose={onClose} defaultPriority={defaultPriority} />
+          <AddTaskForm 
+            projects={projects}
+            onTaskAdded={(newTask) => {
+              if (onTaskAdded) {
+                onTaskAdded(newTask);
+              }
+              onClose();
+            }} 
+            onClose={onClose}
+          />
         </div>
       </div>
     </div>

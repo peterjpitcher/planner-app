@@ -1,26 +1,51 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { quickPickOptions } from '@/lib/dateUtils';
 
-export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPriority }) {
+// Reusable form for adding a task. 
+// If `projectId` is provided, it's for adding a task to a specific project.
+// If `projects` array is provided, it's for adding a task from a general page, requiring project selection.
+export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose, defaultPriority = 'Medium' }) {
   const { user } = useAuth();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState(defaultPriority || 'Medium');
+  const [priority, setPriority] = useState(defaultPriority);
+  const [selectedProjectId, setSelectedProjectId] = useState(projectId || '');
+  
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [addAnother, setAddAnother] = useState(false);
 
   const nameInputRef = useRef(null);
+
+  const priorityOptions = ['Low', 'Medium', 'High'];
+
   useEffect(() => {
     if (nameInputRef.current) {
       nameInputRef.current.focus();
     }
   }, []);
+
+  useEffect(() => {
+    // If a specific projectId is provided, ensure it's set
+    if (projectId) {
+      setSelectedProjectId(projectId);
+    }
+    // If projects are available and no specific projectId, and selectedProjectId is not set or not in list, set to first available project.
+    if (!projectId && projects && projects.length > 0 && 
+        (!selectedProjectId || !projects.find(p => p.id === selectedProjectId))) {
+      // setSelectedProjectId(projects[0].id); // Auto-select first project
+    } 
+  }, [projectId, projects, selectedProjectId]);
+
+  useEffect(() => {
+    // Set initial priority passed as prop (e.g. from parent project)
+    setPriority(defaultPriority);
+  }, [defaultPriority]);
 
   const handleSubmit = async (e, shouldAddAnother = false) => {
     if (e && typeof e.preventDefault === 'function') {
@@ -30,16 +55,15 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
     const addingAnother = shouldAddAnother || addAnother;
 
     if (!user) {
-      setError('You must be logged in to add a task.');
+      setError('You must be logged in.');
       return;
     }
     if (!name.trim()) {
       setError('Task name is required.');
       return;
     }
-    if (!projectId) {
-      setError('Project ID is missing. Cannot add task.');
-      console.error('AddTaskForm: projectId is missing');
+    if (!selectedProjectId) {
+      setError('A project must be selected for the task.');
       return;
     }
 
@@ -47,25 +71,32 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
     setLoading(true);
 
     const taskData = {
-      project_id: projectId,
-      user_id: user.id, // For RLS and ownership
+      user_id: user.id,
+      project_id: selectedProjectId,
       name: name.trim(),
       description: description.trim() || null,
       due_date: dueDate || null,
-      priority,
+      priority: priority,
+      is_completed: false,
     };
 
     try {
-      const { data, error: insertError } = await supabase
+      const { data: newTask, error: insertError } = await supabase
         .from('tasks')
-        .insert([taskData])
-        .select()
+        .insert(taskData)
+        .select('*, projects(id, name)') // Select project name for optimistic update
         .single();
 
       if (insertError) throw insertError;
 
-      if (data) {
-        onTaskAdded(data); // Pass the newly created task back
+      // Update parent project's updated_at timestamp
+      await supabase
+        .from('projects')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', selectedProjectId);
+
+      if (onTaskAdded) {
+        onTaskAdded(newTask); // Pass the newly created task back
       }
       
       if (addingAnother) {
@@ -89,7 +120,7 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="taskName" className="block text-sm font-medium text-gray-700">
           Task Name <span className="text-red-500">*</span>
@@ -105,20 +136,48 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
         />
       </div>
 
+      {/* Project Selector: Only show if no specific projectId is passed and projects list is available */}
+      {!projectId && projects && projects.length > 0 && (
+        <div>
+          <label htmlFor="project" className="block text-sm font-medium text-gray-700">
+            Project <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="project"
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            required
+          >
+            <option value="" disabled>Select a project</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {/* If projectId is provided, could show a disabled input or just text of project name */}
+      {projectId && !projects && (
+          <div>
+            <p className="text-sm text-gray-600">Adding task to a specific project.</p>
+            {/* Consider fetching and displaying project name here if needed for context */}
+          </div>
+      )}
+
       <div>
         <label htmlFor="taskDescription" className="block text-sm font-medium text-gray-700">
-          Description (Optional)
+          Description
         </label>
         <textarea
           id="taskDescription"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          rows={2}
+          rows={3}
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label htmlFor="taskDueDate" className="block text-sm font-medium text-gray-700">
             Due Date
@@ -141,9 +200,7 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
             onChange={(e) => setPriority(e.target.value)}
             className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
           >
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
+            {priorityOptions.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
           </select>
         </div>
       </div>
@@ -169,13 +226,16 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
       {error && <p className="text-sm text-red-600">Error: {error}</p>}
 
       <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        >
-          Cancel
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -183,16 +243,16 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
             handleSubmit(null, true);
           }}
           disabled={loading}
-          className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
         >
           {loading && addAnother ? 'Adding...' : 'Add & Add Another'}
         </button>
         <button
           type="submit"
           disabled={loading}
-          className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
         >
-          {loading && !addAnother ? 'Adding Task...' : 'Add Task'}
+          {loading ? 'Adding Task...' : 'Add Task'}
         </button>
       </div>
     </form>

@@ -6,8 +6,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
+import AddTaskModal from '@/components/Tasks/AddTaskModal';
 import { parseISO, startOfDay, addDays, endOfWeek, isPast, isSameDay, isWithinInterval, compareAsc } from 'date-fns';
-import { FunnelIcon, XMarkIcon } from '@heroicons/react/20/solid'; // For filter icons
+import { FunnelIcon, XMarkIcon, PlusIcon } from '@heroicons/react/20/solid'; // For filter icons
 
 const getPriorityValue = (priority) => {
   switch (priority) {
@@ -22,8 +23,11 @@ const MobileTasksPage = () => {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [tasks, setTasks] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [error, setError] = useState(null);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
 
   // State for filters
   const [selectedDueDateRange, setSelectedDueDateRange] = useState('All'); // All, Overdue, Today, Tomorrow, ThisWeek
@@ -33,33 +37,52 @@ const MobileTasksPage = () => {
   const dueDateRangeOptions = ['All', 'Overdue', 'Today', 'Tomorrow', 'This Week', 'No Due Date'];
   const priorityOptions = ['All', 'High', 'Medium', 'Low'];
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasksAndProjects = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
+    setIsLoadingProjects(true);
     setError(null);
     try {
-      const { data, error: dbError } = await supabase
+      const { data: tasksData, error: tasksDbError } = await supabase
         .from('tasks')
         .select('*, projects(id, name)')
         .eq('user_id', user.id)
-        // Fetch all tasks, client-side filtering will handle completion status and ranges
         .order('due_date', { ascending: true, nullsFirst: true })
         .order('priority', { ascending: false });
-      if (dbError) throw dbError;
-      setTasks(data || []);
+      if (tasksDbError) throw tasksDbError;
+      setTasks(tasksData || []);
+
+      const { data: projectsData, error: projectsDbError } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .not('status', 'in', '("Completed", "Cancelled")')
+        .order('name', { ascending: true });
+      if (projectsDbError) throw projectsDbError;
+      setProjects(projectsData || []);
+
     } catch (e) {
-      console.error('Error fetching tasks:', e);
-      setError('Failed to load tasks.');
+      console.error('Error fetching tasks or projects:', e);
+      setError('Failed to load data.');
       setTasks([]);
+      setProjects([]);
     } finally {
       setIsLoading(false);
+      setIsLoadingProjects(false);
     }
   }, [user]);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
-    if (user) fetchTasks();
-  }, [user, authLoading, router, fetchTasks]);
+    if (user) {
+      fetchTasksAndProjects();
+    }
+  }, [user, authLoading, router, fetchTasksAndProjects]);
+
+  const handleTaskAdded = (newTask) => {
+    fetchTasksAndProjects();
+    setShowAddTaskModal(false);
+  };
 
   const handleTaskUpdatedFromSwipe = useCallback((updatedTask) => {
     setTasks(currentTasks => currentTasks.map(t => t.id === updatedTask.id ? updatedTask : t));
@@ -99,11 +122,6 @@ const MobileTasksPage = () => {
         if (selectedDueDateRange === 'All' || selectedDueDateRange === 'Tomorrow') groups.tomorrow.push(task);
       } else if (isWithinInterval(dueDate, { start: dayAfterTomorrow, end: endOfThisWeek })) {
         if (selectedDueDateRange === 'All' || selectedDueDateRange === 'This Week') groups.thisWeek.push(task);
-      } else if (selectedDueDateRange === 'All') { // Catch tasks outside these specific ranges if 'All' is selected
-        // This logic might need refinement if we want a general 'Future' bucket when 'All' is chosen
-        // For now, if 'All' is selected for due date, they are included if they didn't fit above.
-        // A better approach might be to simply not group if date filter is 'All' and priority is 'All'
-        // or have more explicit groups. For now, this primarily handles specific date filters.
       }
     });
 
@@ -131,19 +149,18 @@ const MobileTasksPage = () => {
   };
   const activeFilterCount = (selectedDueDateRange !== 'All' ? 1 : 0) + (selectedPriority !== 'All' ? 1 : 0);
 
-  // Loading and Error states (remain the same)
-  if (authLoading || (isLoading && tasks.length === 0 && !error)) {
-    return <MobileLayout title="My Tasks"><div className="text-center py-10"><p>Loading tasks...</p></div></MobileLayout>;
+  if (authLoading || ((isLoading || isLoadingProjects) && tasks.length === 0 && projects.length === 0 && !error)) {
+    return <MobileLayout title="My Tasks"><div className="text-center py-10"><p>Loading data...</p></div></MobileLayout>;
   }
   if (error) {
-    return <MobileLayout title="Error"><div className="text-center py-10"><p className="text-red-500">{error}</p><button onClick={fetchTasks} className="mt-4 btn-primary">Try Again</button></div></MobileLayout>;
+    return <MobileLayout title="Error"><div className="text-center py-10"><p className="text-red-500">{error}</p><button onClick={fetchTasksAndProjects} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Try Again</button></div></MobileLayout>;
   }
 
   const tasksToShowCount = groupOrder.reduce((acc, key) => acc + (filteredAndGroupedTasks[key]?.length || 0), 0);
 
   return (
     <MobileLayout title="My Tasks">
-      <div className="p-2">
+      <div className="p-2 relative">
         <button onClick={() => setShowFilters(!showFilters)} className="w-full mb-2 flex items-center justify-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500">
           <FunnelIcon className={`h-4 w-4 mr-1.5 ${activeFilterCount > 0 ? 'text-indigo-600' : 'text-gray-400'}`} />
           Filters {activeFilterCount > 0 ? `(${activeFilterCount} applied)` : ''}
@@ -176,7 +193,8 @@ const MobileTasksPage = () => {
         {tasksToShowCount === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-500">No tasks match your filters.</p>
-            {tasks.length > 0 && activeFilterCount === 0 && <p className="text-sm text-gray-400">All tasks are hidden by current grouping or filters.</p>}
+            {tasks.length > 0 && activeFilterCount === 0 && !isLoading && <p className="text-sm text-gray-400">All tasks are hidden by current grouping or filters.</p>}
+            {!isLoading && tasks.length === 0 && <p className="text-sm text-gray-400">You have no tasks yet.</p> }
           </div>
         ) : (
           <div className="space-y-0">
@@ -202,6 +220,25 @@ const MobileTasksPage = () => {
           </div>
         )}
       </div>
+
+      {!isLoadingProjects && (
+        <button 
+            onClick={() => setShowAddTaskModal(true)} 
+            className="fixed bottom-20 right-4 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-20"
+            title="Add New Task"
+        >
+            <PlusIcon className="h-6 w-6" />
+        </button>
+      )}
+
+      {showAddTaskModal && (
+        <AddTaskModal 
+            isOpen={showAddTaskModal} 
+            onClose={() => setShowAddTaskModal(false)} 
+            onTaskAdded={handleTaskAdded}
+            projects={projects}
+        />
+      )}
     </MobileLayout>
   );
 };

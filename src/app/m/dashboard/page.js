@@ -83,7 +83,7 @@ const MobileDashboardPage = () => {
         const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1, 'All': 0 }; // 'All' for safety, not expected in actual data
         const priorityA = priorityOrder[a.priority] || 0;
         const priorityB = priorityOrder[b.priority] || 0;
-        if (priorityA !== priorityB) return priorityB - priorityA; // Descending priority
+        if (priorityA !== priorityB) return priorityA - priorityB; // Descending priority (Higher number = higher priority)
         
         const dateA = a.due_date ? new Date(a.due_date) : null;
         const dateB = b.due_date ? new Date(b.due_date) : null;
