@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict } from 'date-fns';
+import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { PencilIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
@@ -9,34 +9,34 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
-  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-500 text-xs', sortKey: Infinity };
+  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', sortKey: Infinity };
   
   let date = startOfDay(parseISO(dateToConsider));
-  if (typeof dateToConsider === 'string' && dateToConsider.match(/^\\d{4}-\\d{2}-\\d{2}$/)) {
+  if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
     date = startOfDay(new Date(dateToConsider + 'T00:00:00'));
   }
 
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
   let text = `Due: ${format(date, 'MMM d')}`;
-  let classes = 'text-gray-600 text-xs';
+  let classes = 'text-gray-700';
   let sortKey = daysDiff;
 
   if (isToday(date)) {
     text = `Due Today`;
-    classes = 'text-red-500 font-semibold text-xs';
+    classes = 'text-red-700 font-bold';
     sortKey = 0;
   } else if (isTomorrow(date)) {
     text = `Due Tomorrow`;
-    classes = 'text-yellow-500 font-semibold text-xs';
+    classes = 'text-yellow-700 font-bold';
     sortKey = 1;
   } else if (isPast(date) && !isToday(date)) {
     text = `Overdue: ${format(date, 'MMM d')}`;
-    classes = 'text-red-600 font-semibold text-xs';
-    sortKey = -Infinity + daysDiff; // Make overdue items sort earliest among past items
+    classes = 'text-red-700 font-bold';
+    sortKey = -Infinity + daysDiff;
   } else if (daysDiff < 0) { // Other past dates
      text = `Due ${format(date, 'MMM d')}`;
-     classes = 'text-gray-500 text-xs italic'; // less prominent for past items that aren't strictly overdue today/tomorrow
+     classes = 'text-gray-600 italic';
   }
   return { text, classes, sortKey };
 };
@@ -44,22 +44,22 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
 const getStandaloneTaskPriorityStyling = (priority) => {
   switch (priority) {
     case 'High':
-      return 'border-l-2 border-red-400 bg-red-50';
+      return 'border-l-4 border-red-700 bg-red-200';
     case 'Medium':
-      return 'border-l-2 border-yellow-400 bg-yellow-50';
+      return 'border-l-4 border-yellow-600 bg-yellow-100';
     case 'Low':
-      return 'border-l-2 border-green-400 bg-green-50';
+      return 'border-l-4 border-green-700 bg-green-200';
     default:
-      return 'border-l-2 border-gray-300 bg-gray-50'; // Default style for tasks without a known priority or other cases
+      return 'border-l-4 border-gray-400 bg-gray-100';
   }
 };
 
 const getPriorityValue = (priority) => {
     switch (priority) {
-      case 'High': return 1;
+      case 'High': return 3;
       case 'Medium': return 2;
-      case 'Low': return 3;
-      default: return 4;
+      case 'Low': return 1;
+      default: return 0; // No priority or undefined
     }
 };
 
@@ -68,12 +68,17 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   const [currentName, setCurrentName] = useState(task.name);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [currentDueDate, setCurrentDueDate] = useState(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '');
+  const [isEditingPriority, setIsEditingPriority] = useState(false);
+  const [currentPriority, setCurrentPriority] = useState(task.priority || '');
   const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
     setCurrentName(task.name);
     setCurrentDueDate(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '');
-  }, [task]);
+    if (!isEditingPriority) {
+      setCurrentPriority(task.priority || '');
+    }
+  }, [task, isEditingPriority]);
 
   const dueDateInfo = getTaskDueDateStatus(task.due_date, isEditingDueDate, currentDueDate);
   const updatedAgo = task.updated_at 
@@ -140,10 +145,33 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
     }
   };
 
+  const handlePriorityUpdate = async () => {
+    if (currentPriority === (task.priority || '')) {
+      setIsEditingPriority(false);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({ priority: currentPriority || null, updated_at: new Date().toISOString() })
+        .eq('id', task.id)
+        .select()
+        .single();
+      if (error) throw error;
+      if (onTaskUpdated) onTaskUpdated(data);
+      setIsEditingPriority(false);
+    } catch (err) {
+      console.error('Error updating task priority:', err);
+      setCurrentPriority(task.priority || ''); // revert
+      setIsEditingPriority(false);
+    }
+  };
+
   const priorityColors = {
-    High: 'bg-red-100 text-red-700',
-    Medium: 'bg-yellow-100 text-yellow-700',
-    Low: 'bg-green-100 text-green-700',
+    High: 'bg-red-600 text-white',
+    Medium: 'bg-yellow-500 text-black',
+    Low: 'bg-green-600 text-white',
+    Default: 'bg-gray-500 text-white' // Added a default for safety
   };
 
   const itemPriorityClass = getStandaloneTaskPriorityStyling(task.priority);
@@ -184,7 +212,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
             </p>
           )}
           <div className="flex-shrink-0 flex items-center">
-            {!task.is_completed && !isEditingName && !isEditingDueDate && (
+            {!task.is_completed && !isEditingName && !isEditingDueDate && !isEditingPriority && (
               <PencilIcon 
                   className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
                   onClick={() => setIsEditingName(true)}
@@ -216,10 +244,36 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
                   {dueDateInfo.text}
               </span>
           )}
-          {task.priority && (
-              <span className={`px-1.5 py-0.5 rounded-full whitespace-nowrap text-2xs ${priorityColors[task.priority] || 'bg-gray-100 text-gray-600'}`}>
-                  {task.priority}
+          {isEditingPriority ? (
+            <select
+              value={currentPriority}
+              onChange={(e) => setCurrentPriority(e.target.value)}
+              onBlur={handlePriorityUpdate}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handlePriorityUpdate();
+                if (e.key === 'Escape') {
+                  setCurrentPriority(task.priority || '');
+                  setIsEditingPriority(false);
+                }
+              }}
+              className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-0.5 px-1"
+              autoFocus
+            >
+              <option value="">No Priority</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          ) : (
+            task.priority && (
+              <span 
+                className={`px-1.5 py-0.5 rounded-full whitespace-nowrap text-2xs ${priorityColors[task.priority] || priorityColors.Default} ${!task.is_completed ? 'cursor-pointer hover:opacity-80' : ''}`}
+                onClick={() => !task.is_completed && setIsEditingPriority(true)}
+                title={task.priority}
+              >
+                {task.priority}
               </span>
+            )
           )}
            {project && (
             <span 
@@ -239,7 +293,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   );
 }
 
-export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded }) {
+export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder }) {
   const projectMap = useMemo(() => 
     projects.reduce((map, p) => {
       map[p.id] = p;
@@ -262,6 +316,14 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
     allUserTasks.forEach(task => {
       if (task.is_completed) {
         return; // Skip completed tasks from all active groups
+      }
+
+      // Filter out tasks belonging to projects where Bill is a stakeholder, if the filter is active
+      if (hideBillStakeholder) {
+        const parentProject = projectMap[task.project_id];
+        if (parentProject && parentProject.stakeholders && parentProject.stakeholders.includes('Bill')) {
+          return; // Skip this task
+        }
       }
 
       if (!task.due_date) {
@@ -288,21 +350,29 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
       }
     });
 
-    // Sort tasks within each group by priority then due date
+    // Sort tasks within each group: Due Date (Desc), then Priority (High-Low)
     for (const groupName in groups) {
       groups[groupName].sort((a, b) => {
-        const priorityComparison = getPriorityValue(a.priority) - getPriorityValue(b.priority);
-        if (priorityComparison !== 0) return priorityComparison;
+        // Primary sort: Due Date (Descending - recent first)
         const dateA = a.due_date ? parseISO(a.due_date) : null;
         const dateB = b.due_date ? parseISO(b.due_date) : null;
-        if (!dateA && !dateB) return 0;
-        if (!dateA) return 1; // Tasks with no due date last
-        if (!dateB) return -1;
-        return differenceInDays(dateA, dateB);
+
+        if (dateA === null && dateB === null) {
+          // If both dates are null, sort by priority
+          return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+        }
+        if (dateA === null) return 1; // Null dates come after non-null dates
+        if (dateB === null) return -1; // Non-null dates come before null dates
+
+        const dateComparison = compareDesc(dateA, dateB);
+        if (dateComparison !== 0) return dateComparison;
+
+        // Secondary sort: Priority (High to Low)
+        return getPriorityValue(b.priority) - getPriorityValue(a.priority);
       });
     }
     return groups;
-  }, [allUserTasks]);
+  }, [allUserTasks, projectMap, hideBillStakeholder]);
 
   const groupOrder = ['overdue', 'today', 'thisWeek', 'later', 'noDueDate'];
   const groupLabels = {

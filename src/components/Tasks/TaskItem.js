@@ -12,26 +12,24 @@ import AddNoteForm from '@/components/Notes/AddNoteForm';
 const getTaskPriorityClasses = (priority) => {
   switch (priority) {
     case 'High':
-      return 'border-l-2 border-red-400 bg-red-50';
+      return 'border-l-4 border-red-700 bg-red-200';
     case 'Medium':
-      return 'border-l-2 border-yellow-400 bg-yellow-50';
+      return 'border-l-4 border-yellow-600 bg-yellow-100';
     case 'Low':
-      return 'border-l-2 border-green-400 bg-green-50';
+      return 'border-l-4 border-green-700 bg-green-200';
     default:
-      return 'border-l-2 border-gray-300 bg-gray-50';
+      return 'border-l-4 border-gray-400 bg-gray-100';
   }
 };
 
 // Helper for due date status
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
-  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-400 text-xs' };
+  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs' };
   
-  // Ensure dateToConsider is treated as local date for formatting by adding time if not present
-  // Input type="date" returns "YYYY-MM-DD"
   let date;
-  if (typeof dateToConsider === 'string' && dateToConsider.match(/^\\d{4}-\\d{2}-\\d{2}$/)) {
-    date = startOfDay(new Date(dateToConsider + 'T00:00:00')); // Treat as local
+  if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    date = startOfDay(new Date(dateToConsider + 'T00:00:00'));
   } else {
     date = startOfDay(new Date(dateToConsider));
   }
@@ -39,19 +37,25 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
   let text = `Due: ${format(date, 'MMM d, yyyy')}`;
-  let classes = 'text-gray-600 text-xs';
+  let classes = 'text-gray-700 text-xs'; // Default for future dates
+
   if (isToday(date)) {
     text = `Due: Today`;
-    classes = 'text-red-500 font-semibold text-xs';
+    classes = 'text-red-700 font-bold text-xs';
   } else if (isTomorrow(date)) {
     text = `Due: Tomorrow`;
-    classes = 'text-yellow-500 font-semibold text-xs';
-  } else if (isPast(date) && !isToday(date)) { // Ensure overdue is not also today
+    classes = 'text-yellow-700 font-bold text-xs';
+  } else if (isPast(date) && !isToday(date)) {
     text = `Overdue: ${format(date, 'MMM d, yyyy')}`;
-    classes = 'text-red-600 font-semibold text-xs';
+    classes = 'text-red-700 font-bold text-xs';
+  } else if (daysDiff < 0) { // Other past dates
+    text = `Due ${format(date, 'MMM d, yyyy')}`
+    classes = 'text-gray-600 italic text-xs';
   } else if (daysDiff > 0 && daysDiff <= 7) {
     text = `Due in ${daysDiff}d (${format(date, 'MMM d')})`;
+    // classes remains default (text-gray-700 text-xs)
   }
+  // For future dates beyond 7 days, text is `Due: MMM d, yyyy` and classes remain default
   return { text, classes };
 };
 
@@ -266,7 +270,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
             type="checkbox"
             checked={isCompleted}
             onChange={handleToggleComplete}
-            disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate}
+            disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
             className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2.5 mt-0.5 flex-shrink-0"
           />
           <div className="flex-grow min-w-0">
@@ -316,6 +320,20 @@ export default function TaskItem({ task, onTaskUpdated }) {
               )}
             </div>
           </div>
+          {/* Pencil Icon for Task Name/Description Edit - aligned with StandaloneTaskItem logic */}
+          <div className="flex-shrink-0 ml-2">
+            {!isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && !isEditingPriority && (
+              <PencilIcon 
+                className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                onClick={() => {
+                  // Prioritize editing name if description is also not being edited.
+                  // If description is already shown (e.g. because it has content), clicking pencil should still edit name primarily.
+                  setIsEditingTaskName(true);
+                }}
+                title="Edit task details"
+              />
+            )}
+          </div>
         </div>
 
         {/* Priority, Due Date, Notes Toggle & Updated At - flex-shrink-0 to prevent shrinking */}
@@ -336,19 +354,16 @@ export default function TaskItem({ task, onTaskUpdated }) {
             </select>
           ) : (
             <span 
-              onClick={() => !isCompleted && setIsEditingPriority(true)}
-              className={`px-1.5 py-0.5 text-xs font-medium rounded-full bg-opacity-20 ${!isCompleted ? 'cursor-pointer hover:opacity-75' : ''}`}
-              style={{
-                backgroundColor: currentPriority === 'High' ? 'rgba(239, 68, 68, 0.1)' : 
-                                 currentPriority === 'Medium' ? 'rgba(245, 158, 11, 0.1)' : 
-                                 currentPriority === 'Low' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(107, 114, 128, 0.1)',
-                color: currentPriority === 'High' ? 'rgb(185, 28, 28)' : 
-                       currentPriority === 'Medium' ? 'rgb(194, 102, 7)' : 
-                       currentPriority === 'Low' ? 'rgb(4, 120, 87)' : 'rgb(55, 65, 81)',
-              }}
-              title={`Priority: ${getPriorityText(currentPriority)}`}
+              className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${
+                  task.priority === 'High' ? 'bg-red-600 text-white' :
+                  task.priority === 'Medium' ? 'bg-yellow-500 text-black' :
+                  task.priority === 'Low' ? 'bg-green-600 text-white' :
+                  'bg-gray-500 text-white' // Default high-contrast badge
+              } ${!isCompleted ? 'cursor-pointer hover:opacity-80' : ''}`}
+              onClick={() => !isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && setIsEditingPriority(true)}
+              title={getPriorityText(task.priority)}
             >
-              {getPriorityText(currentPriority)}
+                {getPriorityText(task.priority)}
             </span>
           )}
 

@@ -8,7 +8,7 @@ import ProjectList from '@/components/Projects/ProjectList';
 import AddProjectModal from '@/components/Projects/AddProjectModal';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
 import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIcon, ClockIcon, CalendarDaysIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
-import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc } from 'date-fns';
+import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
 import Link from 'next/link';
 
 export default function DashboardPage() {
@@ -28,15 +28,68 @@ export default function DashboardPage() {
     untouched: false,
     noDueDate: false,
   });
+  const [hideBillStakeholder, setHideBillStakeholder] = useState(false);
 
-  const getPriorityValue = (priority) => {
+  const getPriorityValue = useCallback((priority) => {
     switch (priority) {
-      case 'High': return 1;
+      case 'High': return 3;
       case 'Medium': return 2;
-      case 'Low': return 3;
-      default: return 4;
+      case 'Low': return 1;
+      default: return 0; // No priority or undefined
     }
-  };
+  }, []);
+
+  const sortByDateAndPriority = useCallback((a, b) => {
+    const dateA = a.due_date ? parseISO(a.due_date) : null;
+    const dateB = b.due_date ? parseISO(b.due_date) : null;
+
+    // Handle null dates: nulls should come last
+    if (dateA === null && dateB !== null) return 1;
+    if (dateA !== null && dateB === null) return -1;
+    if (dateA !== null && dateB !== null) {
+      const dateComparison = compareAsc(dateA, dateB);
+      if (dateComparison !== 0) return dateComparison;
+    }
+    // If dates are the same or both are null, sort by priority (descending)
+    return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+  }, [getPriorityValue]);
+
+  // New sorting function for Projects: Priority (High-Low), then Due Date (Desc)
+  const sortProjectsByPriorityThenDateDesc = useCallback((a, b) => {
+    // Primary sort: Priority (High to Low)
+    const priorityComparison = getPriorityValue(b.priority) - getPriorityValue(a.priority);
+    if (priorityComparison !== 0) return priorityComparison;
+
+    // Secondary sort: Due Date (Descending - recent first)
+    const dateA = a.due_date ? parseISO(a.due_date) : null;
+    const dateB = b.due_date ? parseISO(b.due_date) : null;
+
+    if (dateA === null && dateB === null) return 0; // Both null, treat as equal for date
+    if (dateA === null) return 1; // Null dates come after non-null dates
+    if (dateB === null) return -1; // Non-null dates come before null dates
+
+    return compareDesc(dateA, dateB); // Descending date order
+  }, [getPriorityValue]);
+
+  // New sorting function for Tasks: Due Date (Desc), then Priority (High-Low)
+  const sortTasksByDateDescThenPriority = useCallback((a, b) => {
+    // Primary sort: Due Date (Descending - recent first)
+    const dateA = a.due_date ? parseISO(a.due_date) : null;
+    const dateB = b.due_date ? parseISO(b.due_date) : null;
+
+    if (dateA === null && dateB === null) {
+      // If both dates are null, sort by priority
+      return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+    }
+    if (dateA === null) return 1; // Null dates come after non-null dates
+    if (dateB === null) return -1; // Non-null dates come before null dates
+
+    const dateComparison = compareDesc(dateA, dateB);
+    if (dateComparison !== 0) return dateComparison;
+
+    // Secondary sort: Priority (High to Low)
+    return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+  }, [getPriorityValue]);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -46,25 +99,17 @@ export default function DashboardPage() {
       let finalProjectQuery = showCompletedProjects 
         ? projectQueryBase 
         : projectQueryBase.neq('status', 'Completed').neq('status', 'Cancelled');
-      finalProjectQuery = finalProjectQuery.order('due_date', { ascending: true, nullsFirst: false });
+      
       const { data: projectData, error: projectError } = await finalProjectQuery;
       if (projectError) throw projectError;
 
-      const finalSortedProjects = (projectData || []).sort((a, b) => {
-        const dateA = a.due_date ? parseISO(a.due_date) : null;
-        const dateB = b.due_date ? parseISO(b.due_date) : null;
-        if (dateA === null && dateB !== null) return 1;
-        if (dateA !== null && dateB === null) return -1;
-        const priorityA = getPriorityValue(a.priority);
-        const priorityB = getPriorityValue(b.priority);
-        if (priorityA !== priorityB) return priorityA - priorityB;
-        return 0;
-      });
+      const finalSortedProjects = (projectData || []).sort(sortProjectsByPriorityThenDateDesc);
       setProjects(finalSortedProjects);
 
       const { data: taskData, error: taskError } = await supabase.from('tasks').select('*').eq('user_id', user.id);
       if (taskError) throw taskError;
-      setAllUserTasks(taskData || []);
+      const sortedTasks = (taskData || []).sort(sortTasksByDateDescThenPriority);
+      setAllUserTasks(sortedTasks);
     } catch (error) {
       console.error('Error fetching data:', error);
       setProjects([]);
@@ -72,7 +117,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [user, showCompletedProjects]);
+  }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority]);
 
   useEffect(() => {
     if (user) {
@@ -112,12 +157,15 @@ export default function DashboardPage() {
     if (selectedStakeholder !== 'All Stakeholders') {
       tempProjects = tempProjects.filter(p => p.stakeholders && p.stakeholders.includes(selectedStakeholder));
     }
+    if (hideBillStakeholder) {
+      tempProjects = tempProjects.filter(p => !p.stakeholders || !p.stakeholders.includes('Bill'));
+    }
     if (activeDashboardFilters.overdue) tempProjects = tempProjects.filter(p => projectAnalysis.overdue.includes(p.id));
     if (activeDashboardFilters.noTasks) tempProjects = tempProjects.filter(p => projectAnalysis.noTasks.includes(p.id));
     if (activeDashboardFilters.untouched) tempProjects = tempProjects.filter(p => projectAnalysis.untouched.includes(p.id));
     if (activeDashboardFilters.noDueDate) tempProjects = tempProjects.filter(p => projectAnalysis.noDueDate.includes(p.id));
     return tempProjects;
-  }, [projects, selectedStakeholder, activeDashboardFilters, projectAnalysis]);
+  }, [projects, selectedStakeholder, activeDashboardFilters, projectAnalysis, hideBillStakeholder]);
 
   const handleProjectAdded = useCallback((newProject) => {
     if (!newProject || !newProject.id) {
@@ -127,57 +175,39 @@ export default function DashboardPage() {
     }
     setProjects(prevProjects => {
       const updated = [newProject, ...prevProjects];
-      return updated.sort((a, b) => {
-        const dateA = a.due_date ? parseISO(a.due_date) : null;
-        const dateB = b.due_date ? parseISO(b.due_date) : null;
-        if (dateA === null && dateB !== null) return 1;
-        if (dateA !== null && dateB === null) return -1;
-        const priorityA = getPriorityValue(a.priority);
-        const priorityB = getPriorityValue(b.priority);
-        if (priorityA !== priorityB) return priorityA - priorityB;
-        return 0; 
-      });
+      return updated.sort(sortProjectsByPriorityThenDateDesc);
     });
     setShowAddProjectModal(false);
-  }, [fetchData]); // Added fetchData to dependency array
+  }, [fetchData, sortProjectsByPriorityThenDateDesc]);
   
   const handleGenericDataRefreshNeeded = useCallback(() => {
     fetchData();
-  }, [fetchData]); // Added fetchData to dependency array
+  }, [fetchData]);
 
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project') => {
     if (itemType === 'task_added') {
       const newTask = changedData;
-      setAllUserTasks(prevTasks => [newTask, ...prevTasks].sort((a,b) => compareAsc(parseISO(a.created_at), parseISO(b.created_at)) ));
+      setAllUserTasks(prevTasks => [newTask, ...prevTasks].sort(sortTasksByDateDescThenPriority));
       setProjects(prevProjects => 
-        prevProjects.map(p => p.id === newTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p)
+        prevProjects.map(p => p.id === newTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)
       );
     } else if (itemType === 'task_updated') {
       const updatedTask = changedData;
-      setAllUserTasks(prevTasks => prevTasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+      setAllUserTasks(prevTasks => prevTasks.map(t => t.id === updatedTask.id ? updatedTask : t).sort(sortTasksByDateDescThenPriority));
       setProjects(prevProjects => 
-        prevProjects.map(p => p.id === updatedTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p)
+        prevProjects.map(p => p.id === updatedTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)
       );
     } else if (itemType === 'project_status_changed' || itemType === 'project_details_changed') {
       const updatedProjectPartial = changedData;
       setProjects(prevProjects => 
         prevProjects.map(p => p.id === itemId ? { ...p, ...updatedProjectPartial, updated_at: new Date().toISOString() } : p)
         .filter(p => showCompletedProjects || (p.status !== 'Completed' && p.status !== 'Cancelled'))
-         .sort((a, b) => {
-            const dateA = a.due_date ? parseISO(a.due_date) : null;
-            const dateB = b.due_date ? parseISO(b.due_date) : null;
-            if (dateA === null && dateB !== null) return 1;
-            if (dateA !== null && dateB === null) return -1;
-            const priorityA = getPriorityValue(a.priority);
-            const priorityB = getPriorityValue(b.priority);
-            if (priorityA !== priorityB) return priorityA - priorityB;
-            return 0; 
-          })
+         .sort(sortProjectsByPriorityThenDateDesc)
       );
     } else {
       fetchData(); 
     }
-  }, [showCompletedProjects, fetchData]); // Added fetchData to dependency array
+  }, [showCompletedProjects, fetchData, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority]);
 
   const handleProjectDeleted = useCallback((deletedProjectId) => {
     setProjects(prevProjects => prevProjects.filter(p => p.id !== deletedProjectId));
@@ -296,6 +326,13 @@ export default function DashboardPage() {
                         {areAllTasksExpanded ? <ArrowsPointingInIcon className="h-5 w-5 mr-1.5" /> : <ArrowsPointingOutIcon className="h-5 w-5 mr-1.5" />}
                         {areAllTasksExpanded ? 'Collapse All Tasks' : 'Expand All Tasks'}
                     </button>
+                    <button
+                        onClick={() => setHideBillStakeholder(prev => !prev)}
+                        className={`flex items-center text-sm p-2 rounded-md hover:bg-gray-100 ${hideBillStakeholder ? 'text-red-600 font-semibold' : 'text-gray-600'}`}
+                        title={hideBillStakeholder ? "Show projects with Bill as stakeholder" : "Hide projects with Bill as stakeholder"}>
+                        <EyeSlashIcon className="h-5 w-5 mr-1.5" />
+                        {hideBillStakeholder ? 'Unhide Bill' : 'Hide Bill'}
+                    </button>
                 </div>
               </div>
               
@@ -350,6 +387,7 @@ export default function DashboardPage() {
                     allUserTasks={allUserTasks} 
                     projects={projects} 
                     onTaskUpdateNeeded={(updatedTask) => handleProjectDataChange(updatedTask.id, updatedTask, 'task_updated')}
+                    hideBillStakeholder={hideBillStakeholder} 
                 />
             )}
           </aside>

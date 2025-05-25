@@ -26,6 +26,7 @@ const CompletedReportPage = () => {
   const [projectVisibility, setProjectVisibility] = useState({});
   const [projectsInPeriod, setProjectsInPeriod] = useState([]);
   const [copyStatusMessage, setCopyStatusMessage] = useState('Copy Report');
+  const [hideBillStakeholder, setHideBillStakeholder] = useState(false);
 
   // Calculate date range based on viewType and currentDate
   useEffect(() => {
@@ -80,7 +81,7 @@ const CompletedReportPage = () => {
       // Fetch completed projects within date range
       const { data: projects, error: projectsError } = await supabase
         .from('projects')
-        .select('*, notes(*)')
+        .select('*, notes(*), stakeholders') // Ensure stakeholders are fetched
         .eq('user_id', userId)
         .eq('status', 'Completed')
         .gte('updated_at', dateRange.startDate.toISOString()) // Assuming updated_at reflects completion date for projects
@@ -119,13 +120,25 @@ const CompletedReportPage = () => {
     
     completedTasksData.forEach(task => {
       if (task.project_id && !projectsMap.has(task.project_id.id)) {
-        projectsMap.set(task.project_id.id, { id: task.project_id.id, name: task.project_id.name, type: 'task_parent' });
+        // Assuming task.project_id might not have stakeholder info directly
+        // We will rely on completedProjectsData for stakeholder details if available, or make a separate query if necessary
+        projectsMap.set(task.project_id.id, { 
+          id: task.project_id.id, 
+          name: task.project_id.name, 
+          type: 'task_parent' 
+          // stakeholders: task.project_id.stakeholders // This might not be available directly
+        });
       }
     });
 
     completedProjectsData.forEach(project => {
       if (!projectsMap.has(project.id)) {
-        projectsMap.set(project.id, { id: project.id, name: project.name, type: 'project' });
+        projectsMap.set(project.id, { 
+          id: project.id, 
+          name: project.name, 
+          type: 'project', 
+          stakeholders: project.stakeholders // Ensure this is fetched
+        });
       }
     });
     
@@ -183,12 +196,34 @@ const CompletedReportPage = () => {
     const grouped = {};
     const itemsToGroup = [
       ...completedTasksData
-          .filter(task => task.project_id && projectVisibility[task.project_id.id])
+          .filter(task => {
+            const project = projectsInPeriod.find(p => p.id === task.project_id?.id);
+            const isVisible = task.project_id && projectVisibility[task.project_id.id];
+            const isBillHidden = hideBillStakeholder && project?.stakeholders?.includes('Bill');
+            return isVisible && !isBillHidden;
+          })
           .map(task => ({ ...task, type: 'task', date: parseISO(task.completed_at) })),
       ...completedProjectsData
-          .filter(project => projectVisibility[project.id])
+          .filter(project => {
+            const isVisible = projectVisibility[project.id];
+            const isBillHidden = hideBillStakeholder && project.stakeholders?.includes('Bill');
+            return isVisible && !isBillHidden;
+          })
           .map(project => ({ ...project, type: 'project', date: parseISO(project.updated_at) })), // Assuming updated_at is completion
-      ...notesInPeriod // Already filtered by projectVisibility in its own useMemo
+      ...notesInPeriod // Already filtered by projectVisibility in its own useMemo, need to add Bill filter here too
+          .filter(note => {
+            let projectStakeholders = [];
+            if (note.tasks && note.tasks.project_id) {
+              const parentProject = completedProjectsData.find(p => p.id === note.tasks.project_id.id) || projectsInPeriod.find(p => p.id === note.tasks.project_id.id);
+              projectStakeholders = parentProject?.stakeholders || [];
+            } else if (note.projects) {
+              const parentProject = completedProjectsData.find(p => p.id === note.projects.id) || projectsInPeriod.find(p => p.id === note.projects.id);
+              projectStakeholders = parentProject?.stakeholders || [];
+            }
+            // If note is not linked to a project, it's not filtered by Bill
+            if (!note.tasks && !note.projects) return true;
+            return !(hideBillStakeholder && projectStakeholders.includes('Bill'));
+          })
           .map(note => ({ ...note, type: 'note', date: parseISO(note.created_at) }))
     ];
 
@@ -202,7 +237,7 @@ const CompletedReportPage = () => {
       grouped[dayKey].push(item);
     });
     return grouped;
-  }, [completedTasksData, completedProjectsData, notesInPeriod, projectVisibility]);
+  }, [completedTasksData, completedProjectsData, notesInPeriod, projectVisibility, hideBillStakeholder, projectsInPeriod]);
   
   const handleViewChange = (newViewType) => {
     setViewType(newViewType);
@@ -431,9 +466,25 @@ const CompletedReportPage = () => {
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Filter by Project</h3>
               <div className="space-y-1 mb-2">
-                <button onClick={handleSelectAllProjects} className="text-xs text-indigo-600 hover:underline">Select All</button>
-                <span className="text-xs text-gray-400 mx-1">|</span>
-                <button onClick={handleDeselectAllProjects} className="text-xs text-indigo-600 hover:underline">Deselect All</button>
+                <button 
+                    onClick={handleSelectAllProjects}
+                    className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                >
+                    Select All
+                </button>
+                <button 
+                    onClick={handleDeselectAllProjects}
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                >
+                    Deselect All
+                </button>
+                <button
+                    onClick={() => setHideBillStakeholder(prev => !prev)}
+                    className={`flex items-center text-xs px-2 py-1 rounded transition-colors ${hideBillStakeholder ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    title={hideBillStakeholder ? "Show items with Bill as stakeholder" : "Hide items with Bill as stakeholder"}>
+                    <FunnelIcon className="h-3.5 w-3.5 mr-1" />
+                    {hideBillStakeholder ? 'Unhide Bill' : 'Hide Bill'}
+                </button>
               </div>
               <div className="space-y-1 max-h-[calc(100vh-350px)] overflow-y-auto pr-1"> {/* Adjust max-h as needed */}
                 {projectsInPeriod.map(p => (

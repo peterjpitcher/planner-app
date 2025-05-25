@@ -19,13 +19,13 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 const getPriorityClasses = (priority) => {
   switch (priority) {
     case 'High':
-      return 'border-l-4 border-red-500 bg-red-50';
+      return 'border-l-4 border-red-700 bg-red-200 text-red-800';
     case 'Medium':
-      return 'border-l-4 border-yellow-500 bg-yellow-50';
+      return 'border-l-4 border-yellow-600 bg-yellow-100 text-yellow-700';
     case 'Low':
-      return 'border-l-4 border-green-500 bg-green-50';
+      return 'border-l-4 border-green-700 bg-green-200 text-green-800';
     default:
-      return 'border-l-4 border-gray-300 bg-gray-50';
+      return 'border-l-4 border-gray-400 bg-gray-100 text-gray-700';
   }
 };
 
@@ -43,22 +43,25 @@ const getDueDateStatus = (dateString, isEditing = false, currentDueDateValue = '
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
   let text = `Due ${format(date, 'MMM d, yyyy')}`;
-  let classes = 'text-gray-600 text-xs font-medium';
+  let classes = 'text-gray-700';
   let sortKey = daysDiff;
   const fullDateText = format(date, 'MMM d, yyyy');
 
   if (isToday(date)) {
     text = `Due Today`;
-    classes = 'text-red-500 text-xs font-semibold';
+    classes = 'text-red-700 font-bold';
     sortKey = 0;
   } else if (isTomorrow(date)) {
     text = `Due Tomorrow`;
-    classes = 'text-yellow-600 text-xs font-semibold';
+    classes = 'text-yellow-700 font-bold';
     sortKey = 1;
   } else if (isPast(date) && !isToday(date)) {
     text = `Overdue`;
-    classes = 'text-red-600 text-xs font-semibold';
+    classes = 'text-red-700 font-bold';
     sortKey = -Infinity + daysDiff;
+  } else if (daysDiff < 0) {
+    text = `Due ${format(date, 'MMM d')}`;
+    classes = 'text-gray-600 italic';
   } else if (daysDiff > 0 && daysDiff <= 7) {
     text = `Due in ${daysDiff}d`;
   } else if (daysDiff > 7) {
@@ -70,16 +73,16 @@ const getDueDateStatus = (dateString, isEditing = false, currentDueDateValue = '
 const getStatusClasses = (status) => {
   switch (status) {
     case 'Completed':
-      return 'bg-green-100 text-green-700';
+      return 'bg-green-600 text-white';
     case 'In Progress':
-      return 'bg-blue-100 text-blue-700';
+      return 'bg-blue-600 text-white';
     case 'On Hold':
-      return 'bg-yellow-100 text-yellow-700';
+      return 'bg-yellow-500 text-black';
     case 'Cancelled':
-      return 'bg-red-100 text-red-700';
+      return 'bg-red-600 text-white';
     case 'Open':
     default:
-      return 'bg-gray-100 text-gray-700';
+      return 'bg-gray-500 text-white';
   }
 };
 
@@ -143,8 +146,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .select('*')
         .eq('project_id', project.id)
         .order('is_completed', { ascending: true })
-        .order('priority', { ascending: false, nullsFirst: false, foreignTable: undefined })
-        .order('due_date', { ascending: true, nullsFirst: false });
+        .order('due_date', { ascending: false, nullsFirst: false })
+        .order('priority', { ascending: false, nullsFirst: false });
       if (error) throw error;
       setTasks(data || []);
     } catch (err) {
@@ -278,11 +281,12 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
     if (updatedTask.is_completed && project) {
       const allTasksForProjectNowComplete = updatedTasks.every(t => t.is_completed);
-      if (allTasksForProjectNowComplete && updatedTasks.length > 0) { 
-        setTimeout(() => {
-          alert(`Project '${project.name}' now has no open tasks. Consider adding new tasks or updating the project status.`);
-          setTargetProjectId(project.id);
-        }, 100); 
+      // Only trigger if there are tasks and all are complete, and project is not already completed/cancelled
+      if (allTasksForProjectNowComplete && updatedTasks.length > 0 && project.status !== 'Completed' && project.status !== 'Cancelled') { 
+        // Removed alert, will rely on conditional styling and existing target project highlight
+        // The setTargetProjectId will still trigger a scroll and highlight via ProjectList
+        // Conditional styling will be added directly in the JSX for a persistent red border
+        setTargetProjectId(project.id); 
       }
     }
   };
@@ -563,6 +567,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const openTasksCount = tasks.filter(task => !task.is_completed).length;
   const completedTasksCount = tasks.length - openTasksCount;
 
+  const needsAttentionStyle = openTasksCount === 0 && tasks.length > 0 && !isProjectCompletedOrCancelled ? 'ring-2 ring-red-500 ring-offset-2' : '';
+
   const startEditingName = (e) => {
     if (isProjectCompletedOrCancelled) return;
     e.stopPropagation();
@@ -600,7 +606,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     <div 
       ref={ref}
       id={`project-item-${project.id}`}
-      className={`rounded-lg shadow-md mb-3 transition-all duration-300 ease-in-out hover:shadow-lg ${projectPriorityClasses} ${isProjectCompletedOrCancelled ? 'opacity-70' : ''}`}>
+      className={`rounded-lg shadow-md mb-3 transition-all duration-300 ease-in-out hover:shadow-lg ${projectPriorityClasses} ${isProjectCompletedOrCancelled ? 'opacity-70' : ''} ${needsAttentionStyle}`}>
       <div 
         className="p-2.5 sm:p-3 border-b border-gray-200 cursor-pointer" 
         onClick={() => !isMenuOpen && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingStakeholders && setShowTasks(!showTasks)} 

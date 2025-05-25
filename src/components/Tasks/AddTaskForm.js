@@ -13,6 +13,7 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
   const [priority, setPriority] = useState(defaultPriority || 'Medium');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [addAnother, setAddAnother] = useState(false);
 
   const nameInputRef = useRef(null);
   useEffect(() => {
@@ -21,8 +22,13 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
     }
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, shouldAddAnother = false) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    
+    const addingAnother = shouldAddAnother || addAnother;
+
     if (!user) {
       setError('You must be logged in to add a task.');
       return;
@@ -61,7 +67,19 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
       if (data) {
         onTaskAdded(data); // Pass the newly created task back
       }
-      onClose(); // Close the modal/form on success
+      
+      if (addingAnother) {
+        setName('');
+        setDescription('');
+        setDueDate('');
+        setError(null);
+        setAddAnother(false);
+        if (nameInputRef.current) {
+          nameInputRef.current.focus();
+        }
+      } else {
+        onClose(); // Close the modal/form on success if not adding another
+      }
     } catch (err) {
       console.error('Error adding task:', err);
       setError(err.message || 'Failed to add task.');
@@ -159,11 +177,19 @@ export default function AddTaskForm({ projectId, onTaskAdded, onClose, defaultPr
           Cancel
         </button>
         <button
+          type="button"
+          onClick={() => handleSubmit(null, true)}
+          disabled={loading}
+          className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+        >
+          {loading && addAnother ? 'Adding...' : 'Add & Add Another'}
+        </button>
+        <button
           type="submit"
           disabled={loading}
           className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
         >
-          {loading ? 'Adding Task...' : 'Add Task'}
+          {loading && !addAnother ? 'Adding Task...' : 'Add Task'}
         </button>
       </div>
     </form>
