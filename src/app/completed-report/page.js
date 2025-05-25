@@ -74,7 +74,7 @@ const CompletedReportPage = () => {
         .eq('is_completed', true)
         .gte('completed_at', dateRange.startDate.toISOString())
         .lte('completed_at', dateRange.endDate.toISOString())
-        .order('completed_at', { ascending: false });
+        .order('completed_at', { ascending: true });
       if (tasksError) throw tasksError;
       setCompletedTasksData(tasks || []);
 
@@ -86,7 +86,7 @@ const CompletedReportPage = () => {
         .eq('status', 'Completed')
         .gte('updated_at', dateRange.startDate.toISOString()) // Assuming updated_at reflects completion date for projects
         .lte('updated_at', dateRange.endDate.toISOString())
-        .order('updated_at', { ascending: false });
+        .order('updated_at', { ascending: true });
       if (projectsError) throw projectsError;
       setCompletedProjectsData(projects || []);
 
@@ -95,7 +95,7 @@ const CompletedReportPage = () => {
         .from('notes')
         .select('*, tasks(name, project_id (id, name, stakeholders)), projects(id, name, stakeholders)')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
       if (notesError) throw notesError;
       setAllUserNotes(notes || []);
 
@@ -273,7 +273,7 @@ const CompletedReportPage = () => {
           .map(note => ({ ...note, type: 'note', date: parseISO(note.created_at) }))
     ];
 
-    itemsToGroup.sort((a, b) => b.date - a.date); // Sort all items together by date desc
+    itemsToGroup.sort((a, b) => a.date - b.date); // Sort all items together by date ascending
 
     itemsToGroup.forEach(item => {
       const dayKey = format(item.date, 'yyyy-MM-dd');
@@ -324,7 +324,7 @@ const CompletedReportPage = () => {
 
   const formatReportText = () => {
     let report = `Completed Items Report\n`;
-    report += `Period: ${format(dateRange.startDate, 'MMM d, yyyy')} - ${format(dateRange.endDate, 'MMM d, yyyy')}\n`;
+    report += `Period: ${format(dateRange.startDate, 'EEEE, MMM do, yyyy')} - ${format(dateRange.endDate, 'EEEE, MMM do, yyyy')}\n`;
     report += `View: ${viewType.charAt(0).toUpperCase() + viewType.slice(1)}\n\n`;
 
     const sortedGroupKeys = Object.keys(groupItems).sort((a,b) => new Date(b) - new Date(a));
@@ -335,23 +335,23 @@ const CompletedReportPage = () => {
       report += "--- Completed Tasks, Projects & Notes ---\n"; // Updated title
       sortedGroupKeys.forEach(dateKey => {
         const items = groupItems[dateKey];
-        report += `\nDate: ${format(parseISO(dateKey), 'EEEE, MMM d, yyyy')}\n`;
+        report += `\nDate: ${format(parseISO(dateKey), 'EEEE, MMM do, yyyy')}\n`;
         items.forEach(item => {
           if (item.type === 'task') {
             report += `  Task: ${item.name} (Project: ${item.project_id?.name || 'N/A'})\n`;
-            report += `    Completed: ${format(item.date, 'h:mm a')}\n`;
+            report += `    Completed: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
             if (item.description) report += `    Description: ${item.description}\n`;
             if (item.notes && item.notes.length > 0) {
                 report += `    Notes (attached to task):\n`;
-                item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'MMM d, h:mm a')}: ${n.content}\n`);
+                item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'EEEE, MMM do, h:mm a')}: ${n.content}\n`);
             }
           } else if (item.type === 'project') {
             report += `  Project: ${item.name}\n`;
-            report += `    Completed: ${format(item.date, 'h:mm a')}\n`;
+            report += `    Completed: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
             if (item.description) report += `    Description: ${item.description}\n`;
              if (item.notes && item.notes.length > 0) {
                 report += `    Notes (attached to project):\n`;
-                item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'MMM d, h:mm a')}: ${n.content}\n`);
+                item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'EEEE, MMM do, h:mm a')}: ${n.content}\n`);
             }
           } else if (item.type === 'note') { 
             let parentContext = 'General Note';
@@ -364,7 +364,7 @@ const CompletedReportPage = () => {
             }
             report += `  Note (Created): ${item.content.substring(0,100)}${item.content.length > 100 ? '...' : ''}\n`;
             report += `    Parent: ${parentContext}\n`;
-            report += `    Created At: ${format(item.date, 'h:mm a')}\n`;
+            report += `    Created At: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
           }
         });
       });
@@ -414,7 +414,7 @@ const CompletedReportPage = () => {
             )}
           </div>
           <span className="text-xs text-gray-500 whitespace-nowrap">
-            {item.type === 'note' ? 'Created' : 'Completed'}: {format(itemDate, 'h:mm a')}
+            {item.type === 'note' ? 'Created' : 'Completed'}: {format(itemDate, 'EEEE, MMM do, h:mm a')}
           </span>
         </div>
         {item.description && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap break-words">{item.description}</p>}
@@ -431,21 +431,21 @@ const CompletedReportPage = () => {
   };
   
   const renderGroupedItems = (itemsMap) => {
-    const sortedDateKeys = Object.keys(itemsMap).sort((a, b) => new Date(b) - new Date(a)); // Sort dates descending
+    const sortedDateKeys = Object.keys(itemsMap).sort((a, b) => new Date(a) - new Date(b)); // Sort date groups ascending
     
     if (sortedDateKeys.length === 0) return null;
 
     return sortedDateKeys.map(dateKey => {
       const itemsOnDate = itemsMap[dateKey];
-      let sectionHeader = format(parseISO(dateKey), 'EEEE, MMM d, yyyy');
+      let sectionHeader = format(parseISO(dateKey), 'EEEE, MMM do, yyyy');
 
       if (viewType === 'week') {
-        // No change, EEEE, MMM d is fine.
+        // No change, EEEE, MMM do, yyyy is fine for a specific day header within a week view.
       } else if (viewType === 'month') {
         const weekNum = getWeekOfMonth(parseISO(dateKey), { weekStartsOn: 1 });
         const weekStartDate = startOfWeek(parseISO(dateKey), { weekStartsOn: 1 });
         const weekEndDate = endOfWeek(parseISO(dateKey), { weekStartsOn: 1 });
-        sectionHeader = `Week ${weekNum} (${format(weekStartDate, 'MMM d')} - ${format(weekEndDate, 'MMM d, yyyy')})`;
+        sectionHeader = `Week ${weekNum} (${format(weekStartDate, 'EEEE, MMM do')} - ${format(weekEndDate, 'EEEE, MMM do, yyyy')})`;
         // This logic isn't quite right for monthly sub-grouping. It should group BY WEEK first, then day.
         // For now, just showing items by day within the month.
       }
@@ -478,7 +478,7 @@ const CompletedReportPage = () => {
         <aside className="w-64 lg:w-72 bg-white p-4 border-r border-gray-200 flex-shrink-0 sticky top-[61px] h-[calc(100vh-61px)] overflow-y-auto">
           <div className="mb-4 flex items-center justify-between">
              <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider flex-grow break-words mr-1">
-                {format(dateRange.startDate, 'MMM d, yyyy')} - {format(dateRange.endDate, 'MMM d, yyyy')}
+                {format(dateRange.startDate, 'EEEE, MMM do')} - {format(dateRange.endDate, 'EEEE, MMM do, yyyy')}
              </h2>
              <div className="flex-shrink-0">
                 <button onClick={handlePrevious} className="p-1 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100"><ChevronLeftIcon className="h-5 w-5" /></button>
@@ -577,4 +577,4 @@ const CompletedReportPage = () => {
   );
 };
 
-export default CompletedReportPage; 
+export default CompletedReportPage;

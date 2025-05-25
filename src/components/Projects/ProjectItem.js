@@ -42,10 +42,10 @@ const getDueDateStatus = (dateString, isEditing = false, currentDueDateValue = '
 
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
-  let text = `Due ${format(date, 'MMM d, yyyy')}`;
+  let text = `Due ${format(date, 'EEEE, MMM do')}`;
   let classes = 'text-gray-700';
   let sortKey = daysDiff;
-  const fullDateText = format(date, 'MMM d, yyyy');
+  const fullDateText = format(date, 'EEEE, MMM do, yyyy');
 
   if (isToday(date)) {
     text = `Due Today`;
@@ -56,17 +56,22 @@ const getDueDateStatus = (dateString, isEditing = false, currentDueDateValue = '
     classes = 'text-yellow-700 font-bold';
     sortKey = 1;
   } else if (isPast(date) && !isToday(date)) {
-    text = `Overdue`;
+    text = `Overdue: ${format(date, 'EEEE, MMM do')}`;
     classes = 'text-red-700 font-bold';
     sortKey = -Infinity + daysDiff;
   } else if (daysDiff < 0) {
-    text = `Due ${format(date, 'MMM d')}`;
+    text = `Due ${format(date, 'EEEE, MMM do')}`;
     classes = 'text-gray-600 italic';
-  } else if (daysDiff > 0 && daysDiff <= 7) {
-    text = `Due in ${daysDiff}d`;
+  } else if (daysDiff >= 0 && daysDiff <= 7) {
+    text = `Due ${format(date, 'EEEE, MMM do')}`;
   } else if (daysDiff > 7) {
-    text = `Due ${format(date, 'MMM d')}`;
+    text = `Due ${format(date, 'EEEE, MMM do')}`;
   }
+
+  if (isToday(date) || isTomorrow(date)) {
+    // fullDateText is already correctly set above to the actual date
+  }
+
   return { text, classes, fullDate: fullDateText, sortKey };
 };
 
@@ -146,8 +151,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .select('*')
         .eq('project_id', project.id)
         .order('is_completed', { ascending: true })
-        .order('due_date', { ascending: false, nullsFirst: false })
-        .order('priority', { ascending: false, nullsFirst: false });
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('priority', { ascending: true, nullsFirst: false });
       if (error) throw error;
       setTasks(data || []);
     } catch (err) {
@@ -171,7 +176,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .select('*')
         .eq('project_id', project.id)
         .is('task_id', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
       if (error) throw error;
       setProjectNotes(data || []);
     } catch (err) {
@@ -310,7 +315,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const formatNoteForCopy = (note) => {
     if (!note) return '';
     // Exclude note.id and other internal IDs if present
-    return `  - Note (${format(new Date(note.created_at), 'MMM d, yyyy h:mm a')}): ${note.content}`;
+    return `  - Note (${format(new Date(note.created_at), 'EEEE, MMM do, yyyy h:mm a')}): ${note.content}`;
   };
 
   const handleCopyProjectData = async () => {
@@ -319,7 +324,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     let projectDataText = `Project Name: ${project.name}\n`;
     projectDataText += `Status: ${currentStatus}\n`;
     projectDataText += `Priority: ${currentPriority}\n`;
-    projectDataText += `Due Date: ${project.due_date ? format(new Date(project.due_date), 'MMM d, yyyy') : 'N/A'}\n`;
+    projectDataText += `Due Date: ${project.due_date ? format(new Date(project.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
     projectDataText += `Description: ${project.description || 'N/A'}\n`;
     projectDataText += `Stakeholders: ${project.stakeholders && project.stakeholders.length > 0 ? project.stakeholders.join(', ') : 'N/A'}\n`;
 
@@ -348,11 +353,11 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           // Exclude taskItem.id and taskItem.project_id
           projectDataText += `  - Task: ${taskItem.name}\n`;
           projectDataText += `    Description: ${taskItem.description || 'N/A'}\n`;
-          projectDataText += `    Due Date: ${taskItem.due_date ? format(new Date(taskItem.due_date), 'MMM d, yyyy') : 'N/A'}\n`;
+          projectDataText += `    Due Date: ${taskItem.due_date ? format(new Date(taskItem.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
           projectDataText += `    Priority: ${taskItem.priority || 'N/A'}\n`;
           projectDataText += `    Completed: ${taskItem.is_completed ? 'Yes' : 'No'}\n`;
           if (taskItem.completed_at && taskItem.is_completed) {
-            projectDataText += `    Completed At: ${format(new Date(taskItem.completed_at), 'MMM d, yyyy h:mm a')}\n`;
+            projectDataText += `    Completed At: ${format(new Date(taskItem.completed_at), 'EEEE, MMM do, yyyy h:mm a')}\n`;
           }
           
           // Add task notes (excluding IDs)
@@ -657,7 +662,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
             {/* Separator, Due Date, Updated Ago for sm and up screens */}
             <div className="hidden sm:flex items-center space-x-3">
               <span className="text-gray-400">•</span>
-              <div className={`${dueDateDisplayStatus.classes}`}>
+              <div className={`${dueDateDisplayStatus.classes} break-words`} title={dueDateDisplayStatus.fullDate}>
                   {dueDateDisplayStatus.text}
               </div>
               <span className="text-gray-400">•</span>
@@ -668,7 +673,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
             {/* Due Date and Updated Ago for xs screens (stacked) */}
             <div className="sm:hidden mt-1">
-                <div className={`${dueDateDisplayStatus.classes} mb-0.5`}>
+                <div className={`${dueDateDisplayStatus.classes} mb-0.5 break-words`} title={dueDateDisplayStatus.fullDate}>
                     {dueDateDisplayStatus.text}
                 </div>
                 {/* Updated Ago is intentionally not shown on xs screens to save space */}
@@ -756,7 +761,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                       title={isProjectCompletedOrCancelled ? dueDateDisplayStatus.fullDate || 'Due date not editable' : dueDateDisplayStatus.fullDate || 'Set due date'}
                   >
                       <span className="text-gray-600">Due Date</span>
-                      {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders && <PencilIcon className="w-3 h-3 opacity-60" />}
+                      <span className="flex-1 text-right break-words">
+                          {/* This span is primarily for layout, actual text is shown by parent's dueDateDisplayStatus.text or similar */}
+                      </span>
+                      {!isProjectCompletedOrCancelled && !isEditingPriority && !isEditingStakeholders && <PencilIcon className="w-3 h-3 opacity-60 ml-1 flex-shrink-0" />}
                   </div>
               )}
           </div>
@@ -854,7 +862,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
             </p>
           ) : !isProjectCompletedOrCancelled ? (
             <p 
-              className="text-xs text-gray-400 italic cursor-text hover:bg-gray-50 p-0.5 -m-0.5 rounded"
+              className="text-xs text-gray-400 italic cursor-text hover:bg-gray-50 p-0.5 -m-0.5 rounded break-words"
               onClick={startEditingDescription}
             >
               Add project description...

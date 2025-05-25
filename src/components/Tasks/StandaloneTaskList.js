@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc } from 'date-fns';
+import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import { PencilIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
@@ -9,7 +9,7 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
-  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', sortKey: Infinity };
+  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', sortKey: Infinity, fullDate: '' };
   
   let date = startOfDay(parseISO(dateToConsider));
   if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -18,9 +18,10 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
 
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
-  let text = `Due: ${format(date, 'MMM d')}`;
+  let text = `Due: ${format(date, 'EEEE, MMM do')}`;
   let classes = 'text-gray-700';
   let sortKey = daysDiff;
+  const fullDateText = format(date, 'EEEE, MMM do, yyyy');
 
   if (isToday(date)) {
     text = `Due Today`;
@@ -31,14 +32,16 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
     classes = 'text-yellow-700 font-bold';
     sortKey = 1;
   } else if (isPast(date) && !isToday(date)) {
-    text = `Overdue: ${format(date, 'MMM d')}`;
+    text = `Overdue: ${format(date, 'EEEE, MMM do')}`;
     classes = 'text-red-700 font-bold';
     sortKey = -Infinity + daysDiff;
-  } else if (daysDiff < 0) { // Other past dates
-     text = `Due ${format(date, 'MMM d')}`;
+  } else if (daysDiff < 0) { // Other past dates (should be covered by isPast)
+     text = `Due ${format(date, 'EEEE, MMM do')}`;
      classes = 'text-gray-600 italic';
+  } else if (daysDiff >= 0 && daysDiff <= 7) { // Changed from "Due in Xd (DayOfWeek)"
+    text = `Due: ${format(date, 'EEEE, MMM do')}`; 
   }
-  return { text, classes, sortKey };
+  return { text, classes, sortKey, fullDate: fullDateText };
 };
 
 const getStandaloneTaskPriorityStyling = (priority) => {
@@ -199,12 +202,12 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               onChange={(e) => setCurrentName(e.target.value)}
               onBlur={handleNameUpdate}
               onKeyDown={(e) => e.key === 'Enter' && handleNameUpdate() || e.key === 'Escape' && (setCurrentName(task.name), setIsEditingName(false))}
-              className="flex-grow text-sm p-0.5 border-b border-indigo-500 focus:outline-none mr-1"
+              className="flex-grow text-sm p-0.5 border-b border-indigo-500 focus:outline-none mr-1 break-words"
               autoFocus
             />
           ) : (
             <p 
-              className={`text-sm font-medium text-gray-800 truncate flex-grow mr-1 ${task.is_completed ? 'line-through' : 'cursor-text hover:bg-gray-100'}`}
+              className={`text-sm font-medium text-gray-800 truncate flex-grow mr-1 ${task.is_completed ? 'line-through' : 'cursor-text hover:bg-gray-100'} break-words`}
               onClick={() => !task.is_completed && setIsEditingName(true)}
               title={currentName}
             >
@@ -237,9 +240,9 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               />
           ) : (
               <span 
-                  className={`${dueDateInfo.classes} ${!task.is_completed ? 'cursor-text hover:bg-gray-100 rounded px-0.5 -mx-0.5' : ''}`}
+                  className={`${dueDateInfo.classes} ${!task.is_completed ? 'cursor-text hover:bg-gray-100 rounded px-0.5 -mx-0.5' : ''} break-words`}
                   onClick={() => !task.is_completed && setIsEditingDueDate(true)}
-                  title={task.due_date ? format(parseISO(task.due_date), 'MMM d, yyyy') : 'No due date'}
+                  title={dueDateInfo.fullDate || (task.due_date ? format(parseISO(task.due_date), 'EEEE, MMM do, yyyy') : 'No due date')}
               >
                   {dueDateInfo.text}
               </span>
@@ -305,82 +308,79 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
     const groups = {
       overdue: [],
       today: [],
+      tomorrow: [],
       thisWeek: [],
-      later: [],
-      noDueDate: [],
     };
 
     const today = startOfDay(new Date());
-    const endOfThisWeek = endOfDay(addDays(today, 6 - today.getDay())); // Assuming week starts Sunday for getDay()
+    const tomorrow = startOfDay(addDays(today, 1));
+    const dayAfterTomorrow = startOfDay(addDays(today, 2));
+    const endOfThisWeek = endOfWeek(today, { weekStartsOn: 1 });
 
     allUserTasks.forEach(task => {
       if (task.is_completed) {
-        return; // Skip completed tasks from all active groups
+        return;
       }
 
-      // Filter out tasks belonging to projects where Bill is a stakeholder, if the filter is active
       if (hideBillStakeholder) {
         const parentProject = projectMap[task.project_id];
         if (parentProject && parentProject.stakeholders && parentProject.stakeholders.includes('Bill')) {
-          return; // Skip this task
+          return;
         }
       }
 
       if (!task.due_date) {
-        groups.noDueDate.push(task);
         return;
       }
       
       let dueDate;
-      // Ensure dueDate is parsed correctly, similar to getTaskDueDateStatus
       if (typeof task.due_date === 'string' && task.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
         dueDate = startOfDay(new Date(task.due_date + 'T00:00:00'));
       } else {
         dueDate = startOfDay(parseISO(task.due_date));
       }
 
-      if (isPast(dueDate) && !isSameDay(dueDate, today)) { // isPast and not today
+      if (isPast(dueDate) && !isSameDay(dueDate, today)) {
         groups.overdue.push(task);
-      } else if (isSameDay(dueDate, today)) { // isToday
+      } else if (isSameDay(dueDate, today)) {
         groups.today.push(task);
-      } else if (isWithinInterval(dueDate, { start: addDays(today, 1), end: endOfThisWeek })) {
+      } else if (isSameDay(dueDate, tomorrow)) {
+        groups.tomorrow.push(task);
+      } else if (isWithinInterval(dueDate, { start: dayAfterTomorrow, end: endOfThisWeek })) {
         groups.thisWeek.push(task);
-      } else { // Later (beyond this week or future dates without specific group yet)
-        groups.later.push(task);
       }
     });
 
-    // Sort tasks within each group: Due Date (Desc), then Priority (High-Low)
     for (const groupName in groups) {
       groups[groupName].sort((a, b) => {
-        // Primary sort: Due Date (Descending - recent first)
         const dateA = a.due_date ? parseISO(a.due_date) : null;
         const dateB = b.due_date ? parseISO(b.due_date) : null;
 
+        // Handle null dates first: tasks with no due date should appear after those with due dates
         if (dateA === null && dateB === null) {
-          // If both dates are null, sort by priority
-          return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+          // If both are null, sort by priority (Low to High)
+          return getPriorityValue(a.priority) - getPriorityValue(b.priority);
         }
-        if (dateA === null) return 1; // Null dates come after non-null dates
-        if (dateB === null) return -1; // Non-null dates come before null dates
+        if (dateA === null) return 1; // a comes after b if a.due_date is null
+        if (dateB === null) return -1; // b comes after a if b.due_date is null
 
-        const dateComparison = compareDesc(dateA, dateB);
+        // Sort by date ascending (oldest first)
+        const dateComparison = compareAsc(dateA, dateB);
         if (dateComparison !== 0) return dateComparison;
 
-        // Secondary sort: Priority (High to Low)
-        return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+        // If dates are same, sort by priority ascending (Low to High)
+        return getPriorityValue(a.priority) - getPriorityValue(b.priority);
       });
     }
     return groups;
   }, [allUserTasks, projectMap, hideBillStakeholder]);
 
-  const groupOrder = ['overdue', 'today', 'thisWeek', 'later', 'noDueDate'];
+  const groupOrder = ['overdue', 'today', 'tomorrow', 'thisWeek'];
   const groupLabels = {
     overdue: 'Overdue',
     today: 'Today',
+    tomorrow: 'Tomorrow',
     thisWeek: 'This Week',
-    later: 'Later',
-    noDueDate: 'No Due Date',
   };
 
   const hasTasksToShow = groupOrder.some(key => groupedAndSortedTasks[key] && groupedAndSortedTasks[key].length > 0);

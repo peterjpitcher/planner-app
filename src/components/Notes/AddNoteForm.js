@@ -92,14 +92,14 @@ export default function AddNoteForm({ parentId, parentType, onNoteAdded, disable
       />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
       {/* Submit button can be kept for accessibility or removed if Enter is the only way */}
-      <button 
-        type="submit"
+        <button 
+          type="submit"
         disabled={isSaving || !noteContent.trim() || disabled}
         className="hidden" // Hiding button as Enter is primary interaction
         aria-hidden="true"
-      >
+        >
         Save Note
-      </button>
+        </button>
     </form>
   );
 } 

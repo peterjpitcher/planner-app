@@ -25,7 +25,7 @@ const getTaskPriorityClasses = (priority) => {
 // Helper for due date status
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
-  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs' };
+  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', fullDate: '' };
   
   let date;
   if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -36,8 +36,9 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
 
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
-  let text = `Due: ${format(date, 'MMM d, yyyy')}`;
-  let classes = 'text-gray-700 text-xs'; // Default for future dates
+  let text = `Due: ${format(date, 'EEEE, MMM do')}`; // Default format
+  let classes = 'text-gray-700 text-xs';
+  const fullDateText = format(date, 'EEEE, MMM do, yyyy'); // For tooltips
 
   if (isToday(date)) {
     text = `Due: Today`;
@@ -46,17 +47,16 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
     text = `Due: Tomorrow`;
     classes = 'text-yellow-700 font-bold text-xs';
   } else if (isPast(date) && !isToday(date)) {
-    text = `Overdue: ${format(date, 'MMM d, yyyy')}`;
+    text = `Overdue: ${format(date, 'EEEE, MMM do')}`;
     classes = 'text-red-700 font-bold text-xs';
-  } else if (daysDiff < 0) { // Other past dates
-    text = `Due ${format(date, 'MMM d, yyyy')}`
+  } else if (daysDiff < 0) { // Other past dates (should be covered by isPast)
+    text = `Due ${format(date, 'EEEE, MMM do')}`;
     classes = 'text-gray-600 italic text-xs';
-  } else if (daysDiff > 0 && daysDiff <= 7) {
-    text = `Due in ${daysDiff}d (${format(date, 'MMM d')})`;
-    // classes remains default (text-gray-700 text-xs)
-  }
-  // For future dates beyond 7 days, text is `Due: MMM d, yyyy` and classes remain default
-  return { text, classes };
+  } else if (daysDiff >= 0 && daysDiff <= 7) {
+    text = `Due: ${format(date, 'EEEE, MMM do')}`;
+  } // For future dates beyond 7 days, text remains `Due: EEEE, MMM do` and classes remain default
+  
+  return { text, classes, fullDate: fullDateText };
 };
 
 export default function TaskItem({ task, onTaskUpdated }) {
@@ -101,7 +101,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
     if (!task || !task.id) return; 
     setIsLoadingNotes(true);
     try {
-      const { data, error } = await supabase.from('notes').select('*').eq('task_id', task.id).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('notes').select('*').eq('task_id', task.id).order('created_at', { ascending: true });
       if (error) throw error;
       setNotes(data || []);
     } catch (error) {
@@ -283,13 +283,13 @@ export default function TaskItem({ task, onTaskUpdated }) {
                   onChange={handleTaskNameChange}
                   onBlur={handleTaskNameUpdate}
                   onKeyDown={handleTaskNameInputKeyDown}
-                  className="text-sm font-medium text-gray-900 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 flex-grow min-w-[50px]"
+                  className="text-sm font-medium text-gray-900 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 flex-grow min-w-[50px] break-words"
                   ref={taskNameInputRef}
                 />
               ) : (
                 <span 
                   onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
-                  className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0`}
+                  className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0 break-words`}
                   title={currentTaskName}
                 >
                   {currentTaskName || 'Untitled Task'}
@@ -304,7 +304,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
                     onChange={handleTaskDescriptionChange}
                     onBlur={handleTaskDescriptionUpdate}
                     onKeyDown={handleTaskDescriptionKeyDown}
-                    className="text-xs text-gray-600 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 w-full min-h-[2em] resize-none"
+                    className="text-xs text-gray-600 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 w-full min-h-[2em] resize-none break-words"
                     rows="1"
                     autoFocus
                   />
@@ -314,7 +314,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
                     className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''} truncate`}
                     title={currentTaskDescription}
                   >
-                    {currentTaskDescription || (isEditingTaskName ? '' : 'No description')}
+                    {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
                   </span>
                 )
               )}
@@ -382,8 +382,8 @@ export default function TaskItem({ task, onTaskUpdated }) {
           ) : (
             <span 
               onClick={() => !isCompleted && setIsEditingDueDate(true)} 
-              className={`${dueDateStatusToDisplay.classes} ${!isCompleted ? 'cursor-pointer hover:text-indigo-700' : ''}`}
-              title={dueDateStatusToDisplay.text}
+              className={`${dueDateStatusToDisplay.classes} ${!isCompleted ? 'cursor-pointer hover:text-indigo-700' : ''} break-words`}
+              title={dueDateStatusToDisplay.fullDate || (task.due_date ? format(parseISO(task.due_date), 'EEEE, MMM do, yyyy') : 'Set due date')}
             >
               {dueDateStatusToDisplay.text}
             </span>

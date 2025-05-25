@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 export default function NoteItem({ note }) {
   if (!note) return null;
 
-  const formattedDate = format(new Date(note.created_at), 'MMM d, h:mm a');
+  const formattedDate = format(new Date(note.created_at), 'EEEE, MMM do, h:mm a');
 
   return (
     <div className="py-0.5 px-1.5 rounded-md">

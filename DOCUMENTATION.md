@@ -166,6 +166,8 @@ This section tracks the features implemented and the planned next steps based on
     *   Task Due Dates are editable in-line in `TaskItem.js` using a date input.
     *   Task Priorities in `TaskItem.js` can be edited in-line using a select dropdown.
     *   The quick date-pick buttons (e.g., "Tomorrow", "+2 days") associated with the task due date input in `TaskItem.js` have been removed as they were not functioning correctly and per user request.
+    *   Date display formats updated across the application to include the weekday (e.g., "Sunday, May 25th" or "Sunday, May 25th, 2024" or "Sunday, May 25th, 10:30 AM"). This affects `ProjectItem.js`, `TaskItem.js`, `StandaloneTaskList.js` (for its `StandaloneTaskItem`), `completed-report/page.js`, and `NoteItem.js`. Tooltips for dates now show the full date including the year. Specifically, dates within 7 days (but not today/tomorrow) now consistently show the "EEEE, MMM do" format instead of "Due in Xd (DayOfWeek)".
+    *   Text wrapping for dates, project/task names, and descriptions has been improved using `break-words` and `truncate` utilities to prevent overflow.
 *   **UI Enhancements & Layout:**
     *   `AddProjectForm` moved into `AddProjectModal`. Dashboard has a "New Project" button in the header.
     *   Project list on dashboard takes full width when `AddProjectForm` is not shown.
@@ -180,7 +182,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Filter button for projects or their tasks with "No Due Date".
     *   Filter buttons show counts and turn red if matching projects exist.
     *   A `StandaloneTaskList` component added to the right sidebar on the dashboard, showing all non-completed user tasks.
-    *   Tasks in `StandaloneTaskList` are grouped by "Overdue", "Today", "This Week", "Later", and "No Due Date", each with a group header.
+    *   Tasks in `StandaloneTaskList` are grouped by "Overdue", "Today", "Tomorrow", and "This Week". Tasks due later than "This Week" or with no due date are now hidden. The order of groups is Overdue, Today, Tomorrow, This Week.
     *   Fixed an issue where completed tasks were incorrectly appearing in the "Overdue" (and other active) sections of the `StandaloneTaskList`. The task grouping logic now explicitly excludes tasks marked as `is_completed`.
 *   **UI/UX - Project Task Visibility:**
     *   Added a global "Expand All Tasks" / "Collapse All Tasks" button on the `DashboardPage.js`.
@@ -190,9 +192,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Corrected `AuthContext.js` `useEffect` cleanup for `onAuthStateChange` listener (`authListener.subscription.unsubscribe()`).
     *   Resolved Supabase error "Could not find the 'last_activity_at' column" by removing `last_activity_at` from all update objects in `ProjectItem.js`, relying on `updated_at`.
     *   Fixed React Hook order error in `DashboardPage.js` by moving `filteredProjects` `useMemo` before early returns.
-    *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
-    *   Fixed "Converting circular structure to JSON" error when updating task due dates using quick-pick buttons in `TaskItem.js`. This was caused by the `onBlur` event on the date input field incorrectly passing the event object to the update handler. The fix involved wrapping the `handleDueDateUpdate` call in an arrow function: `onBlur={() => handleDueDateUpdate()}`.
-    *   Corrected the "Add & Add Another" button functionality in `AddTaskForm.js`. The button's `onClick` handler was updated to correctly set the `addAnother` state to `true` before calling `handleSubmit`. This ensures the form resets for a new task entry instead of closing the modal, and the button's loading text displays correctly.
+    *   Corrected sorting order for tasks within projects, project notes, task notes, tasks in the `StandaloneTaskList`, and items in the `completed-report`. These are now sorted by date ascending (oldest first), then by priority ascending (Low to High) where applicable.
     *   Improved stability of task inline editing in `TaskItem.js` for due dates set by quick-pick buttons by refactoring the main `useEffect` to conditionally update local state from props based on editing mode flags.
 *   **Mobile Responsiveness (Phase 1):**
     *   `ProjectItem.js`:
@@ -203,10 +203,12 @@ This section tracks the features implemented and the planned next steps based on
     *   `StandaloneTaskList.js` (within its internal `StandaloneTaskItem`):
         *   "Updated X ago" text added and hidden on `xs` screens.
         *   Layout refactored for a more compact, two-line display with improved truncation and element positioning.
-*   **Bug Fixes:**
-    *   Fixed issue where in-line editing of project priority in `ProjectItem.js` was not saving. The `createUpdateHandler` was updated to correctly use the passed value when invoked directly.
-    *   Fixed "Converting circular structure to JSON" error when updating task due dates using quick-pick buttons in `TaskItem.js`. This was caused by the `onBlur` event on the date input field incorrectly passing the event object to the update handler. The fix involved wrapping the `handleDueDateUpdate` call in an arrow function: `onBlur={() => handleDueDateUpdate()}`.
-    *   Corrected the "Add & Add Another" button functionality in `AddTaskForm.js`. The button's `onClick` handler was updated to correctly set the `addAnother` state to `true` before calling `handleSubmit`. This ensures the form resets for a new task entry instead of closing the modal, and the button's loading text displays correctly.
+*   **Data Fetching & Sorting:**
+    *   Completed tasks, completed projects, and all user notes in the `completed-report/page.js` are now fetched and displayed in ascending chronological order (oldest first).
+    *   Tasks within `ProjectItem.js` are fetched and sorted by due date ascending, then priority ascending.
+    *   Project notes within `ProjectItem.js` are fetched and sorted by creation date ascending.
+    *   Task notes within `TaskItem.js` are fetched and sorted by creation date ascending.
+    *   Tasks within `StandaloneTaskList.js` are sorted by due date ascending, then priority ascending within their respective groups.
 
 *   **UI Interactivity - Task Panel to Project List Navigation:**
     *   In the "Upcoming Tasks" panel (`StandaloneTaskList.js`), project names are now clickable.

@@ -13,7 +13,7 @@ export default function RootLayout({ children }) {
       <body>
         <AuthProvider>
           <TargetProjectProvider>
-            {children}
+          {children}
           </TargetProjectProvider>
         </AuthProvider>
       </body>
