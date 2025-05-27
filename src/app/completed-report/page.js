@@ -472,7 +472,6 @@ const CompletedReportPage = () => {
           </Link>
         </div>
       </header>
-
       <div className="flex-grow flex max-w-full mx-auto w-full">
         {/* Left Sidebar: Filters */}
         <aside className="w-64 lg:w-72 bg-white p-4 border-r border-gray-200 flex-shrink-0 sticky top-[61px] h-[calc(100vh-61px)] overflow-y-auto">
@@ -557,17 +556,17 @@ const CompletedReportPage = () => {
           {!isLoading && !error && (
             <>
               {Object.keys(groupItems).length > 0 ? ( // Check if groupItems has any keys
-                <section className="mb-8">
+                (<section className="mb-8">
                   <h2 className="text-xl font-bold text-gray-800 mb-3">Completed Tasks, Projects & Notes</h2> {/* Updated Title */}
                   {renderGroupedItems(groupItems)}
-                </section>
+                </section>)
               ) : (
                 // This empty state will now show if groupItems is empty after combining all types
-                <div className="text-center py-10">
+                (<div className="text-center py-10">
                   <CalendarDaysIcon className="h-12 w-12 text-gray-400 mx-auto mb-2" />
                   <p className="text-gray-500">No tasks, projects, or notes found for this period.</p>
                   <p className="text-xs text-gray-400 mt-1">Try adjusting the date range or view.</p>
-                </div>
+                </div>)
               )}
             </>
           )}

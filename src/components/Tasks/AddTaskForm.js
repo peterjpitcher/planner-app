@@ -44,7 +44,7 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
         // This scenario should ideally not happen if the form is used correctly.
         setSelectedProjectId('');
     }
-  }, [projectId, projects]);
+  }, [projectId, projects, selectedProjectId]);
 
   useEffect(() => {
     // Set initial priority passed as prop (e.g. from parent project)
@@ -98,8 +98,6 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
         .from('projects')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', selectedProjectId);
-
-      console.log('[AddTaskForm] newTask from Supabase:', newTask);
 
       if (onTaskAdded) {
         onTaskAdded(newTask); // Pass the newly created task back

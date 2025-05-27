@@ -5,7 +5,7 @@ import AddProjectForm from './AddProjectForm';
 export default function AddProjectModal({ isOpen, onClose, onProjectAdded }) {
   if (!isOpen) return null;
 
-  console.log('[AddProjectModal] Rendering because isOpen is true.');
+  // console.log('[AddProjectModal] Rendering because isOpen is true.');
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">

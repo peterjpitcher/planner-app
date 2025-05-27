@@ -187,7 +187,6 @@ export default function DashboardPage() {
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
       const newTask = details?.task;
-      console.log('[DashboardPage] newTask in handleProjectDataChange:', newTask);
       if (!newTask || !newTask.id) { 
         console.error('Task added event received without valid task data. Full details:', details, 'Item ID:', itemId, 'Changed Data:', changedData);
         fetchData(); 
@@ -271,9 +270,13 @@ export default function DashboardPage() {
                 {user && <p className="text-xs sm:text-sm text-gray-600">Welcome, {user.email}!</p>}
             </div>
             <div className="flex items-center space-x-3 mt-3 sm:mt-0">
-                <Link href="/completed-report" className="flex items-center px-3 py-2 bg-green-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-green-600 transition-colors shadow-sm">
+                <Link
+                  href="/completed-report"
+                  legacyBehavior>
+                  <a className="flex items-center px-3 py-2 bg-green-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-green-600 transition-colors shadow-sm">
                     <CalendarDaysIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5" />
                     Completed Report
+                  </a>
                 </Link>
                 <button 
                     onClick={() => setShowAddProjectModal(true)}
@@ -294,7 +297,6 @@ export default function DashboardPage() {
             </div>
         </div>
       </header>
-
       {/* Main content area with two columns */}
       <div className="flex-grow w-full py-6 px-4">
         <div className="lg:flex lg:gap-6">
@@ -399,7 +401,6 @@ export default function DashboardPage() {
           </aside>
         </div>
       </div>
-
       {showAddProjectModal && (
         <AddProjectModal 
           isOpen={showAddProjectModal}

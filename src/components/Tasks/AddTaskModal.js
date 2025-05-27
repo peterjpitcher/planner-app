@@ -2,10 +2,8 @@
 
 import AddTaskForm from './AddTaskForm';
 
-export default function AddTaskModal({ isOpen, onClose, onTaskAdded, projects }) {
+export default function AddTaskModal({ isOpen, onClose, onTaskAdded, projects, projectId, defaultPriority }) {
   if (!isOpen) return null;
-
-  console.log('[AddTaskModal] Rendering because isOpen is true.');
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
@@ -22,7 +20,9 @@ export default function AddTaskModal({ isOpen, onClose, onTaskAdded, projects })
         </div>
         <div className="overflow-y-auto flex-grow">
           <AddTaskForm 
+            projectId={projectId}
             projects={projects}
+            defaultPriority={defaultPriority}
             onTaskAdded={(newTask) => {
               if (onTaskAdded) {
                 onTaskAdded(newTask);

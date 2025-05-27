@@ -18,10 +18,6 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    console.log('[MobileLayout] showAddProjectModal state changed to:', showAddProjectModal);
-  }, [showAddProjectModal]);
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
@@ -94,13 +90,6 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
       <main className="flex-grow container mx-auto px-2 py-3 sm:px-4">
         {children}
       </main>
-      {showAddProjectModal && (
-        <AddProjectModal
-          isOpen={showAddProjectModal}
-          onClose={() => setShowAddProjectModal(false)}
-          onProjectAdded={handleProjectSuccessfullyAdded}
-        />
-      )}
       <footer className="bg-white border-t border-gray-200 p-3 sticky bottom-0 z-50 shadow-t-md">
         <nav className="flex justify-around items-center">
           <Link href="/m/dashboard" legacyBehavior>
@@ -117,12 +106,10 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
           </Link>
         </nav>
       </footer>
-
       {/* Floating Action Button for Add Project */}
       {pathname === '/m/dashboard' && onProjectAdded && ( // Only show on dashboard and if onProjectAdded is provided
         <button
           onClick={() => {
-            console.log('[MobileLayout FAB] Clicked! Attempting to open modal.'); // New direct log
             setShowAddProjectModal(true);
           }}
           className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-[60]"
@@ -130,6 +117,14 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
         >
           <PlusIcon className="h-6 w-6" />
         </button>
+      )}
+      {/* Render AddProjectModal last to ensure it's on top of other page content if z-index issues occur */}
+      {showAddProjectModal && (
+        <AddProjectModal
+          isOpen={showAddProjectModal} /* Retaining isOpen for clarity, though outer conditional is primary */
+          onClose={() => setShowAddProjectModal(false)}
+          onProjectAdded={handleProjectSuccessfullyAdded}
+        />
       )}
     </div>
   );

@@ -122,10 +122,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
-    console.log(`[ProjectItem ${project?.id}] showAddTaskModal state changed to:`, showAddTaskModal);
-  }, [showAddTaskModal, project?.id]); // Log when this state changes for a specific project
-
-  useEffect(() => {
     if (areAllTasksExpanded !== undefined) {
       setShowTasks(areAllTasksExpanded);
     }
@@ -268,7 +264,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         return 0;
     });
     setTasks(newTasks);
-    console.log('[ProjectItem] newTask received by handleTaskAdded:', newTask);
     onProjectDataChange(project.id, { ...project, updated_at: new Date().toISOString() }, 'task_added', { task: newTask });
   };
 
@@ -830,7 +825,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                       </div>
                       {!isProjectCompletedOrCancelled && (
                           <button onClick={(e) => {
-                            console.log('[ProjectItem Kebab Menu Add Task] Clicked!');
                             e.stopPropagation(); 
                             setShowAddTaskModal(true); 
                             setIsMenuOpen(false);
@@ -899,7 +893,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               {!isProjectCompletedOrCancelled && (
                 <button
                     onClick={(e) => { 
-                      console.log('[ProjectItem Task Header Add Task] Clicked!');
                       e.stopPropagation(); 
                       setShowAddTaskModal(true);
                     }}
