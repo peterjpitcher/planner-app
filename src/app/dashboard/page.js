@@ -187,6 +187,7 @@ export default function DashboardPage() {
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
       const newTask = details?.task;
+      console.log('[DashboardPage] newTask in handleProjectDataChange:', newTask);
       if (!newTask || !newTask.id) { 
         console.error('Task added event received without valid task data. Full details:', details, 'Item ID:', itemId, 'Changed Data:', changedData);
         fetchData(); 

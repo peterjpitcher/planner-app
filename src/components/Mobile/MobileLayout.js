@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -17,6 +17,10 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    console.log('[MobileLayout] showAddProjectModal state changed to:', showAddProjectModal);
+  }, [showAddProjectModal]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -92,6 +96,7 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
       </main>
       {showAddProjectModal && (
         <AddProjectModal
+          isOpen={showAddProjectModal}
           onClose={() => setShowAddProjectModal(false)}
           onProjectAdded={handleProjectSuccessfullyAdded}
         />
@@ -116,8 +121,11 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
       {/* Floating Action Button for Add Project */}
       {pathname === '/m/dashboard' && onProjectAdded && ( // Only show on dashboard and if onProjectAdded is provided
         <button
-          onClick={() => setShowAddProjectModal(true)}
-          className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-40"
+          onClick={() => {
+            console.log('[MobileLayout FAB] Clicked! Attempting to open modal.'); // New direct log
+            setShowAddProjectModal(true);
+          }}
+          className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-[60]"
           title="Add New Project"
         >
           <PlusIcon className="h-6 w-6" />

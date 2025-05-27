@@ -122,6 +122,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
+    console.log(`[ProjectItem ${project?.id}] showAddTaskModal state changed to:`, showAddTaskModal);
+  }, [showAddTaskModal, project?.id]); // Log when this state changes for a specific project
+
+  useEffect(() => {
     if (areAllTasksExpanded !== undefined) {
       setShowTasks(areAllTasksExpanded);
     }
@@ -264,6 +268,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         return 0;
     });
     setTasks(newTasks);
+    console.log('[ProjectItem] newTask received by handleTaskAdded:', newTask);
     onProjectDataChange(project.id, { ...project, updated_at: new Date().toISOString() }, 'task_added', { task: newTask });
   };
 
@@ -824,7 +829,12 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                       </button>
                       </div>
                       {!isProjectCompletedOrCancelled && (
-                          <button onClick={(e) => {e.stopPropagation(); setShowAddTaskModal(true); setIsMenuOpen(false);}} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                          <button onClick={(e) => {
+                            console.log('[ProjectItem Kebab Menu Add Task] Clicked!');
+                            e.stopPropagation(); 
+                            setShowAddTaskModal(true); 
+                            setIsMenuOpen(false);
+                          }} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
                              <PlusCircleIcon className="h-4 w-4"/> Add Task
                           </button>
                       )}
@@ -888,7 +898,11 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               </div>
               {!isProjectCompletedOrCancelled && (
                 <button
-                    onClick={(e) => { e.stopPropagation(); setShowAddTaskModal(true);}}
+                    onClick={(e) => { 
+                      console.log('[ProjectItem Task Header Add Task] Clicked!');
+                      e.stopPropagation(); 
+                      setShowAddTaskModal(true);
+                    }}
                     className="hidden sm:flex items-center text-xs bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-1 px-2 rounded-md transition-colors"
                 >
                     <PlusCircleIcon className="w-4 h-4 mr-1.5" /> Add Task
@@ -934,12 +948,14 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
       
       {showAddTaskModal && (
         <AddTaskModal
+          isOpen={showAddTaskModal}
           projectId={project.id}
           defaultPriority={project.priority}
           onClose={() => setShowAddTaskModal(false)}
           onTaskAdded={handleTaskAdded}
         />
       )}
+
       <ProjectCompletionModal
         isOpen={showCompletionModal}
         onClose={handleCloseCompletionModal}

@@ -95,6 +95,8 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
         .update({ updated_at: new Date().toISOString() })
         .eq('id', selectedProjectId);
 
+      console.log('[AddTaskForm] newTask from Supabase:', newTask);
+
       if (onTaskAdded) {
         onTaskAdded(newTask); // Pass the newly created task back
       }
