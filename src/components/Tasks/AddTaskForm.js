@@ -31,16 +31,20 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
   }, []);
 
   useEffect(() => {
-    // If a specific projectId is provided, ensure it's set
     if (projectId) {
       setSelectedProjectId(projectId);
+    } else if (projects && projects.length > 0) {
+      if (!selectedProjectId || !projects.find(p => p.id === selectedProjectId)) {
+        // setSelectedProjectId(projects[0].id); // Example: auto-select first
+        // Or leave it empty to force user selection if that's the desired UX
+        // For the context of ProjectItem, projectId will always be there, so this branch is less critical.
+      }
+    } else if (!projectId) {
+        // No projectId and no projects list, clear selectedProjectId if it was somehow set.
+        // This scenario should ideally not happen if the form is used correctly.
+        setSelectedProjectId('');
     }
-    // If projects are available and no specific projectId, and selectedProjectId is not set or not in list, set to first available project.
-    if (!projectId && projects && projects.length > 0 && 
-        (!selectedProjectId || !projects.find(p => p.id === selectedProjectId))) {
-      // setSelectedProjectId(projects[0].id); // Auto-select first project
-    } 
-  }, [projectId, projects, selectedProjectId]);
+  }, [projectId, projects]);
 
   useEffect(() => {
     // Set initial priority passed as prop (e.g. from parent project)
