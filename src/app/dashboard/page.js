@@ -184,9 +184,14 @@ export default function DashboardPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project') => {
+  const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
-      const newTask = changedData;
+      const newTask = details?.task;
+      if (!newTask || !newTask.id) { 
+        console.error('Task added event received without valid task data. Full details:', details, 'Item ID:', itemId, 'Changed Data:', changedData);
+        fetchData(); 
+        return;
+      }
       setAllUserTasks(prevTasks => [newTask, ...prevTasks].sort(sortTasksByDateDescThenPriority));
       setProjects(prevProjects => 
         prevProjects.map(p => p.id === newTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)

@@ -301,10 +301,15 @@ This section tracks the features implemented and the planned next steps based on
         *   Search icon in `MobileLayout` header toggles a search input.
         *   Submitting search navigates to `/m/search?query=...`.
         *   **Search Results Page (`/m/search`):** Displays matching projects and tasks in separate sections. Uses `Suspense` for `useSearchParams`. Results also support swipe actions.
-    *   **Text Wrapping:** Project and Task names in list items and detail page headers are configured to wrap to prevent layout overflow.
+        *   **Text Wrapping:** Project and Task names in list items and detail page headers are configured to wrap to prevent layout overflow.
+        *   **Add Project FAB:** The "Add Project" button in the `MobileLayout` header has been replaced with a Floating Action Button (FAB) in the bottom-right corner of the `/m/dashboard` page for better mobile UX and discoverability.
+
+*   **Desktop Dashboard - Add Task Functionality:**
+    *   Corrected an issue in `src/app/dashboard/page.js` where the `handleProjectDataChange` function was not properly receiving the new task object when a task was added from `ProjectItem.js`. The function now correctly accesses the `newTask` from the `details` parameter passed by `ProjectItem.js`.
 
 ### Remaining PRD Features (Next Steps):
 
+*   **Mobile Task Comments:** Investigate user report that the interface doesn't take text when adding a comment to a task on mobile (`/m/task/[id]/page.js`). The current code for the textarea and its state handling appears correct.
 *   Identifying and potentially removing unused database fields from the UI (user request).
 *   Global search functionality.
 *   Advanced/specific filtering capabilities (beyond current dashboard filters).

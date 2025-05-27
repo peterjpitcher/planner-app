@@ -9,6 +9,7 @@ import {
   RectangleStackIcon, ClipboardDocumentListIcon, MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
 import AddProjectModal from '@/components/Projects/AddProjectModal'; // Assuming this can be reused
+import { PlusIcon } from '@heroicons/react/20/solid'; // Added for FAB
 
 const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
@@ -64,13 +65,6 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
               >
                 <MagnifyingGlassIcon className="h-5 w-5" />
               </button>
-              <button
-                onClick={() => setShowAddProjectModal(true)}
-                className="p-2 rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                title="Add New Project"
-              >
-                <PlusCircleIcon className="h-5 w-5" />
-              </button>
               <Link href="/dashboard" legacyBehavior>
                 <a className="p-2 rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 hidden sm:inline-flex" title="Desktop View">
                   <ArrowUturnLeftIcon className="h-5 w-5" />
@@ -118,6 +112,17 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
           </Link>
         </nav>
       </footer>
+
+      {/* Floating Action Button for Add Project */}
+      {pathname === '/m/dashboard' && onProjectAdded && ( // Only show on dashboard and if onProjectAdded is provided
+        <button
+          onClick={() => setShowAddProjectModal(true)}
+          className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-40"
+          title="Add New Project"
+        >
+          <PlusIcon className="h-6 w-6" />
+        </button>
+      )}
     </div>
   );
 };
