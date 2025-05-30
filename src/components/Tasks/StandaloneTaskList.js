@@ -286,83 +286,81 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
 }
 
 export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder }) {
-  const projectMap = useMemo(() => 
-    projects.reduce((map, p) => {
-      map[p.id] = p;
-      return map;
-    }, {}), 
-  [projects]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { targetProjectId, setTargetProjectId, actionedProjectIdRef } = useTargetProject();
 
-  const groupedAndSortedTasks = useMemo(() => {
+  useEffect(() => {
+    if (allUserTasks) {
+      setIsLoading(false);
+    }
+  }, [allUserTasks]);
+
+  const sortedAndGroupedTasks = useMemo(() => {
+    if (!allUserTasks) return {};
+
+    const today = startOfDay(new Date());
+    const tomorrow = startOfDay(addDays(today, 1));
+    const endOfThisWeek = endOfWeek(today, { weekStartsOn: 1 }); // Assuming Monday is the start of the week
+
+    const filteredTasks = allUserTasks.filter(task => !task.is_completed);
+
+    // Sort tasks first by priority (descending), then by due date (ascending)
+    const sortedTasks = filteredTasks.sort((a, b) => {
+      const priorityA = getPriorityValue(a.priority);
+      const priorityB = getPriorityValue(b.priority);
+
+      if (priorityA !== priorityB) {
+        return priorityB - priorityA; // Higher priority value first
+      }
+
+      // If priorities are the same, sort by due date (ascending, nulls last)
+      const dateA = a.due_date ? parseISO(a.due_date) : null;
+      const dateB = b.due_date ? parseISO(b.due_date) : null;
+
+      if (dateA && dateB) {
+        return compareAsc(dateA, dateB);
+      }
+      if (dateA) return -1; // dateA is not null, dateB is null, so A comes first
+      if (dateB) return 1;  // dateB is not null, dateA is null, so B comes first
+      return 0; // Both are null
+    });
+
     const groups = {
       overdue: [],
       today: [],
       tomorrow: [],
       thisWeek: [],
+      // noDueDate: [], // No longer showing tasks beyond this week or without due date
     };
 
-    const today = startOfDay(new Date());
-    const tomorrow = startOfDay(addDays(today, 1));
-    const dayAfterTomorrow = startOfDay(addDays(today, 2));
-    const endOfThisWeek = endOfWeek(today, { weekStartsOn: 1 });
+    sortedTasks.forEach(task => {
+      if (task.is_completed) return; // Should already be filtered, but as a safeguard
 
-    allUserTasks.forEach(task => {
-      if (task.is_completed) {
-        return;
-      }
+      const dueDate = task.due_date ? startOfDay(parseISO(task.due_date)) : null;
 
-      if (hideBillStakeholder) {
-        const parentProject = projectMap[task.project_id];
-        if (parentProject && parentProject.stakeholders && parentProject.stakeholders.includes('Bill')) {
-          return;
+      if (dueDate) {
+        if (isPast(dueDate) && !isToday(dueDate)) {
+          groups.overdue.push(task);
+        } else if (isToday(dueDate)) {
+          groups.today.push(task);
+        } else if (isTomorrow(dueDate)) {
+          groups.tomorrow.push(task);
+        } else if (isWithinInterval(dueDate, { start: addDays(tomorrow, 1), end: endOfThisWeek })) {
+          groups.thisWeek.push(task);
         }
-      }
-
-      if (!task.due_date) {
-        return;
-      }
-      
-      let dueDate;
-      if (typeof task.due_date === 'string' && task.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        dueDate = startOfDay(new Date(task.due_date + 'T00:00:00'));
+        // Tasks due later than this week are intentionally not shown
       } else {
-        dueDate = startOfDay(parseISO(task.due_date));
-      }
-
-      if (isPast(dueDate) && !isSameDay(dueDate, today)) {
-        groups.overdue.push(task);
-      } else if (isSameDay(dueDate, today)) {
-        groups.today.push(task);
-      } else if (isSameDay(dueDate, tomorrow)) {
-        groups.tomorrow.push(task);
-      } else if (isWithinInterval(dueDate, { start: dayAfterTomorrow, end: endOfThisWeek })) {
-        groups.thisWeek.push(task);
+        // Tasks with no due date are intentionally not shown based on previous requirements
+        // groups.noDueDate.push(task);
       }
     });
+    
+    // The tasks within each group are already sorted by priority then due_date
+    // because the initial `sortedTasks` array was sorted this way before grouping.
+    // No need to re-sort each group individually if the overall list is pre-sorted correctly.
 
-    for (const groupName in groups) {
-      groups[groupName].sort((a, b) => {
-        const dateA = a.due_date ? parseISO(a.due_date) : null;
-        const dateB = b.due_date ? parseISO(b.due_date) : null;
-
-        // Handle null dates first: tasks with no due date should appear after those with due dates
-        if (dateA === null && dateB === null) {
-          // If both are null, sort by priority (Low to High)
-          return getPriorityValue(a.priority) - getPriorityValue(b.priority);
-        }
-        if (dateA === null) return 1; // a comes after b if a.due_date is null
-        if (dateB === null) return -1; // b comes after a if b.due_date is null
-
-        // Sort by date ascending (oldest first)
-        const dateComparison = compareAsc(dateA, dateB);
-        if (dateComparison !== 0) return dateComparison;
-
-        // If dates are same, sort by priority ascending (Low to High)
-        return getPriorityValue(a.priority) - getPriorityValue(b.priority);
-      });
-    }
     return groups;
-  }, [allUserTasks, projectMap, hideBillStakeholder]);
+  }, [allUserTasks]);
 
   const groupOrder = ['overdue', 'today', 'tomorrow', 'thisWeek'];
   const groupLabels = {
@@ -372,7 +370,7 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
     thisWeek: 'This Week',
   };
 
-  const hasTasksToShow = groupOrder.some(key => groupedAndSortedTasks[key] && groupedAndSortedTasks[key].length > 0);
+  const hasTasksToShow = groupOrder.some(key => sortedAndGroupedTasks[key] && sortedAndGroupedTasks[key].length > 0);
 
   if (!hasTasksToShow) {
     return (
@@ -386,15 +384,15 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
     <div className="bg-white shadow rounded-lg h-full overflow-y-auto">
       <h3 className="text-lg font-semibold text-gray-800 p-3 border-b border-gray-200 sticky top-0 bg-white z-10">Upcoming Tasks</h3>
       {groupOrder.map(groupKey => (
-        groupedAndSortedTasks[groupKey] && groupedAndSortedTasks[groupKey].length > 0 && (
+        sortedAndGroupedTasks[groupKey] && sortedAndGroupedTasks[groupKey].length > 0 && (
           <div key={groupKey} className="pt-2">
             <h4 className="text-xs font-semibold uppercase text-gray-500 px-3 py-1 bg-gray-50 border-t border-b border-gray-200">{groupLabels[groupKey]}</h4>
             <div className="divide-y divide-gray-100">
-              {groupedAndSortedTasks[groupKey].map(task => (
+              {sortedAndGroupedTasks[groupKey].map(task => (
                 <StandaloneTaskItem 
                   key={task.id} 
                   task={task} 
-                  project={projectMap[task.project_id]} 
+                  project={projects.find(p => p.id === task.project_id)} 
                   onTaskUpdated={onTaskUpdateNeeded} 
                 />
               ))}

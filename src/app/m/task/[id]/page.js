@@ -177,7 +177,7 @@ const MobileTaskDetailPage = () => {
         .insert({
           content: newNoteContent.trim(),
           task_id: task.id,
-          project_id: task.project_id, // Ensure project_id is available on task object
+          project_id: null, // Set project_id to null for task-specific notes
           user_id: user.id,
         })
         .select()

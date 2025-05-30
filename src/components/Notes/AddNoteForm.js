@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, forwardRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function AddNoteForm({ parentId, parentType, onNoteAdded, disabled }) {
+// Wrapped component with forwardRef
+const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled }, ref) => {
   const { user } = useAuth();
   const [noteContent, setNoteContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -79,6 +80,7 @@ export default function AddNoteForm({ parentId, parentType, onNoteAdded, disable
   return (
     <form onSubmit={handleFormSubmit} className="mt-2 mb-1">
       <input
+        ref={ref}
         type="text"
         value={noteContent}
         onChange={(e) => {
@@ -102,4 +104,8 @@ export default function AddNoteForm({ parentId, parentType, onNoteAdded, disable
         </button>
     </form>
   );
-} 
+});
+
+AddNoteForm.displayName = 'AddNoteForm'; // For better debugging
+
+export default AddNoteForm; 

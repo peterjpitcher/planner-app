@@ -76,6 +76,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
   const [currentDueDate, setCurrentDueDate] = useState(task && task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [currentPriority, setCurrentPriority] = useState(task ? task.priority || '' : '');
+  const noteInputRef = useRef(null); // Ref for the note input
 
   // All useEffect and useCallback hooks
   useEffect(() => {
@@ -103,7 +104,8 @@ export default function TaskItem({ task, onTaskUpdated }) {
     if (!task || !task.id) return; 
     setIsLoadingNotes(true);
     try {
-      const { data, error } = await supabase.from('notes').select('*').eq('task_id', task.id).order('created_at', { ascending: true });
+      // Sort notes by created_at descending (newest first)
+      const { data, error } = await supabase.from('notes').select('*').eq('task_id', task.id).order('created_at', { ascending: false });
       if (error) throw error;
       setNotes(data || []);
     } catch (error) {
@@ -115,18 +117,23 @@ export default function TaskItem({ task, onTaskUpdated }) {
   }, [task]); 
 
   useEffect(() => {
-    if (showNotes && task && task.id) { 
-      fetchNotes();
-    }
-  }, [showNotes, task, fetchNotes]);
-  
-  // Fetch notes on initial mount or when task.id changes to get note count
-  useEffect(() => {
     if (task && task.id) {
-      fetchNotes();
+      fetchNotes(); // Fetch notes on initial mount/task change for note count
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.id]); // fetchNotes is memoized with task, so direct task.id is fine
+  }, [task?.id]); // fetchNotes is memoized, direct task.id is fine
+  
+  useEffect(() => {
+    if (showNotes && task && task.id) { 
+      fetchNotes(); // Re-fetch if already shown, or fetch if just shown
+      // Delay focus slightly to ensure the input field is rendered and visible
+      setTimeout(() => {
+        if (noteInputRef.current) {
+          noteInputRef.current.focus();
+        }
+      }, 100); // 100ms delay, adjust if needed
+    }
+  }, [showNotes, task, fetchNotes]); // Added fetchNotes to dependencies as it's called
   
   const taskNameInputRef = useRef(null);
   useEffect(() => {
@@ -149,11 +156,11 @@ export default function TaskItem({ task, onTaskUpdated }) {
     : 'never';
 
   const handleNoteAdded = (newNote) => {
+    // Optimistically add new note to the top (as it's newest)
     setNotes(prevNotes => [newNote, ...prevNotes]);
     setShowNotes(false); // Collapse notes section after adding
-    // Optionally, refetch notes if there's a chance of discrepancy or for updated timestamps from DB
-    // fetchNotes(); 
-    // However, optimistic update should be fine for count.
+    // No need to call fetchNotes() here if optimistic update is sufficient
+    // and order is handled by insertion point and initial fetch order.
   };
 
   const priorityStyles = getTaskPriorityClasses(currentPriority);
@@ -171,10 +178,9 @@ export default function TaskItem({ task, onTaskUpdated }) {
       }).eq('id', task.id);
       if (error) {
         console.error('Error updating task status:', error);
-        // Potentially revert optimistic UI update here if needed
       } else {
-        setIsCompleted(newCompletedStatus); // Optimistic update
-        if (onTaskUpdated) onTaskUpdated({ ...task, is_completed: newCompletedStatus, completed_at: newCompletedStatus ? new Date().toISOString() : null });
+        setIsCompleted(newCompletedStatus);
+        if (onTaskUpdated) onTaskUpdated({ ...task, is_completed: newCompletedStatus, completed_at: newCompletedStatus ? new Date().toISOString() : null, updated_at: new Date().toISOString() });
       }
     } catch (err) {
       console.error('Exception while updating task:', err);
@@ -402,6 +408,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
       {showNotes && (
         <div id={`notes-section-${task.id}`} className="mt-2 pt-1.5 border-t border-gray-200">
           <AddNoteForm
+            ref={noteInputRef}
             parentId={task.id}
             parentType="task"
             onNoteAdded={handleNoteAdded}

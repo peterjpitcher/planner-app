@@ -361,3 +361,60 @@ This plan will be updated as features are completed and if priorities change.
 This plan will be updated as features are completed and if priorities change.
 
 --- 
+
+## Session $(date +%Y-%m-%d) <!-- Replace with actual date -->
+
+### Task Notes UX Enhancements (Desktop Dashboard)
+
+*   **Requirement 1: Note Sorting:** Task-specific notes displayed within project cards (`TaskItem.js`) on the main dashboard needed to be ordered from newest at the top to oldest at the bottom.
+    *   **Fix:** The `fetchNotes` function in `src/components/Tasks/TaskItem.js` was updated. The Supabase query now uses `.order('created_at', { ascending: false })` to retrieve notes in the desired descending chronological order.
+    *   The `handleNoteAdded` function in the same file was also updated to optimistically add new notes to the beginning of the local `notes` state array (`[newNote, ...prevNotes]`), maintaining visual consistency with the new sort order.
+
+*   **Requirement 2: Input Focus on Note Add:** When the notes button/icon is clicked on a task item, the "Add a new note..." input field should automatically receive focus.
+    *   **Fix:**
+        1.  The `src/components/Notes/AddNoteForm.js` component was modified to use `React.forwardRef`. This allows a parent component to get a direct reference to an underlying DOM element within `AddNoteForm` (in this case, the input field).
+        2.  In `src/components/Tasks/TaskItem.js`, a `noteInputRef` (created with `useRef`) was initialized.
+        3.  This `noteInputRef` is now passed as the `ref` prop to the `<AddNoteForm />` instance.
+        4.  A `useEffect` hook in `TaskItem.js`, which triggers when the `showNotes` state changes (i.e., when the notes section is toggled), now includes logic to focus the input. If `showNotes` is true, `noteInputRef.current.focus()` is called. A `setTimeout` with a small delay (100ms) is used to ensure the input field is rendered and available in the DOM before attempting to focus it, which is a common pattern for conditionally rendered focusable elements.
+
+### Upcoming Tasks Sorting (Desktop Dashboard)
+
+*   **Requirement:** Tasks listed in the "Upcoming Tasks" panel (`StandaloneTaskList.js`) on the main desktop dashboard (`/dashboard`) needed to be sorted more specifically.
+*   **New Order:** Within each due date group (e.g., "Overdue", "Today", "Tomorrow", "This Week"), tasks are now sorted:
+    1.  Primarily by **Priority** in descending order (High > Medium > Low > No Priority).
+    2.  Secondarily by **Due Date** in ascending order (earliest first, with tasks having no due date appearing last within their priority subgroup).
+*   **Implementation:**
+    *   Modified `src/components/Tasks/StandaloneTaskList.js`.
+    *   The `useMemo` hook responsible for `sortedAndGroupedTasks` now performs a comprehensive sort on all non-completed tasks *before* they are allocated to the due date groups.
+    *   The primary sort key uses `getPriorityValue` (High=3, Medium=2, Low=1, Default=0), sorting these values in descending order.
+    *   The secondary sort key is the task's due date (parsed into a Date object), sorted in ascending order. `null` due dates are handled to ensure they appear after tasks with due dates within the same priority level.
+    *   Since the entire list is pre-sorted this way, the tasks naturally maintain this order when they are subsequently distributed into the visual due date categories, eliminating the need for re-sorting each group individually.
+
+### Authentication Persistence (Desktop)
+
+*   **Issue:** Users were required to log in repeatedly on the desktop version of the site (`/dashboard`) as the session was not persisting across browser sessions.
+*   **Cause:** While `onAuthStateChange` in `AuthContext.js` correctly listened for auth state changes, it didn't proactively fetch an existing session when the application first loaded. This could lead to an initial state where the user appeared logged out until the listener eventually fired or a new login occurred.
+*   **Fix:** Modified `src/contexts/AuthContext.js` within the `AuthProvider` component's `useEffect` hook.
+    *   Added an explicit call to `supabase.auth.getSession()` when the provider mounts. This function attempts to retrieve the current session from storage (Supabase default cookies).
+    *   The `session` and `user` states are immediately updated based on the result of `getSession()`.
+    *   The `onAuthStateChange` listener remains in place to handle subsequent auth events (logins, logouts, token refreshes) and to provide the definitive point at which `loading` is set to `false`.
+*   **Expected Outcome:** This change ensures that an existing user session is loaded from cookies upon application startup, leading to persistent logins on the desktop site.
+
+### Database Constraint Fix (Notes)
+
+*   **Issue:** Users encountered a "400 Bad Request" error when adding a note to a task on the mobile task detail page (`/m/task/[id]`). The error message `new row for relation "notes" violates check constraint "check_note_parent"` indicated a database constraint violation.
+*   **Cause:** The `handleAddNote` function in `src/app/m/task/[id]/page.js` was attempting to insert a new note with both a `task_id` and a `project_id` (derived from `task.project_id`). The `check_note_parent` constraint likely enforces that a note should be linked to *either* a task *or* a project directly, but not both simultaneously on the `notes` table record itself.
+*   **Fix:** The `insert` operation for new notes in `src/app/m/task/[id]/page.js` was modified to set `project_id: null` when the note is being associated with a task. The task's relationship to its parent project remains, but the note record itself now correctly only links to the `task_id` directly, satisfying the constraint.
+
+### Planned Next Steps:
+
+*   Identifying and potentially removing unused database fields from the UI (user request).
+*   Global search functionality.
+*   Advanced/specific filtering capabilities (beyond current dashboard filters).
+*   Archive functionality for completed projects.
+*   Basic reporting dashboard.
+*   Keyboard shortcuts.
+
+This plan will be updated as features are completed and if priorities change.
+
+--- 
