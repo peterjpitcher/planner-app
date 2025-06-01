@@ -1,193 +1,111 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSwipeable } from 'react-swipeable';
-import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
+// useRouter removed as it's not directly used after swipe removal
+import {
+  ChevronRightIcon,
+  CheckCircleIcon as OutlineCheckCircleIcon,
+  ClockIcon,
+  CalendarDaysIcon,
+  ExclamationTriangleIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  MinusIcon
+} from '@heroicons/react/24/outline';
+import { CheckCircleIcon as SolidCheckCircleIcon } from '@heroicons/react/24/solid';
 import { format, isToday, isTomorrow, isPast, startOfDay, parseISO } from 'date-fns';
-import { 
-    ClockIcon, FireIcon, ExclamationTriangleIcon, 
-    CheckCircleIcon as SolidCheckIcon, ArrowPathIcon, ShieldCheckIcon // Replaced Pencil, Trash
-} from '@heroicons/react/20/solid';
 
-const getPriorityStyles = (priority) => {
-  switch (priority) {
-    case 'High':
-      return { icon: <FireIcon className="h-4 w-4 text-red-500" />, textClass: 'text-red-600 font-semibold', bgColor: 'bg-red-50' };
-    case 'Medium':
-      return { icon: <ExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />, textClass: 'text-yellow-600 font-semibold', bgColor: 'bg-yellow-50' };
-    case 'Low':
-      return { icon: <SolidCheckIcon className="h-4 w-4 text-green-500" />, textClass: 'text-green-600', bgColor: 'bg-green-50' };
-    default:
-      return { icon: <ClockIcon className="h-4 w-4 text-gray-400" />, textClass: 'text-gray-500', bgColor: 'bg-gray-50' };
-  }
+const priorityStyles = {
+  High: { icon: <ExclamationTriangleIcon className="h-4 w-4 text-red-600" />, textClass: 'text-red-700 font-semibold', bgColor: 'bg-red-50', completionColor: 'text-red-500' },
+  Medium: { icon: <ArrowUpIcon className="h-4 w-4 text-yellow-600" />, textClass: 'text-yellow-700 font-semibold', bgColor: 'bg-yellow-50', completionColor: 'text-yellow-500' },
+  Low: { icon: <ArrowDownIcon className="h-4 w-4 text-green-600" />, textClass: 'text-green-700', bgColor: 'bg-green-50', completionColor: 'text-green-500' },
+  default: { icon: <MinusIcon className="h-4 w-4 text-gray-500" />, textClass: 'text-gray-600', bgColor: 'bg-gray-50', completionColor: 'text-gray-400' }
 };
 
-const getDueDateStatus = (dateString) => {
-  if (!dateString) return { text: 'No due date', classes: 'text-gray-500' };
-  
-  let date;
-  // Handle both yyyy-MM-dd and full ISO strings
-  if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    date = startOfDay(new Date(dateString + 'T00:00:00')); // Ensure it's parsed as local time
-  } else {
-    date = startOfDay(parseISO(dateString));
-  }
-  
-  const today = startOfDay(new Date());
-
-  if (isToday(date)) return { text: 'Due Today', classes: 'text-red-600 font-bold' };
-  if (isTomorrow(date)) return { text: 'Due Tomorrow', classes: 'text-yellow-600 font-semibold' };
-  if (isPast(date) && !isToday(date)) return { text: `Overdue: ${format(date, 'MMM do')}`, classes: 'text-red-700 font-bold' };
-  return { text: `Due ${format(date, 'MMM do')}`, classes: 'text-gray-700' }; // Simplified date format for mobile
+const getPriorityStyling = (priority) => {
+  return priorityStyles[priority] || priorityStyles.default;
 };
 
-const priorityCycle = ['Low', 'Medium', 'High'];
+const MobileTaskListItem = ({ task, projectContext = null }) => {
+  const priorityStyling = getPriorityStyling(task.priority);
 
-const MobileTaskListItem = ({ task: initialTask, onTaskUpdated, onTaskDeleted }) => {
-  const router = useRouter();
-  const [task, setTask] = useState(initialTask);
-  const [revealed, setRevealed] = useState(null); // 'left-complete', 'right-priority', or null
-  const [isProcessing, setIsProcessing] = useState(false);
+  let dueDateStatus = 'No due date';
+  let dueDateClasses = 'text-gray-500 italic';
+  let DueDateIconComponent = ClockIcon;
+  let dueDateIconClass = 'text-gray-400';
 
-  useEffect(() => {
-    setTask(initialTask);
-    setRevealed(null);
-  }, [initialTask]);
-
-  const handleToggleComplete = useCallback(async () => {
-    if (isProcessing || !task) return;
-    setIsProcessing(true);
-    const newCompletedStatus = !task.is_completed;
-    try {
-      const { data: updatedTask, error } = await supabase
-        .from('tasks')
-        .update({ 
-            is_completed: newCompletedStatus,
-            completed_at: newCompletedStatus ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString()
-        })
-        .eq('id', task.id)
-        .select('*, projects(id, name)')
-        .single();
-      if (error) throw error;
-      setTask(updatedTask);
-      if (onTaskUpdated) onTaskUpdated(updatedTask);
-    } catch (err) {
-      console.error('Error toggling task completion:', err);
-      alert('Could not update task status.');
-    } finally {
-      setIsProcessing(false);
-      setRevealed(null);
+  if (task.is_completed) {
+    dueDateStatus = task.completed_at ? `Completed ${format(parseISO(task.completed_at), 'MMM d')}` : 'Completed';
+    dueDateClasses = 'text-green-600';
+    DueDateIconComponent = SolidCheckCircleIcon;
+    dueDateIconClass = 'text-green-500';
+  } else if (task.due_date) {
+    const date = parseISO(task.due_date);
+    if (isPast(date) && !isToday(date)) {
+      dueDateStatus = `Overdue ${format(date, 'MMM d')}`;
+      dueDateClasses = 'text-red-600 font-semibold';
+      DueDateIconComponent = ExclamationTriangleIcon;
+      dueDateIconClass = 'text-red-500';
+    } else if (isToday(date)){
+      dueDateStatus = 'Due Today';
+      dueDateClasses = 'text-orange-600 font-semibold';
+      DueDateIconComponent = ExclamationTriangleIcon;
+      dueDateIconClass = 'text-orange-500';
+    } else if (isTomorrow(date)){
+      dueDateStatus = 'Due Tomorrow';
+      dueDateClasses = 'text-yellow-600 font-semibold';
+      DueDateIconComponent = CalendarDaysIcon;
+      dueDateIconClass = 'text-yellow-500';
+    } else {
+      dueDateStatus = `Due ${format(date, 'MMM d, yyyy')}`;
+      dueDateClasses = 'text-gray-600';
+      DueDateIconComponent = CalendarDaysIcon;
+      dueDateIconClass = 'text-gray-500';
     }
-  }, [task, isProcessing, onTaskUpdated]);
-
-  const handleCyclePriority = useCallback(async () => {
-    if (isProcessing || !task) return;
-    setIsProcessing(true);
-    const currentPriorityIndex = priorityCycle.indexOf(task.priority || 'Low');
-    const nextPriorityIndex = (currentPriorityIndex + 1) % priorityCycle.length;
-    const newPriority = priorityCycle[nextPriorityIndex];
-    try {
-      const { data: updatedTask, error } = await supabase
-        .from('tasks')
-        .update({ priority: newPriority, updated_at: new Date().toISOString() })
-        .eq('id', task.id)
-        .select('*, projects(id, name)')
-        .single();
-      if (error) throw error;
-      setTask(updatedTask);
-      if (onTaskUpdated) onTaskUpdated(updatedTask);
-    } catch (err) {
-      console.error('Error cycling task priority:', err);
-      alert('Could not update priority.');
-    } finally {
-      setIsProcessing(false);
-      setRevealed(null);
-    }
-  }, [task, isProcessing, onTaskUpdated]);
-
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => !isProcessing && setRevealed('left-complete'), // Mark Complete/Open
-    onSwipedRight: () => !isProcessing && !task.is_completed && setRevealed('right-priority'), // Cycle Priority (only if not completed)
-    onTap: (event) => {
-      const tappedOnActionButton = event.event.target.closest('button[data-swipe-action]');
-      if (tappedOnActionButton) return;
-      if (revealed) {
-        setRevealed(null);
-      } else if (task) {
-        router.push(`/m/task/${task.id}`);
-      }
-    },
-    preventScrollOnSwipe: true,
-    trackMouse: true,
-    delta: 10,
-  });
-
-  if (!task) return null;
-
-  const priorityStylesToUse = getPriorityStyles(task.priority);
-  const dueDateStatusToUse = getDueDateStatus(task.due_date);
-  
-  const baseCardClasses = "relative p-3 mb-2 rounded-lg shadow group overflow-hidden";
-  const dynamicCardClasses = `${priorityStylesToUse.bgColor} ${task.is_completed && !revealed ? 'opacity-60' : ''}`;
-  
-  const contentTransform = revealed === 'left-complete' ? '-translate-x-24' : revealed === 'right-priority' ? 'translate-x-24' : 'translate-x-0';
-  const mainContentWrapperClasses = `transition-transform duration-300 ease-out ${contentTransform}`;
+  }
 
   return (
-    <div {...swipeHandlers} className={`${baseCardClasses} ${dynamicCardClasses}`}>
-      {/* Background Action: Cycle Priority (Revealed on Swipe Right) */}
-      {!task.is_completed && (
-        <div className="absolute inset-y-0 left-0 flex items-center">
-          <button 
-              data-swipe-action
-              onClick={handleCyclePriority} 
-              disabled={isProcessing}
-              className={`w-24 h-full flex flex-col items-center justify-center p-2 text-xs text-white bg-purple-500 transition-opacity duration-300 ease-out ${revealed === 'right-priority' ? 'opacity-100' : 'opacity-0'}`}
-          >
-              <ArrowPathIcon className="h-6 w-6 mb-1" />
-              {isProcessing ? '...' : 'Priority'}
-          </button>
+    <Link href={`/m/task/${task.id}`} className="block w-full">
+      <div className={`p-3 rounded-lg shadow hover:shadow-md mb-3 border border-gray-200/80 transition-all duration-150 ease-in-out ${priorityStyling.bgColor} ${task.is_completed ? 'opacity-70' : ''}`}>
+        <div className="flex items-start justify-between">
+          <div className="flex items-start min-w-0">
+            {task.is_completed ? 
+              <SolidCheckCircleIcon className={`h-5 w-5 ${priorityStyling.completionColor} mr-2 flex-shrink-0`} /> :
+              <OutlineCheckCircleIcon className="h-5 w-5 text-gray-400 mr-2 flex-shrink-0" />
+            }
+            <div className="min-w-0">
+                <h3 className={`text-sm font-semibold ${task.is_completed ? 'line-through text-gray-500' : 'text-gray-900'} truncate pr-1`}>
+                {task.name}
+                </h3>
+            </div>
+          </div>
+          <ChevronRightIcon className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
         </div>
-      )}
 
-      {/* Main Task Content - This div moves */}
-      <div className={`${mainContentWrapperClasses} ${priorityStylesToUse.bgColor} rounded-lg`} onClick={(e) => { if (revealed) e.stopPropagation(); }}>
-        <div className="flex justify-between items-start mb-1 space-x-2">
-          <h3 className={`text-md font-semibold text-gray-800 break-words min-w-0 flex-grow ${task.is_completed ? 'line-through' : ''}`}>
-            {task.name || 'Unnamed Task'}
-          </h3>
-        </div>
-        <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
-          <div className="flex items-center" title={`Priority: ${task.priority || 'N/A'}`}>
-            {priorityStylesToUse.icon}
-            <span className={`ml-1 ${priorityStylesToUse.textClass} ${task.is_completed ? 'line-through' : ''}`}>{task.priority || 'No Priority'}</span>
-          </div>
-          <div className={`${dueDateStatusToUse.classes} ${task.is_completed ? 'line-through' : ''} break-words text-right`} title={dueDateStatusToUse.text === 'No due date' ? 'No due date set' : `Due date: ${dueDateStatusToUse.text}`}>
-              {dueDateStatusToUse.text}
-          </div>
-        </div>
-        {task.projects && (
-          <p className="text-2xs text-indigo-600 font-medium truncate" title={`Project: ${task.projects.name}`}>
-            Project: {task.projects.name}
-          </p>
+        {(task.description || projectContext || task.priority || task.due_date || task.is_completed) && (
+            <div className={`mt-2 pl-7 text-xs space-y-1 ${task.is_completed ? 'text-gray-500' : 'text-gray-700'}`}>
+                {task.description && (
+                <p className={`truncate ${task.is_completed ? 'text-gray-500' : 'text-gray-600'}`}>
+                    {task.description}
+                </p>
+                )}
+                {projectContext && (
+                <p className={`${task.is_completed ? 'text-gray-500' : 'text-gray-500'}`}>
+                    Project: <span className={`font-medium ${task.is_completed ? 'text-gray-500' : 'text-indigo-600'}`}>{projectContext.name}</span>
+                </p>
+                )}
+                <div className={`flex items-center ${task.is_completed ? 'text-gray-500' : priorityStyling.textClass }`}>
+                    {priorityStyling.icon} 
+                    <span className="ml-1">{task.priority || 'No Priority'}</span>
+                </div>
+                <div className={`flex items-center ${dueDateClasses}`}>
+                    <DueDateIconComponent className={`h-3.5 w-3.5 mr-1 flex-shrink-0 ${dueDateIconClass}`} />
+                    <span>{dueDateStatus}</span>
+                </div>
+            </div>
         )}
       </div>
-
-      {/* Background Action: Mark Complete/Incomplete (Revealed on Swipe Left) */}
-      <div className="absolute inset-y-0 right-0 flex items-center">
-         <button 
-            data-swipe-action
-            onClick={handleToggleComplete} 
-            disabled={isProcessing} 
-            className={`w-24 h-full flex flex-col items-center justify-center p-2 text-xs text-white ${task.is_completed ? 'bg-yellow-500' : 'bg-green-500'} transition-opacity duration-300 ease-out ${revealed === 'left-complete' ? 'opacity-100' : 'opacity-0'} rounded-r-lg`}
-        >
-            <ShieldCheckIcon className="h-6 w-6 mb-1" /> {/* Using ShieldCheckIcon for complete/open verb */}
-            {isProcessing ? '...' : (task.is_completed ? 'Mark Open' : 'Complete')}
-        </button>
-      </div>
-    </div>
+    </Link>
   );
 };
 

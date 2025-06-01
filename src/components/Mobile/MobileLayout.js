@@ -40,7 +40,7 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="min-h-screen bg-gray-100 flex flex-col text-gray-900">
       <header className="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
         <div className="container mx-auto px-2 sm:px-4 py-3">
           <div className="flex items-center justify-between">
@@ -93,13 +93,13 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
       <footer className="bg-white border-t border-gray-200 p-3 sticky bottom-0 z-50 shadow-t-md">
         <nav className="flex justify-around items-center">
           <Link href="/m/dashboard" legacyBehavior>
-            <a className={`flex flex-col items-center justify-center text-xs ${pathname === '/m/dashboard' ? 'text-indigo-600' : 'text-gray-500'} hover:text-indigo-700 transition-colors`}>
+            <a className={`flex flex-col items-center justify-center text-xs ${pathname === '/m/dashboard' ? 'text-indigo-600' : 'text-gray-600'} hover:text-indigo-700 transition-colors`}>
               <RectangleStackIcon className="h-5 w-5 mb-0.5" />
               Projects
             </a>
           </Link>
           <Link href="/m/tasks" legacyBehavior>
-            <a className={`flex flex-col items-center justify-center text-xs ${pathname === '/m/tasks' ? 'text-indigo-600' : 'text-gray-500'} hover:text-indigo-700 transition-colors`}>
+            <a className={`flex flex-col items-center justify-center text-xs ${pathname === '/m/tasks' ? 'text-indigo-600' : 'text-gray-600'} hover:text-indigo-700 transition-colors`}>
               <ClipboardDocumentListIcon className="h-5 w-5 mb-0.5" />
               Tasks
             </a>

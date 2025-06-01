@@ -364,6 +364,21 @@ This plan will be updated as features are completed and if priorities change.
 
 ## Session $(date +%Y-%m-%d) <!-- Replace with actual date -->
 
+### Task Creation UI Standardization
+
+*   **Goal:** Ensure a consistent user experience across all task creation interfaces within the application.
+*   **Interfaces Reviewed & Standardized:**
+    1.  **Desktop Task Addition Modal (`src/components/Tasks/AddTaskForm.js`):** This was considered the baseline. It includes fields for Task Name, Project (conditional), Description, Due Date (with quick pickers), and Priority, plus "Add and Create Another" functionality.
+    2.  **Mobile Add Task Page (`src/app/m/project/[id]/add-task/page.js`):**
+        *   **Added:** Quick due date picker buttons (e.g., "Today", "Tomorrow") consistent with the desktop form.
+        *   **Added:** "Save & Add Another" button and functionality, mirroring the desktop form.
+        *   **Enhanced:** Task name input now auto-focuses on page load.
+    3.  **Inline Task Creation in Add Project Form (`src/components/Projects/AddProjectForm.js`):**
+        *   **Added:** Quick due date picker buttons for each inline task, styled for the compact view.
+        *   **Improved:** Task validation logic was refined to better handle empty task rows.
+        *   **Standardized:** Quick pick buttons for the main project due date were also changed to `<span>` with `role="button"` for consistency with other forms.
+*   **Outcome:** All three primary task creation points now offer a consistent set of core fields (Name, Description, Due Date with quick pickers, Priority) and similar interaction patterns where appropriate (e.g., "Add Another" on dedicated forms).
+
 ### Task Notes UX Enhancements (Desktop Dashboard)
 
 *   **Requirement 1: Note Sorting:** Task-specific notes displayed within project cards (`TaskItem.js`) on the main dashboard needed to be ordered from newest at the top to oldest at the bottom.
@@ -384,11 +399,9 @@ This plan will be updated as features are completed and if priorities change.
     1.  Primarily by **Priority** in descending order (High > Medium > Low > No Priority).
     2.  Secondarily by **Due Date** in ascending order (earliest first, with tasks having no due date appearing last within their priority subgroup).
 *   **Implementation:**
-    *   Modified `src/components/Tasks/StandaloneTaskList.js`.
-    *   The `useMemo` hook responsible for `sortedAndGroupedTasks` now performs a comprehensive sort on all non-completed tasks *before* they are allocated to the due date groups.
-    *   The primary sort key uses `getPriorityValue` (High=3, Medium=2, Low=1, Default=0), sorting these values in descending order.
-    *   The secondary sort key is the task's due date (parsed into a Date object), sorted in ascending order. `null` due dates are handled to ensure they appear after tasks with due dates within the same priority level.
-    *   Since the entire list is pre-sorted this way, the tasks naturally maintain this order when they are subsequently distributed into the visual due date categories, eliminating the need for re-sorting each group individually.
+    *   A `getPriorityValue` helper function was added to `StandaloneTaskList.js` to assign numerical values to priorities for sorting.
+    *   The `useMemo` hook that processes `allUserTasks` now incorporates this multi-level sorting *before* tasks are categorized into due date groups.
+    *   The `sortTasks` helper function was removed as its logic is now integrated into the main `useMemo`.
 
 ### Authentication Persistence (Desktop)
 
@@ -416,5 +429,35 @@ This plan will be updated as features are completed and if priorities change.
 *   Keyboard shortcuts.
 
 This plan will be updated as features are completed and if priorities change.
+
+--- 
+
+*   **Mobile Task List Styling Restoration:**
+    *   Restored priority-based background and text colors.
+    *   Restored visuals for completion status (strikethrough, icon color).
+    *   Restored dynamic due date styling.
+
+### Current Session User Requests & Fixes:
+
+*   **Mobile Page Text Readability:**
+    *   Updated `src/components/Mobile/MobileLayout.js` to use `text-gray-900` as a base text color for mobile pages, and darkened inactive tab bar icon text to `text-gray-600`.
+    *   Ensured all input fields (`input`, `textarea`, `select`) in the following mobile form pages use `text-gray-900` for text and `placeholder-gray-500` for placeholder text for better contrast:
+        *   `src/app/m/project/[id]/add-task/page.js`
+        *   `src/app/m/project/[id]/edit/page.js`
+        *   `src/app/m/task/[id]/edit/page.js`
+    *   Updated `src/components/Notes/AddNoteForm.js` to use `text-gray-900` and `placeholder-gray-500` for its input field.
+    *   Changed the task name text color in `src/components/Mobile/MobileTaskListItem.js` to `text-gray-900` (dark grey/black) for uncompleted tasks on the `/m/tasks` page, overriding the priority-based color for the name itself.
+    *   Changed the project name text color in `src/components/Mobile/MobileProjectListItem.js` to `text-gray-900` (dark grey/black) on the `/m/dashboard` page, removing the priority-based color for the name itself.
+
+*   **Mobile Card Style Harmonisation:**
+    *   Standardised styles between `MobileProjectListItem.js` (for `/m/dashboard`) and `MobileTaskListItem.js` (for `/m/tasks`):
+        *   **Outer Card:** Both now use `mb-3` (margin-bottom) and `opacity-70` (for completed/archived items).
+        *   **Inner Details Section:** Both now use `mt-2` (margin-top), `pl-7` (padding-left), and `space-y-1` (vertical spacing between detail items).
+
+### Next Steps & Current Focus:
+
+*   **Repeating Task Feature (Task Generation Logic):** Implement the backend logic in `AddTaskForm.js` to generate task instances based on the recurrence rules defined by the user.
+    *   Calculate all occurrence dates.
+    *   Create individual task records in the database for each occurrence.
 
 --- 

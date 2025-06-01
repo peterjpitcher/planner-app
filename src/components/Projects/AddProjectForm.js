@@ -27,13 +27,13 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
   }, []);
 
   const handleTaskChange = (idx, field, value) => {
-    setTasks(tasks => tasks.map((t, i) => i === idx ? { ...t, [field]: value } : t));
+    setTasks(currentTasks => currentTasks.map((t, i) => i === idx ? { ...t, [field]: value } : t));
   };
   const handleAddTask = () => {
-    setTasks(tasks => [...tasks, { name: '', description: '', dueDate: '', priority: '' }]);
+    setTasks(currentTasks => [...currentTasks, { name: '', description: '', dueDate: '', priority: '' }]);
   };
   const handleRemoveTask = (idx) => {
-    setTasks(tasks => tasks.filter((_, i) => i !== idx));
+    setTasks(currentTasks => currentTasks.filter((_, i) => i !== idx));
   };
 
   const handleSubmit = async (e) => {
@@ -46,10 +46,12 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
         setError('Project name is required.');
         return;
     }
-    // Validate tasks
-    const newTaskErrors = tasks.map(t => !t.name.trim() ? 'Task name is required.' : null);
-    setTaskErrors(newTaskErrors);
-    if (newTaskErrors.some(Boolean)) return;
+    const newTaskErrors = tasks.map(t => (t.name.trim() || (!t.name.trim() && !t.description.trim() && !t.dueDate && !t.priority)) ? null : 'Task name is required if other task fields are present.');
+    if (newTaskErrors.some(err => err !== null)) {
+        setTaskErrors(newTaskErrors);
+        return;
+    }
+    setTaskErrors([]);
 
     setError(null);
     setLoading(true);
@@ -72,7 +74,6 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
         .single();
       if (insertError) throw insertError;
       if (project) {
-        // Add tasks if any
         const tasksToAdd = tasks.filter(t => t.name.trim());
         let taskInsertError = null;
         if (tasksToAdd.length > 0) {
@@ -84,13 +85,14 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
               name: t.name.trim(),
               description: t.description.trim() || null,
               due_date: t.dueDate || null,
-              priority: t.priority || priority,
+              priority: t.priority || priority, // Default to project priority if task priority not set
             })));
           if (taskError) taskInsertError = taskError;
         }
         onProjectAdded(project);
         if (taskInsertError) {
-          setError('Project created, but some tasks failed to be added: ' + taskInsertError.message);
+          setError('Project created, but some tasks failed: ' + taskInsertError.message);
+          // Keep modal open if tasks fail, but project was created.
         } else {
           onClose();
         }
@@ -144,17 +146,20 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
           onChange={(e) => setDueDate(e.target.value)}
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
         />
-        {/* Quick Pick Date Buttons */}
-        <div className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           {quickPickOptions.map(option => (
-            <button
+            <span
               key={option.label}
-              type="button"
+              role="button"
+              tabIndex={0} // Make it focusable
               onClick={() => setDueDate(option.getValue())}
-              className="px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300 text-center"
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') setDueDate(option.getValue());
+              }}
+              className="px-2 py-1 rounded-full bg-gray-100 text-xs font-medium text-gray-600 cursor-pointer hover:bg-indigo-100 hover:text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 select-none"
             >
               {option.label}
-            </button>
+            </span>
           ))}
         </div>
       </div>
@@ -200,9 +205,13 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
                 value={task.name}
                 onChange={e => handleTaskChange(idx, 'name', e.target.value)}
                 className="flex-1 px-2 py-1 border border-gray-300 rounded-md text-sm"
-                required
+                // Conditionally required if any other part of task is filled or if it's not the only empty task
               />
-              <button type="button" onClick={() => handleRemoveTask(idx)} className="text-xs text-red-500 hover:underline" disabled={tasks.length === 1}>Remove</button>
+              {tasks.length > 1 && (
+                <button type="button" onClick={() => handleRemoveTask(idx)} className="text-xs text-red-500 hover:underline">
+                  Remove
+                </button>
+              )}
             </div>
             {taskErrors[idx] && <p className="text-xs text-red-500 mt-1">{taskErrors[idx]}</p>}
             <textarea
@@ -212,56 +221,74 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
               className="mt-2 w-full px-2 py-1 border border-gray-300 rounded-md text-xs"
               rows={2}
             />
-            <div className="flex gap-2 mt-2">
-              <input
-                type="date"
-                value={task.dueDate}
-                onChange={e => handleTaskChange(idx, 'dueDate', e.target.value)}
-                className="px-2 py-1 border border-gray-300 rounded-md text-xs"
-              />
-              <select
-                value={task.priority || priority}
-                onChange={e => handleTaskChange(idx, 'priority', e.target.value)}
-                className="px-2 py-1 border border-gray-300 rounded-md text-xs"
-              >
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2 gap-y-2 mt-2">
+              <div>
+                <label htmlFor={`taskDueDate-${idx}`} className="sr-only">Task Due Date</label>
+                <input
+                  id={`taskDueDate-${idx}`}
+                  type="date"
+                  value={task.dueDate}
+                  onChange={e => handleTaskChange(idx, 'dueDate', e.target.value)}
+                  className="w-full px-2 py-1 border border-gray-300 rounded-md text-xs"
+                  aria-label="Task due date"
+                />
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {quickPickOptions.map(option => (
+                    <span
+                      key={option.label}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleTaskChange(idx, 'dueDate', option.getValue())}
+                      onKeyDown={e => {
+                         if (e.key === 'Enter' || e.key === ' ') handleTaskChange(idx, 'dueDate', option.getValue());
+                      }}
+                      className="px-1.5 py-0.5 rounded-full bg-gray-200 text-[0.6rem] font-medium text-gray-600 cursor-pointer hover:bg-indigo-100 hover:text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 select-none"
+                    >
+                      {option.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label htmlFor={`taskPriority-${idx}`} className="sr-only">Task Priority</label>
+                <select
+                  id={`taskPriority-${idx}`}
+                  value={task.priority || priority} // Default to project priority
+                  onChange={e => handleTaskChange(idx, 'priority', e.target.value)}
+                  className="w-full px-2 py-1 border border-gray-300 rounded-md text-xs bg-white"
+                  aria-label="Task priority"
+                >
+                  <option value="" disabled={!!(task.priority || priority)}>Select Priority</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
             </div>
           </div>
         ))}
         <button type="button" onClick={handleAddTask} className="text-indigo-600 hover:underline text-sm">+ Add another task</button>
       </div>
 
-      {error && <p className="text-sm text-red-600">Error: {error}</p>}
+      {error && <p className="text-sm text-red-600 mt-2">Error: {error}</p>}
 
-      <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+      <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t mt-4">
         <button
           type="button"
           onClick={() => {
-            setName('');
-            setDueDate('');
-            setPriority('Medium');
-            setStakeholders('');
-            setDescription('');
-            setError(null);
-            if (onClose) {
-                onClose(); 
-            } else {
-                // If no onClose, default behavior for inline form is to clear.
-            }
+            if (onClose) onClose(); 
           }}
-          className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          disabled={loading}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={loading}
-          className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
         >
-          {loading ? 'Adding Project...' : 'Add Project'}
+          {loading ? 'Creating Project...' : 'Create Project'}
         </button>
       </div>
     </form>

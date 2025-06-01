@@ -354,7 +354,7 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
         // groups.noDueDate.push(task);
       }
     });
-    
+
     // The tasks within each group are already sorted by priority then due_date
     // because the initial `sortedTasks` array was sorted this way before grouping.
     // No need to re-sort each group individually if the overall list is pre-sorted correctly.

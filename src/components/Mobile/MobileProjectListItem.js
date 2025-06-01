@@ -1,240 +1,120 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSwipeable } from 'react-swipeable';
-import { supabase } from '@/lib/supabaseClient';
-import { format, isToday, isTomorrow, isPast, startOfDay } from 'date-fns';
-import { 
-    ClockIcon, CheckCircleIcon as SolidCheckIcon, ExclamationTriangleIcon, FireIcon, 
-    ArrowPathIcon, ShieldCheckIcon
-} from '@heroicons/react/20/solid';
+import Link from 'next/link';
+import {
+  ChevronRightIcon,
+  BriefcaseIcon,
+  CalendarDaysIcon,
+  ExclamationTriangleIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  MinusIcon,
+  ShieldCheckIcon
+} from '@heroicons/react/24/outline';
+import { formatDistanceToNowStrict, parseISO, format, isPast, isToday, isTomorrow } from 'date-fns';
 
-const getPriorityStyles = (priority) => {
-  switch (priority) {
-    case 'High':
-      return { icon: <FireIcon className="h-4 w-4 text-red-500" />, textClass: 'text-red-600 font-semibold', bgColor: 'bg-red-50' };
-    case 'Medium':
-      return { icon: <ExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />, textClass: 'text-yellow-600 font-semibold', bgColor: 'bg-yellow-50' };
-    case 'Low':
-      return { icon: <SolidCheckIcon className="h-4 w-4 text-green-500" />, textClass: 'text-green-600', bgColor: 'bg-green-50' };
-    default:
-      return { icon: <ClockIcon className="h-4 w-4 text-gray-400" />, textClass: 'text-gray-500', bgColor: 'bg-gray-50' };
-  }
+const priorityStyles = {
+  High: { icon: <ExclamationTriangleIcon className="h-4 w-4 text-red-600" />, textClass: 'text-red-700 font-semibold', bgColor: 'bg-red-50' },
+  Medium: { icon: <ArrowUpIcon className="h-4 w-4 text-yellow-600" />, textClass: 'text-yellow-700 font-semibold', bgColor: 'bg-yellow-50' },
+  Low: { icon: <ArrowDownIcon className="h-4 w-4 text-green-600" />, textClass: 'text-green-700', bgColor: 'bg-green-50' },
+  default: { icon: <MinusIcon className="h-4 w-4 text-gray-500" />, textClass: 'text-gray-600', bgColor: 'bg-gray-50' }
 };
 
-const getDueDateStatus = (dateString) => {
-  if (!dateString) return { text: 'No due date', classes: 'text-gray-500' };
-  const date = startOfDay(new Date(dateString));
-  const today = startOfDay(new Date());
-
-  if (isToday(date)) return { text: 'Due Today', classes: 'text-red-600 font-bold' };
-  if (isTomorrow(date)) return { text: 'Due Tomorrow', classes: 'text-yellow-600 font-semibold' };
-  if (isPast(date)) return { text: `Overdue: ${format(date, 'MMM do')}`,
-classes: 'text-red-600 font-bold' };
-  return { text: `Due ${format(date, 'EEEE, MMM do')}`, classes: 'text-gray-700' };
+const getPriorityStyling = (priority) => {
+  return priorityStyles[priority] || priorityStyles.default;
 };
 
-const priorityCycle = ['Low', 'Medium', 'High'];
+const statusColors = {
+  'Open': 'text-blue-700 bg-blue-100',
+  'In Progress': 'text-purple-700 bg-purple-100',
+  'On Hold': 'text-orange-700 bg-orange-100',
+  'Completed': 'text-green-700 bg-green-100',
+  'Cancelled': 'text-red-700 bg-red-100',
+  default: 'text-gray-700 bg-gray-100'
+};
 
-const MobileProjectListItem = ({ project: initialProject, onProjectUpdated, onProjectDeleted }) => {
-  const router = useRouter();
-  const [project, setProject] = useState(initialProject);
-  const [revealed, setRevealed] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [showCompleteTasksModal, setShowCompleteTasksModal] = useState(false);
+const getStatusStyling = (status) => {
+  return statusColors[status] || statusColors.default;
+};
 
-  useEffect(() => {
-    setProject(initialProject);
-    setRevealed(null); 
-  }, [initialProject]);
+const MobileProjectListItem = ({ project }) => {
+  const openTaskCount = project.tasks?.filter(t => !t.is_completed).length || 0;
+  const priorityStyling = getPriorityStyling(project.priority);
+  const statusStyling = getStatusStyling(project.status);
+  const isArchived = project.status === 'Completed' || project.status === 'Cancelled';
 
-  const handleCyclePriority = useCallback(async () => {
-    if (isProcessing || !project || project.status === 'Completed' || project.status === 'Cancelled') return;
-    setIsProcessing(true);
-    const currentPriorityIndex = priorityCycle.indexOf(project.priority || 'Low');
-    const nextPriorityIndex = (currentPriorityIndex + 1) % priorityCycle.length;
-    const newPriority = priorityCycle[nextPriorityIndex];
-    try {
-      const { data: updatedProject, error } = await supabase
-        .from('projects')
-        .update({ priority: newPriority, updated_at: new Date().toISOString() })
-        .eq('id', project.id)
-        .select('*, tasks(id, is_completed)')
-        .single();
-      if (error) throw error;
-      const projectWithOpenTaskCount = {
-          ...updatedProject,
-          open_tasks_count: updatedProject.tasks ? updatedProject.tasks.filter(t => !t.is_completed).length : 0,
-      };
-      setProject(projectWithOpenTaskCount);
-      if (onProjectUpdated) onProjectUpdated(projectWithOpenTaskCount);
-    } catch (err) {
-      console.error('Error cycling project priority:', err);
-      alert('Could not update priority.');
-    } finally {
-      setIsProcessing(false);
-      setRevealed(null);
-    }
-  }, [project, isProcessing, onProjectUpdated]);
+  let dueDateStatus = 'No due date';
+  let dueDateClasses = 'text-gray-500 italic';
+  let DueDateIconComponent = CalendarDaysIcon;
+  let dueDateIconClass = 'text-gray-500';
 
-  const handleMarkProjectCompleted = useCallback(async (completeTasks = false) => {
-    if (isProcessing || !project || project.status === 'Completed' || project.status === 'Cancelled') return;
-    
-    setIsProcessing(true);
-    try {
-        if (completeTasks) {
-            const { error: taskUpdateError } = await supabase
-                .from('tasks')
-                .update({ is_completed: true, completed_at: new Date().toISOString() })
-                .eq('project_id', project.id)
-                .eq('is_completed', false);
-            if (taskUpdateError) throw taskUpdateError;
-        }
-
-      const { data: updatedProject, error } = await supabase
-        .from('projects')
-        .update({ status: 'Completed', updated_at: new Date().toISOString() })
-        .eq('id', project.id)
-        .select('*, tasks(id, is_completed)')
-        .single();
-      if (error) throw error;
-      const projectWithOpenTaskCount = {
-        ...updatedProject,
-        open_tasks_count: 0,
-      };
-      setProject(projectWithOpenTaskCount);
-      if (onProjectDeleted) onProjectDeleted(project.id); 
-    } catch (err) {
-      console.error('Error marking project completed:', err);
-      alert('Could not mark project as completed.');
-    } finally {
-      setIsProcessing(false);
-      setRevealed(null);
-      setShowCompleteTasksModal(false);
-    }
-  }, [project, isProcessing, onProjectDeleted]);
-  
-  const checkAndPromptComplete = () => {
-    const openTasks = project.open_tasks_count || 0;
-    if (openTasks > 0) {
-        if (window.confirm(`This project has ${openTasks} open task(s). Mark them as complete along with the project?`)) {
-            handleMarkProjectCompleted(true);
-        } else {
-            setRevealed(null);
-        }
+  if (project.due_date) {
+    const date = parseISO(project.due_date);
+    if (isPast(date) && !isToday(date) && !isArchived) {
+      dueDateStatus = `Overdue ${formatDistanceToNowStrict(date, { addSuffix: true })}`;
+      dueDateClasses = 'text-red-600 font-semibold';
+      DueDateIconComponent = ExclamationTriangleIcon;
+      dueDateIconClass = 'text-red-500';
+    } else if (isToday(date) && !isArchived){
+      dueDateStatus = 'Due Today';
+      dueDateClasses = 'text-orange-600 font-semibold';
+      DueDateIconComponent = ExclamationTriangleIcon;
+      dueDateIconClass = 'text-orange-500';
+    } else if (isTomorrow(date) && !isArchived){
+      dueDateStatus = 'Due Tomorrow';
+      dueDateClasses = 'text-yellow-600 font-semibold';
+      DueDateIconComponent = CalendarDaysIcon;
+      dueDateIconClass = 'text-yellow-500';
     } else {
-        handleMarkProjectCompleted(false);
+      dueDateStatus = `Due ${format(date, 'MMM d, yyyy')}`;
+      dueDateClasses = 'text-gray-600';
+      DueDateIconComponent = CalendarDaysIcon;
+      dueDateIconClass = 'text-gray-500';
     }
-  };
-
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => !isProcessing && project.status !== 'Completed' && project.status !== 'Cancelled' && setRevealed('left-complete'),
-    onSwipedRight: () => !isProcessing && project.status !== 'Completed' && project.status !== 'Cancelled' && setRevealed('right-priority'),
-    onTap: (event) => {
-      const tappedOnActionButton = event.event.target.closest('button[data-swipe-action]');
-      if (tappedOnActionButton) return;
-      if (revealed) {
-        setRevealed(null);
-      } else if (project) {
-        router.push(`/m/project/${project.id}`);
-      }
-    },
-    preventScrollOnSwipe: true,
-    trackMouse: true,
-    delta: 10,
-  });
-
-  if (!project) return null;
-
-  const priorityStylesToUse = getPriorityStyles(project.priority);
-  const dueDateStatusToUse = getDueDateStatus(project.due_date);
-  const statusColors = {
-    'Open': 'text-blue-600 bg-blue-100',
-    'In Progress': 'text-purple-600 bg-purple-100',
-    'On Hold': 'text-yellow-700 bg-yellow-100',
-    'Completed': 'text-green-600 bg-green-100 line-through',
-    'Cancelled': 'text-red-600 bg-red-100 line-through',
-  };
-  const statusClass = statusColors[project.status] || 'text-gray-600 bg-gray-100';
-
-  const openTasksCount = project.open_tasks_count || 0;
-
-  const baseCardClasses = "relative p-3 mb-2 rounded-lg shadow group overflow-hidden";
-  const dynamicCardClasses = `${priorityStylesToUse.bgColor} ${(project.status === 'Completed' || project.status === 'Cancelled') && !revealed ? 'opacity-60' : ''}`;
-  const contentTransform = revealed === 'left-complete' ? '-translate-x-24' : revealed === 'right-priority' ? 'translate-x-24' : 'translate-x-0';
-  const mainContentWrapperClasses = `transition-transform duration-300 ease-out ${contentTransform}`;
-
-  // Add a sticky bottom menu
-  const StickyBottomMenu = () => (
-    <div className="fixed bottom-0 left-0 right-0 bg-white shadow-md p-2 flex justify-around">
-      <button className="text-blue-500">Home</button>
-      <button className="text-blue-500">Projects</button>
-      <button className="text-blue-500">Tasks</button>
-    </div>
-  );
-
+  }
+  
   return (
-    <div {...swipeHandlers} className={`${baseCardClasses} ${dynamicCardClasses}`}>
-      {(project.status !== 'Completed' && project.status !== 'Cancelled') && (
-        <div className="absolute inset-y-0 left-0 flex items-center">
-          <button 
-              data-swipe-action
-              onClick={handleCyclePriority} 
-              disabled={isProcessing}
-              className={`w-24 h-full flex flex-col items-center justify-center p-2 text-xs text-white bg-purple-500 transition-opacity duration-300 ease-out ${revealed === 'right-priority' ? 'opacity-100' : 'opacity-0'}`}
-          >
-              <ArrowPathIcon className="h-6 w-6 mb-1" />
-              {isProcessing ? '...' : 'Priority'}
-          </button>
-        </div>
-      )}
-
-      <div className={`${mainContentWrapperClasses} ${priorityStylesToUse.bgColor} rounded-lg`} onClick={(e) => { if (revealed) e.stopPropagation(); }}>
-        <div className="flex justify-between items-start mb-1 space-x-2">
-          <h3 className="text-md font-semibold text-gray-800 break-words min-w-0 flex-grow">{project.name || 'Unnamed Project'}</h3>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${statusClass}`}>
-            {project.status || 'N/A'}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
-          <div className="flex items-center" title={`Priority: ${project.priority || 'N/A'}`}>
-            {priorityStylesToUse.icon}
-            <span className={`ml-1 ${priorityStylesToUse.textClass}`}>{project.priority || 'No Priority'}</span>
+    <Link href={`/m/project/${project.id}`} className="block w-full">
+      <div className={`p-3 rounded-lg shadow hover:shadow-md transition-all duration-150 ease-in-out mb-3 border border-gray-200/80 ${priorityStyling.bgColor} ${isArchived ? 'opacity-70' : ''}`}>
+        <div className="flex items-start justify-between">
+          <div className="flex items-start min-w-0">
+            <span className="mr-2 pt-0.5 flex-shrink-0">{priorityStyling.icon}</span>
+            <div className="min-w-0">
+                <h3 className={`text-md font-semibold text-gray-900 truncate pr-1`}>
+                {project.name}
+                </h3>
+                 <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full inline-block mt-0.5 ${statusStyling} ${isArchived ? 'line-through' :''}`}>
+                    {project.status || 'N/A'}
+                </span>
+            </div>
           </div>
-          <div className={`${dueDateStatusToUse.classes} break-words text-right`} title={dueDateStatusToUse.text === 'No due date' ? 'No due date set' : `Due date: ${dueDateStatusToUse.text}`}>
-              {dueDateStatusToUse.text}
-          </div>
+          <ChevronRightIcon className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
         </div>
 
-        {openTasksCount > 0 && project.status !== 'Completed' && project.status !== 'Cancelled' && (
-          <p className="text-2xs text-indigo-600 font-medium">
-            {openTasksCount} open task{openTasksCount > 1 ? 's' : ''}
+        <div className="mt-2 pl-7 text-xs space-y-1">
+          <div className={`flex items-center ${dueDateClasses}`}>
+            <DueDateIconComponent className={`h-3.5 w-3.5 mr-1 flex-shrink-0 ${dueDateIconClass}`} />
+            <span>{dueDateStatus}</span>
+          </div>
+
+          <p className="text-gray-600">
+            {openTaskCount > 0 ? (
+                <span className="font-medium text-indigo-600">{openTaskCount} open task{openTaskCount !== 1 ? 's' : ''}</span>
+            ) : (
+                <span className="text-gray-500">No open tasks</span>
+            )}
           </p>
-        )}
-        {project.stakeholders && project.stakeholders.length > 0 && (
-          <div className="mt-1.5 pt-1.5 border-t border-gray-200/60">
-            <p className="text-2xs text-gray-500 truncate">Stakeholders: {project.stakeholders.join(', ')}</p>
-          </div>
-        )}
-      </div>
 
-      {(project.status !== 'Completed' && project.status !== 'Cancelled') && (
-        <div className="absolute inset-y-0 right-0 flex items-center">
-          <button 
-              data-swipe-action
-              onClick={checkAndPromptComplete} 
-              disabled={isProcessing} 
-              className={`w-24 h-full flex flex-col items-center justify-center p-2 text-xs text-white bg-green-500 transition-opacity duration-300 ease-out ${revealed === 'left-complete' ? 'opacity-100' : 'opacity-0'} rounded-r-lg`}
-          >
-              <ShieldCheckIcon className="h-6 w-6 mb-1" />
-              {isProcessing ? '...' : 'Complete'}
-          </button>
+          {project.stakeholders && project.stakeholders.length > 0 && (
+            <div className="pt-1 mt-1 border-t border-gray-300/70">
+                <p className="text-gray-500 truncate">
+                    Stakeholders: {project.stakeholders.join(', ')}
+                </p>
+            </div>
+          )}
         </div>
-      )}
-      <StickyBottomMenu />
-    </div>
+      </div>
+    </Link>
   );
 };
 

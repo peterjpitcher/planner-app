@@ -89,7 +89,7 @@ const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled },
         }}
         onKeyDown={handleKeyDown} // Added keydown handler
         placeholder="Add a new note... (Enter to save)"
-        className="w-full p-2 text-xs border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-70 disabled:bg-gray-100"
+        className="w-full p-2 text-xs border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-70 disabled:bg-gray-100 text-gray-900 placeholder-gray-500"
         disabled={isSaving || disabled} // Use passed disabled prop
       />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
