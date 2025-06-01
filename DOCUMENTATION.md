@@ -448,6 +448,7 @@ This plan will be updated as features are completed and if priorities change.
     *   Updated `src/components/Notes/AddNoteForm.js` to use `text-gray-900` and `placeholder-gray-500` for its input field.
     *   Changed the task name text color in `src/components/Mobile/MobileTaskListItem.js` to `text-gray-900` (dark grey/black) for uncompleted tasks on the `/m/tasks` page, overriding the priority-based color for the name itself.
     *   Changed the project name text color in `src/components/Mobile/MobileProjectListItem.js` to `text-gray-900` (dark grey/black) on the `/m/dashboard` page, removing the priority-based color for the name itself.
+    *   Added the parent project's name as a clickable link (navigating to `/m/project/[id]`) on task cards in `src/components/Mobile/MobileTaskListItem.js` for tasks displayed on the `/m/tasks` page. Data fetching in `src/app/m/tasks/page.js` was confirmed to already include necessary project details.
 
 *   **Mobile Card Style Harmonisation:**
     *   Standardised styles between `MobileProjectListItem.js` (for `/m/dashboard`) and `MobileTaskListItem.js` (for `/m/tasks`):

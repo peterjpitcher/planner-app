@@ -209,6 +209,7 @@ const MobileTasksPage = () => {
                       <MobileTaskListItem 
                         key={task.id} 
                         task={task} 
+                        projectContext={task.projects}
                         onTaskUpdated={handleTaskUpdatedFromSwipe}
                         onTaskDeleted={handleTaskDeletedFromSwipe}
                       />

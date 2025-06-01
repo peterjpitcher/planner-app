@@ -89,9 +89,9 @@ const MobileTaskListItem = ({ task, projectContext = null }) => {
                     {task.description}
                 </p>
                 )}
-                {projectContext && (
+                {projectContext && projectContext.id && projectContext.name && (
                 <p className={`${task.is_completed ? 'text-gray-500' : 'text-gray-500'}`}>
-                    Project: <span className={`font-medium ${task.is_completed ? 'text-gray-500' : 'text-indigo-600'}`}>{projectContext.name}</span>
+                    Project: <Link href={`/m/project/${projectContext.id}`} className={`font-medium ${task.is_completed ? 'text-gray-500 hover:text-gray-600' : 'text-indigo-600 hover:text-indigo-700'} hover:underline`} onClick={(e) => e.stopPropagation()}>{projectContext.name}</Link>
                 </p>
                 )}
                 <div className={`flex items-center ${task.is_completed ? 'text-gray-500' : priorityStyling.textClass }`}>
