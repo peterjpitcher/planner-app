@@ -793,8 +793,32 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               )}
           </div>
 
-          <div className="relative order-last sm:order-none ml-auto sm:ml-0">
-              <button 
+          <div className="relative order-last sm:order-none ml-auto sm:ml-0 flex items-center gap-x-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowProjectNotes(!showProjectNotes); }}
+                className="p-1.5 rounded-full text-gray-500 hover:bg-gray-200 hover:text-indigo-600 flex items-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
+                aria-expanded={showProjectNotes}
+                aria-controls={`project-notes-section-${project.id}`}
+                disabled={isLoadingProjectNotes}
+                title={showProjectNotes ? "Hide project notes" : "Show project notes"}
+              >
+                <ChatBubbleLeftEllipsisIcon className="h-5 w-5" />
+                {projectNotes.length > 0 && (
+                  <span className="ml-1 text-xs font-medium text-indigo-600">
+                    ({projectNotes.length})
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={(e) => { e.stopPropagation(); handleCopyProjectData(); }}
+                className="p-1.5 rounded-full text-gray-500 hover:bg-gray-200 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
+                title={`Copy project data (${copyStatus})`}
+              >
+                <ClipboardDocumentIcon className="h-5 w-5" />
+              </button>
+
+              <button
                   onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen);}}
                   className="p-1.5 rounded-full hover:bg-gray-200 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
                   aria-haspopup="true" aria-expanded={isMenuOpen}
@@ -802,43 +826,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
               >
                   <EllipsisVerticalIcon className="h-5 w-5"/>
               </button>
-              {isMenuOpen && (
-                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-30 border border-gray-200 py-1" role="menu">
-                      <div className="flex items-center">
-                        <button 
-                          onClick={() => setShowProjectNotes(!showProjectNotes)} 
-                          className="p-1 text-gray-500 hover:text-indigo-600 flex items-center"
-                          aria-expanded={showProjectNotes}
-                          aria-controls={`project-notes-section-${project.id}`}
-                          disabled={isLoadingProjectNotes}
-                        >
-                          <ChatBubbleLeftEllipsisIcon className="h-5 w-5" />
-                          {projectNotes.length > 0 && (
-                            <span className="ml-1 text-xs font-medium text-indigo-600">
-                              ({projectNotes.length})
-                            </span>
-                          )}
-                      </button>
-                        <button onClick={handleCopyProjectData} className="p-1 text-gray-500 hover:text-indigo-600">
-                          <ClipboardDocumentIcon className="h-5 w-5" />
-                      </button>
-                      </div>
-                      {!isProjectCompletedOrCancelled && (
-                          <button onClick={(e) => {
-                            e.stopPropagation(); 
-                            setShowAddTaskModal(true); 
-                            setIsMenuOpen(false);
-                          }} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                             <PlusCircleIcon className="h-4 w-4"/> Add Task
-                          </button>
-                      )}
-                       <div className="my-1 border-t border-gray-100"></div>
-                      <button onClick={(e) => {e.stopPropagation(); handleDeleteProject();}} className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
-                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c1.153 0 2.243.032 3.223.094C7.572 6.21 7.994 6.5 8.382 6.962a4.928 4.928 0 0 1 .664.986M14.74 9h-2.556M14.74 9L6.26 9m9.968-3.21c-.664.006-1.32.028-1.973.064M4.772 5.79c-.023.009-.045.017-.067.026M4.772 5.79L3 19.673C3 20.805 3.794 21.75 4.839 21.75H19.16c1.046 0 1.84-0.945 1.84-2.077L19.23 5.79m-14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c1.153 0 2.243.032 3.223.094C7.572 6.21 7.994 6.5 8.382 6.962a4.928 4.928 0 0 1 .664.986" /></svg>
-                         Delete Project
-                      </button>
-                  </div>
-              )}
           </div>
         </div>
 

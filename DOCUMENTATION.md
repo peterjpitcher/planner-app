@@ -96,7 +96,10 @@ This section tracks the features implemented and the planned next steps based on
     *   Supabase client library (`@supabase/supabase-js`) installed and configured (`.env.local`, `src/lib/supabaseClient.js`).
 *   **Database Schema (Supabase):**
     *   Tables for `projects`, `tasks`, and `notes` created with appropriate columns, relationships (foreign keys, `ON DELETE CASCADE`), constraints (`CHECK` for priority/status), and `updated_at` triggers.
-    *   Row Level Security (RLS) enabled and basic policies for authenticated users applied.
+    *   Row Level Security (RLS) has been reviewed and updated for the `notes` table to enforce that users can only manage their own notes.
+        *   Removed an overly permissive policy that allowed authenticated users to manage all notes.
+        *   Ensured specific policies for `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the `notes` table, requiring `auth.uid() = user_id` for all operations.
+        *   This change enhances security and makes the RLS behavior more predictable.
 *   **Authentication:**
     *   User login and logout functionality implemented.
     *   `AuthContext` for managing user session state.
@@ -249,7 +252,7 @@ This section tracks the features implemented and the planned next steps based on
     *   **Note Indicators & UX (Projects - Partially Implemented):**
         *   In `ProjectItem.js`, the logic to collapse the notes section after adding a note has been implemented in `handleProjectNoteAdded`.
         *   Logic to fetch project notes on component mount/project change (for accurate count) has been added.
-        *   **Awaiting manual review/correction:** The UI change to move the notes icon and count to the project header (next to expand/collapse tasks and before the kebab menu) was not successfully applied by the automated edit tool. The icon and count are currently incorrectly placed within the kebab menu dropdown.
+        *   The "Project Notes" icon (`ChatBubbleLeftEllipsisIcon`) and its associated note count, along with the "Copy Project" icon (`ClipboardDocumentIcon`), have been moved from the kebab menu to the main project card header in `ProjectItem.js`. They are now always visible to the left of the kebab menu icon for easier access.
     *   **Note Styling:**
         *   Individual notes displayed via `NoteItem.js` are now smaller (using `text-[0.7rem]` for content and `text-[0.65rem]` for timestamp).
         *   The background and border have been removed from `NoteItem.js` to allow notes to blend with the parent card's background (e.g. project or task item background).
