@@ -2,11 +2,12 @@
 
 import { useState, forwardRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 
 // Wrapped component with forwardRef
 const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled }, ref) => {
-  const { user } = useAuth();
+  const { data: session } = useSession();
+  const user = session?.user;
   const [noteContent, setNoteContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
 import AddTaskModal from '@/components/Tasks/AddTaskModal';
@@ -20,7 +20,9 @@ const getPriorityValue = (priority) => {
 };
 
 const MobileTasksPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -73,11 +75,11 @@ const MobileTasksPage = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push('/login');
-    if (user) {
+    if (status === 'unauthenticated') router.push('/login');
+    if (status === 'authenticated' && user) {
       fetchTasksAndProjects();
     }
-  }, [user, authLoading, router, fetchTasksAndProjects]);
+  }, [user, status, router, fetchTasksAndProjects]);
 
   const handleTaskAdded = (newTask) => {
     fetchTasksAndProjects();

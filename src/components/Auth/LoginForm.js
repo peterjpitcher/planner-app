@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient'; // Path to your Supabase client
+import { signIn } from 'next-auth/react';
 
 export default function LoginForm() {
   const [email, setEmail] = useState('');
@@ -17,23 +17,32 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const result = await signIn('credentials', {
+        redirect: false, // Don't redirect automatically, handle it manually
         email,
         password,
       });
 
-      if (signInError) {
-        throw signInError;
+      if (result.error) {
+        // You can customize error messages based on `result.error`
+        setError('Invalid login credentials. Please try again.');
+        setLoading(false);
+        return;
       }
-      // On successful login, the onAuthStateChange listener in AuthContext
-      // should pick up the new session. We can redirect or rely on 
-      // protected route logic to take the user to the dashboard.
-      router.push('/dashboard'); // Or router.refresh() if dashboard handles redirect based on auth state
+
+      if (result.ok) {
+        // On successful login, redirect to the dashboard.
+        router.push('/dashboard');
+        // Or use router.refresh() if you want to stay on the same page
+        // and let a server component handle the redirect logic.
+      }
     } catch (err) {
+      // This catch block might not be necessary for signIn errors,
+      // but it's good practice to have it for unexpected issues.
       setError(err.message || 'An unexpected error occurred.');
-    } finally {
       setLoading(false);
     }
+    // No need to set loading to false here if redirecting
   };
 
   return (

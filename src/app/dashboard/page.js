@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession, signOut } from 'next-auth/react';
 import { supabase } from '@/lib/supabaseClient';
 import ProjectList from '@/components/Projects/ProjectList';
 import AddProjectModal from '@/components/Projects/AddProjectModal';
@@ -13,7 +13,9 @@ import Link from 'next/link';
 
 export default function DashboardPage() {
   // All hooks must be called at the top level, before any conditional returns.
-  const { user, session, loading, signOut } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const loading = status === 'loading';
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [allUserTasks, setAllUserTasks] = useState([]);
@@ -120,16 +122,16 @@ export default function DashboardPage() {
   }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority]);
 
   useEffect(() => {
-    if (user) {
+    if (status === 'authenticated' && user) {
       fetchData();
     }
-  }, [user, fetchData]);
+  }, [status, user, fetchData]);
   
   useEffect(() => {
-    if (!loading && (!user || !session)) {
+    if (status === 'unauthenticated') {
       router.replace('/login');
     }
-  }, [user, session, loading, router]);
+  }, [status, router]);
 
   const twoWeeksAgo = useMemo(() => subWeeks(new Date(), 2), []);
 
@@ -232,7 +234,7 @@ export default function DashboardPage() {
   }, []);
   
   // Conditional return must be AFTER all hook definitions
-  if (loading || isLoadingData) {
+  if (loading || (status === 'authenticated' && isLoadingData)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <p>Loading dashboard...</p>
@@ -287,8 +289,7 @@ export default function DashboardPage() {
                 {user && (
                 <button
                     onClick={async () => {
-                    await signOut();
-                    router.push('/login');
+                      await signOut({ callbackUrl: '/login' });
                     }}
                     className="px-3 py-2 bg-red-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-red-600 transition-colors shadow-sm">
                     Sign Out

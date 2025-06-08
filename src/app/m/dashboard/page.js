@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileProjectListItem from '@/components/Mobile/MobileProjectListItem';
-import { useAuth } from '@/contexts/AuthContext'; // Assuming you have an AuthContext
+import { useSession } from 'next-auth/react';
 import { FunnelIcon, XMarkIcon } from '@heroicons/react/20/solid'; // For filter icons
 
 const MobileDashboardPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,13 +75,13 @@ const MobileDashboardPage = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (status === 'unauthenticated') {
       router.push('/login');
     }
-    if (user) {
+    if (status === 'authenticated' && user) {
       fetchProjects();
     }
-  }, [user, authLoading, router, fetchProjects]);
+  }, [user, status, router, fetchProjects]);
 
   const handleProjectAdded = (newProject) => {
     // Optimistically add or re-fetch

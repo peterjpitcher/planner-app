@@ -2,24 +2,24 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext'; // Adjust path as necessary
+import { useSession } from 'next-auth/react';
 
 export default function HomePage() {
-  const { user, session, loading } = useAuth();
+  const { data: session, status } = useSession();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading) { // Only redirect once loading is complete
-      if (user && session) {
+    if (status !== 'loading') { // Only redirect once loading is complete
+      if (status === 'authenticated') {
         router.replace('/dashboard');
       } else {
         router.replace('/login');
       }
     }
-  }, [user, session, loading, router]);
+  }, [status, router]);
 
   // Optional: Show a loading indicator while checking auth state
-  if (loading) {
+  if (status === 'loading') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <p>Loading...</p>

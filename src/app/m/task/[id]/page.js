@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSession } from "next-auth/react";
 import MobileLayout from "@/components/Mobile/MobileLayout";
 import {
   format,
@@ -75,7 +75,9 @@ const getDueDateStatusText = (dateString) => {
 };
 
 const MobileTaskDetailPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const params = useParams();
   const taskId = params?.id;
@@ -127,12 +129,12 @@ const MobileTaskDetailPage = () => {
   }, [user, taskId]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (status === 'unauthenticated') {
       router.push("/login");
-    } else if (user && taskId) {
+    } else if (status === 'authenticated' && user && taskId) {
       fetchData();
     }
-  }, [user, authLoading, taskId, router, fetchData]);
+  }, [user, status, taskId, router, fetchData]);
 
   const handleEditTask = () => {
     console.log("Edit task clicked:", taskId);

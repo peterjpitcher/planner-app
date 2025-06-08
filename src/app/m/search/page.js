@@ -3,13 +3,15 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileProjectListItem from '@/components/Mobile/MobileProjectListItem';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
 
 function SearchResults() {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const searchParams = useSearchParams();
   const query = searchParams.get('query');
@@ -75,12 +77,12 @@ function SearchResults() {
   }, [user, query]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (status === 'unauthenticated') {
       router.push('/login');
-    } else if (user) {
+    } else if (status === 'authenticated' && user) {
       performSearch();
     }
-  }, [user, authLoading, query, router, performSearch]);
+  }, [user, status, query, router, performSearch]);
 
   // Callbacks for item updates/deletions from swipe actions
   const handleProjectDeleted = useCallback((deletedProjectId) => {

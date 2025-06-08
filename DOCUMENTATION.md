@@ -170,7 +170,7 @@ This section tracks the features implemented and the planned next steps based on
     *   Task Priorities in `TaskItem.js` can be edited in-line using a select dropdown.
     *   The quick date-pick buttons (e.g., "Tomorrow", "+2 days") associated with the task due date input in `TaskItem.js` have been removed as they were not functioning correctly and per user request.
     *   Date display formats updated across the application to include the weekday (e.g., "Sunday, May 25th" or "Sunday, May 25th, 2024" or "Sunday, May 25th, 10:30 AM"). This affects `ProjectItem.js`, `TaskItem.js`, `StandaloneTaskList.js` (for its `StandaloneTaskItem`), `completed-report/page.js`, and `NoteItem.js`. Tooltips for dates now show the full date including the year. Specifically, dates within 7 days (but not today/tomorrow) now consistently show the "EEEE, MMM do" format instead of "Due in Xd (DayOfWeek)".
-    *   Text wrapping for dates, project/task names, and descriptions has been improved using `break-words` and `truncate` utilities to prevent overflow.
+    *   Text wrapping for dates, project/task names, and descriptions has been improved using `break-words` and `truncate` utilities to prevent layout overflow.
 *   **UI Enhancements & Layout:**
     *   `AddProjectForm` moved into `AddProjectModal`. Dashboard has a "New Project" button in the header.
     *   Project list on dashboard takes full width when `AddProjectForm` is not shown.
@@ -381,6 +381,36 @@ This plan will be updated as features are completed and if priorities change.
         *   **Improved:** Task validation logic was refined to better handle empty task rows.
         *   **Standardized:** Quick pick buttons for the main project due date were also changed to `<span>` with `role="button"` for consistency with other forms.
 *   **Outcome:** All three primary task creation points now offer a consistent set of core fields (Name, Description, Due Date with quick pickers, Priority) and similar interaction patterns where appropriate (e.g., "Add Another" on dedicated forms).
+
+### Authentication System Overhaul to NextAuth.js
+
+*   **Goal:** Resolve a critical issue where users were required to log in every time they closed and reopened their browser. The existing Supabase `onAuthStateChange` listener, while functional for in-session changes, did not reliably persist sessions across browser restarts.
+*   **Decision:** Migrated the entire authentication system from a custom `AuthContext` implementation to **NextAuth.js (v4)**. This provides a battle-tested, feature-rich, and secure solution for authentication and session management.
+
+*   **Implementation Steps & Key Decisions:**
+    1.  **Dependency:** Installed the `next-auth` package.
+    2.  **API Route:** Created a new Next.js App Router API route at `src/app/api/auth/[...nextauth]/route.js`. This acts as the central hub for all authentication requests (`signIn`, `signOut`, `session`, etc.).
+    3.  **Authentication Strategy:**
+        *   Implemented a `CredentialsProvider` to handle email and password authentication.
+        *   The `authorize` function within the provider reuses the existing `supabase.auth.signInWithPassword` logic from `src/lib/supabaseClient.js`. This means user credentials are still validated against the Supabase database, providing a seamless transition without requiring user data migration.
+        *   Upon successful validation, a custom user object (`{ id, email }`) is returned to be stored in the session token.
+    4.  **Session Management:**
+        *   Configured sessions to use the `jwt` (JSON Web Token) strategy. This is highly performant as it avoids database lookups for session verification on every request.
+        *   Set `maxAge` to `30 * 24 * 60 * 60` (30 days) to keep users logged in for an extended period, directly addressing the core problem.
+        *   Set `updateAge` to `24 * 24 * 60 * 60` (24 hours) to automatically refresh and extend the JWT's validity each day the user is active.
+    5.  **Security Enhancements:**
+        *   Configured a custom cookie with the `__Host-` prefix (`__Host-next-auth.session-token`). This is a security best practice that helps prevent cookie-tossing and ensures the cookie is only sent over HTTPS, is scoped to the host, and has `Path=/`.
+        *   The session cookie is set to `httpOnly`, preventing access from client-side JavaScript and mitigating XSS risks.
+        *   `sameSite: 'lax'` was set to provide a good balance of CSRF protection.
+        *   A `NEXTAUTH_SECRET` environment variable is now required to sign and encrypt the JWT, preventing tampering.
+    6.  **UI Integration:**
+        *   The custom `AuthProvider` and `AuthContext.js` were completely removed.
+        *   A new client component, `src/components/NextAuthProvider.js`, was created to wrap the `SessionProvider` from `next-auth/react`.
+        *   This new provider was added to the root layout (`src/app/layout.js`).
+        *   All components and pages previously using the `useAuth()` hook were refactored to use the `useSession()` hook from `next-auth/react`. This included updating how user data, loading states, and authentication status are accessed.
+        *   The `LoginForm.js` was updated to use the `signIn()` function from `next-auth/react` instead of calling Supabase directly.
+        *   Logout functionality was updated to use the `signOut()` function from `next-auth/react`.
+*   **Outcome:** The application now has a robust and secure authentication system that persists user sessions across browser restarts, solving the initial problem. The use of NextAuth.js also provides a strong foundation for adding other authentication methods (e.g., OAuth with Google or GitHub) in the future.
 
 ### Task Notes UX Enhancements (Desktop Dashboard)
 

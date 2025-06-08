@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSession } from "next-auth/react";
 import MobileLayout from "@/components/Mobile/MobileLayout";
 import MobileTaskListItem from "@/components/Mobile/MobileTaskListItem"; // Re-use for listing tasks
 import { format, parseISO, compareAsc } from "date-fns";
@@ -49,7 +49,9 @@ const getPriorityStyles = (priority) => {
 };
 
 const MobileProjectDetailPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const params = useParams();
   const projectId = params?.id;
@@ -116,12 +118,12 @@ const MobileProjectDetailPage = () => {
   }, [user, projectId]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (status === 'unauthenticated') {
       router.push("/login");
-    } else if (user && projectId) {
+    } else if (status === 'authenticated' && user && projectId) {
       fetchData();
     }
-  }, [user, authLoading, projectId, router, fetchData]);
+  }, [user, status, projectId, router, fetchData]);
 
   const handleTaskClick = (taskId) => {
     // For future: navigate to a task detail view or open an edit modal

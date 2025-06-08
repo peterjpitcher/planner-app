@@ -3,13 +3,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 import { quickPickOptions } from '@/lib/dateUtils';
 
 const MobileAddTaskPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const params = useParams();
   const projectId = params?.id;
@@ -28,12 +30,12 @@ const MobileAddTaskPage = () => {
   const priorityOptions = ['Low', 'Medium', 'High'];
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (status === 'unauthenticated') {
       router.push('/login');
       return;
     }
     // Fetch project to potentially set default priority for new task
-    if (user && projectId) {
+    if (status === 'authenticated' && user && projectId) {
       const fetchProjectPriority = async () => {
         setIsLoadingProject(true);
         try {
@@ -59,7 +61,7 @@ const MobileAddTaskPage = () => {
     if (nameInputRef.current) {
         nameInputRef.current.focus();
     }
-  }, [user, authLoading, projectId, router]);
+  }, [user, status, projectId, router]);
 
   const resetForm = () => {
     setTaskName('');

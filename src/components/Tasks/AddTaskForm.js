@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 import { quickPickOptions } from '@/lib/dateUtils';
 
 // Reusable form for adding a task. 
 // If `projectId` is provided, it's for adding a task to a specific project.
 // If `projects` array is provided, it's for adding a task from a general page, requiring project selection.
 export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose, defaultPriority = 'Medium' }) {
-  const { user } = useAuth();
+  const { data: session } = useSession();
+  const user = session?.user;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');

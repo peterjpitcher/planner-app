@@ -3,12 +3,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 
 const MobileEditProjectPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { data: session, status } = useSession();
+  const user = session?.user;
+  const authLoading = status === 'loading';
   const router = useRouter();
   const params = useParams();
   const projectId = params?.id;
@@ -18,7 +20,7 @@ const MobileEditProjectPage = () => {
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState('Medium');
-  const [status, setStatus] = useState('Open');
+  const [projectStatus, setProjectStatus] = useState('Open');
   const [stakeholders, setStakeholders] = useState(''); // Comma-separated string
   
   const [isLoading, setIsLoading] = useState(true);
@@ -31,11 +33,11 @@ const MobileEditProjectPage = () => {
   const priorityOptions = ['Low', 'Medium', 'High'];
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (status === 'unauthenticated') {
       router.push('/login');
       return;
     }
-    if (user && projectId) {
+    if (status === 'authenticated' && user && projectId) {
       const fetchProjectData = async () => {
         setIsLoading(true);
         setError(null);
@@ -53,7 +55,7 @@ const MobileEditProjectPage = () => {
             setDescription(data.description || '');
             setDueDate(data.due_date ? format(parseISO(data.due_date), 'yyyy-MM-dd') : '');
             setPriority(data.priority || 'Medium');
-            setStatus(data.status || 'Open');
+            setProjectStatus(data.status || 'Open');
             setStakeholders(data.stakeholders ? data.stakeholders.join(', ') : '');
           } else {
             setError('Project not found.');
@@ -66,7 +68,7 @@ const MobileEditProjectPage = () => {
       };
       fetchProjectData();
     }
-  }, [user, authLoading, projectId, router]);
+  }, [user, status, projectId, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -87,7 +89,7 @@ const MobileEditProjectPage = () => {
           description: description.trim(),
           due_date: dueDate || null,
           priority: priority,
-          status: status,
+          status: projectStatus,
           stakeholders: stakeholdersArray,
           updated_at: new Date().toISOString(),
         })
@@ -163,7 +165,7 @@ const MobileEditProjectPage = () => {
           </div>
           <div>
             <label htmlFor="status" className="block text-sm font-medium text-gray-700">Status</label>
-            <select name="status" id="status" value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-900">
+            <select name="status" id="status" value={projectStatus} onChange={(e) => setProjectStatus(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-900">
               {projectStatusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </div>

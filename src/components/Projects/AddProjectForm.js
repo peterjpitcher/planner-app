@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSession } from 'next-auth/react';
 import { quickPickOptions } from '@/lib/dateUtils'; // Import quickPickOptions
 
 export default function AddProjectForm({ onProjectAdded, onClose }) {
-  const { user } = useAuth();
+  const { data: session } = useSession();
+  const user = session?.user;
   const [name, setName] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState('Medium'); // Default priority
