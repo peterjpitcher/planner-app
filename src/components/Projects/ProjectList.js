@@ -7,7 +7,7 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 // Define priority order for rendering groups
 // const PRIORITY_ORDER = ['High', 'Medium', 'Low', 'Other']; // No longer needed
 
-export default function ProjectList({ projects, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }) {
+export default function ProjectList({ projects, onProjectDataChange, onProjectDeleted, onProjectUpdated, areAllTasksExpanded }) {
   const { targetProjectId, setTargetProjectId } = useTargetProject();
   const projectRefs = useRef({});
   const actionedProjectIdRef = useRef(null); // Tracks the ID that caused the last scroll/highlight action
@@ -109,6 +109,7 @@ export default function ProjectList({ projects, onProjectDataChange, onProjectDe
           project={project} 
           onProjectDataChange={onProjectDataChange} 
           onProjectDeleted={onProjectDeleted} 
+          onProjectUpdated={onProjectUpdated}
           areAllTasksExpanded={areAllTasksExpanded}
           // isTargeted={project.id === targetProjectId} // We can pass this if ProjectItem handles its own highlight
         />

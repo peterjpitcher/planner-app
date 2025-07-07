@@ -1,9 +1,10 @@
-'use client'; // Login page itself needs to be a client component if it directly uses hooks or event handlers, or hosts client components like LoginForm
+'use client';
 
-import LoginForm from '@/components/Auth/LoginForm'; // Adjust path as necessary
+import LoginForm from '@/components/Auth/LoginForm';
 import Link from 'next/link';
+import { Suspense } from 'react';
 
-export default function LoginPage() {
+function LoginContent() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen py-2 bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-8 bg-white shadow-md rounded-lg">
@@ -20,5 +21,21 @@ export default function LoginPage() {
         </div> */}
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen py-2 bg-gray-50">
+        <div className="w-full max-w-md p-8 space-y-8 bg-white shadow-md rounded-lg">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900">Loading...</h1>
+          </div>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 } 

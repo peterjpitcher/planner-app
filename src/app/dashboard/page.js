@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import ProjectList from '@/components/Projects/ProjectList';
 import AddProjectModal from '@/components/Projects/AddProjectModal';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
@@ -39,7 +39,6 @@ export default function DashboardPage() {
   const user = session?.user;
   const loading = status === 'loading';
   const router = useRouter();
-  const supabase = useSupabase();
   const [projects, setProjects] = useState([]);
   const [allUserTasks, setAllUserTasks] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -120,28 +119,24 @@ export default function DashboardPage() {
     if (!user) return;
     setIsLoadingData(true);
     try {
-      let projectQueryBase = supabase.from('projects').select('*').eq('user_id', user.id);
-      let finalProjectQuery = showCompletedProjects 
-        ? projectQueryBase 
-        : projectQueryBase.neq('status', 'Completed').neq('status', 'Cancelled');
+      // Fetch projects using API
+      const projectData = await apiClient.getProjects(showCompletedProjects);
       
-      const { data: projectData, error: projectError } = await finalProjectQuery;
-      if (projectError) throw projectError;
-
       const finalSortedProjects = (projectData || []).sort(sortProjectsByPriorityThenDateDesc);
       setProjects(finalSortedProjects);
 
-      const { data: taskData, error: taskError } = await supabase.from('tasks').select('*').eq('user_id', user.id).eq('is_completed', false);
-      if (taskError) throw taskError;
+      // Fetch tasks using API
+      const taskData = await apiClient.getTasks(null, false);
       const sortedTasks = (taskData || []).sort(sortTasksByDateDescThenPriority);
       setAllUserTasks(sortedTasks);
     } catch (error) {
+      console.error('Error fetching dashboard data:', error);
       setProjects([]);
       setAllUserTasks([]);
     } finally {
       setIsLoadingData(false);
     }
-  }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority, supabase]);
+  }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority]);
 
   useEffect(() => {
     if (status === 'authenticated' && user) {
@@ -273,6 +268,13 @@ export default function DashboardPage() {
     handleProjectDataChange(updatedTask.id, updatedTask, 'task_updated');
   }, [handleProjectDataChange]);
 
+  // Memoize project update handler
+  const handleProjectUpdate = useCallback((updatedProject) => {
+    setProjects(prevProjects => 
+      prevProjects.map(p => p.id === updatedProject.id ? updatedProject : p)
+    );
+  }, []);
+
   // Memoize active filter check
   const hasActiveFilters = useMemo(() => {
     return selectedStakeholder !== 'All Stakeholders' || 
@@ -397,6 +399,7 @@ export default function DashboardPage() {
                     projects={baseFilteredProjects}
                     onProjectDataChange={handleProjectDataChange} 
                     onProjectDeleted={handleProjectDeleted} 
+                    onProjectUpdated={handleProjectUpdate}
                     areAllTasksExpanded={areAllTasksExpanded}
                   />
                 ) : (
