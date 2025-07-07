@@ -1,14 +1,34 @@
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
 
-// Debug environment on startup (remove in production)
-console.log('NextAuth Config:', {
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
-  NODE_ENV: process.env.NODE_ENV,
-  SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET',
-});
+// Create a server-side Supabase client for auth
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+// Create a new client for each auth request to avoid token conflicts
+const createSupabaseClient = () => {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    }
+  });
+};
+
+// Only log in development
+if (process.env.NODE_ENV === 'development') {
+  console.log('NextAuth Config:', {
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
+    NODE_ENV: process.env.NODE_ENV,
+    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET',
+  });
+}
 
 export const authOptions = {
   // 1. Choose your sign-in methods
@@ -26,7 +46,12 @@ export const authOptions = {
         }
 
         try {
-          console.log('NextAuth: Attempting Supabase login for:', credentials.email);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('NextAuth: Attempting Supabase login for:', credentials.email);
+          }
+          
+          // Create a fresh Supabase client for this auth attempt
+          const supabase = createSupabaseClient();
           
           const { data, error } = await supabase.auth.signInWithPassword({
             email: credentials.email,
@@ -34,13 +59,16 @@ export const authOptions = {
           });
 
           if (error) {
-            console.error('NextAuth: Supabase auth error:', error.message);
-            console.error('NextAuth: Error details:', error);
+            if (process.env.NODE_ENV === 'development') {
+              console.error('NextAuth: Supabase auth error:', error.message);
+            }
             return null; // Returning null will trigger a failed login
           }
 
           if (data.user && data.session) {
-            console.log('NextAuth: Login successful for user:', data.user.id);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('NextAuth: Login successful for user:', data.user.id);
+            }
             // You can return a custom object here.
             // The `user` object will be encoded in the JWT.
             return {
