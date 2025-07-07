@@ -1,14 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 import { quickPickOptions } from '@/lib/dateUtils';
+import { validateTask, sanitizeInput } from '@/lib/validators';
+import { PRIORITY } from '@/lib/constants';
+import { handleSupabaseError } from '@/lib/errorHandler';
 
 // Reusable form for adding a task. 
 // If `projectId` is provided, it's for adding a task to a specific project.
 // If `projects` array is provided, it's for adding a task from a general page, requiring project selection.
 export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose, defaultPriority = 'Medium' }) {
+  const supabase = useSupabase();
   const { data: session } = useSession();
   const user = session?.user;
   const [name, setName] = useState('');
@@ -95,12 +99,19 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
       setError('You must be logged in.');
       return;
     }
-    if (!name.trim()) {
-      setError('Task name is required.');
-      return;
-    }
-    if (!selectedProjectId) {
-      setError('A project must be selected for the task.');
+    // Prepare and validate task data
+    const taskData = {
+      project_id: selectedProjectId,
+      user_id: user.id,
+      name: sanitizeInput(name),
+      description: sanitizeInput(description) || null,
+      due_date: dueDate || null,
+      priority: priority || PRIORITY.MEDIUM
+    };
+    
+    const validation = validateTask(taskData);
+    if (!validation.isValid) {
+      setError(Object.values(validation.errors)[0]);
       return;
     }
     // Basic validation for recurrence if active
@@ -130,18 +141,8 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
     setError(null);
     setLoading(true);
 
-    // TODO: Task generation logic if isRepeating is true.
-    // For now, just creates one task.
-    const taskData = {
-      user_id: user.id,
-      project_id: selectedProjectId,
-      name: name.trim(),
-      description: description.trim() || null,
-      due_date: dueDate || null,
-      priority: priority,
-      is_completed: false,
-      // Potentially add recurrence_rule_if_needed to taskData if saving the rule itself
-    };
+    // Note: Repeating task feature is not yet implemented
+    // The UI for this feature has been hidden until the backend logic is complete
 
     try {
       // If isRepeating, here you would generate multiple tasks based on recurrence rules
@@ -178,8 +179,8 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
         onClose();
       }
     } catch (err) {
-      console.error('Error adding task:', err);
-      setError(err.message || 'Failed to add task.');
+      const errorMessage = handleSupabaseError(err, 'create');
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -272,22 +273,10 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
         </div>
       </div>
 
-      {/* Recurrence Section */}
-      <div className="pt-2 space-y-3">
-        <div className="flex items-center">
-          <input 
-            id="isRepeatingTask"
-            type="checkbox"
-            checked={isRepeating}
-            onChange={(e) => setIsRepeating(e.target.checked)}
-            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-          />
-          <label htmlFor="isRepeatingTask" className="ml-2 block text-sm font-medium text-gray-700">
-            Make this a repeating task?
-          </label>
-        </div>
+      {/* Recurrence Section - Hidden until feature is implemented */}
+      {/* TODO: Implement repeating task logic before enabling this UI */}
 
-        {isRepeating && (
+        {false && isRepeating && (
           <div className="p-3 border border-gray-200 rounded-md bg-gray-50/50 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -447,7 +436,6 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
             </div>
           </div>
         )}
-      </div>
 
       <div className="mt-2 flex flex-wrap gap-2 w-full">
         {quickPickOptions.map(option => (

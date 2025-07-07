@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
+import { signOut } from 'next-auth/react';
 import {
   PlusCircleIcon, ArrowUturnLeftIcon, ArrowLeftOnRectangleIcon, 
   RectangleStackIcon, ClipboardDocumentListIcon, MagnifyingGlassIcon
@@ -12,6 +13,7 @@ import AddProjectModal from '@/components/Projects/AddProjectModal'; // Assuming
 import { PlusIcon } from '@heroicons/react/20/solid'; // Added for FAB
 
 const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
+  const supabase = useSupabase();
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,8 +21,7 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
   const pathname = usePathname();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+    await signOut({ callbackUrl: '/login' });
   };
 
   const handleProjectSuccessfullyAdded = (newProject) => {
@@ -60,19 +61,21 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
               ) : null}
               <button 
                 onClick={() => setShowSearchInput(!showSearchInput)} 
-                className="p-2 rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="icon-button rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 title={showSearchInput ? "Close Search" : "Search"}
               >
                 <MagnifyingGlassIcon className="h-5 w-5" />
               </button>
-              <Link href="/dashboard" legacyBehavior>
-                <a className="p-2 rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 hidden sm:inline-flex" title="Desktop View">
-                  <ArrowUturnLeftIcon className="h-5 w-5" />
-                </a>
+              <Link 
+                href="/dashboard" 
+                className="icon-button rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 hidden sm:inline-flex" 
+                title="Desktop View"
+              >
+                <ArrowUturnLeftIcon className="h-5 w-5" />
               </Link>
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="icon-button rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 title="Logout"
               >
                 <ArrowLeftOnRectangleIcon className="h-5 w-5" />
@@ -92,17 +95,19 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
       </main>
       <footer className="bg-white border-t border-gray-200 p-3 sticky bottom-0 z-50 shadow-t-md">
         <nav className="flex justify-around items-center">
-          <Link href="/m/dashboard" legacyBehavior>
-            <a className={`flex flex-col items-center justify-center text-xs ${pathname === '/m/dashboard' ? 'text-indigo-600' : 'text-gray-600'} hover:text-indigo-700 transition-colors`}>
-              <RectangleStackIcon className="h-5 w-5 mb-0.5" />
-              Projects
-            </a>
+          <Link 
+            href="/m/dashboard" 
+            className={`touch-target flex flex-col items-center justify-center text-xs ${pathname === '/m/dashboard' ? 'text-indigo-600' : 'text-gray-600'} hover:text-indigo-700 transition-colors`}
+          >
+            <RectangleStackIcon className="h-5 w-5 mb-0.5" />
+            Projects
           </Link>
-          <Link href="/m/tasks" legacyBehavior>
-            <a className={`flex flex-col items-center justify-center text-xs ${pathname === '/m/tasks' ? 'text-indigo-600' : 'text-gray-600'} hover:text-indigo-700 transition-colors`}>
-              <ClipboardDocumentListIcon className="h-5 w-5 mb-0.5" />
-              Tasks
-            </a>
+          <Link 
+            href="/m/tasks" 
+            className={`touch-target flex flex-col items-center justify-center text-xs ${pathname === '/m/tasks' ? 'text-indigo-600' : 'text-gray-600'} hover:text-indigo-700 transition-colors`}
+          >
+            <ClipboardDocumentListIcon className="h-5 w-5 mb-0.5" />
+            Tasks
           </Link>
         </nav>
       </footer>
@@ -112,7 +117,7 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
           onClick={() => {
             setShowAddProjectModal(true);
           }}
-          className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-[60]"
+          className="touch-target fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-[60]"
           title="Add New Project"
         >
           <PlusIcon className="h-6 w-6" />

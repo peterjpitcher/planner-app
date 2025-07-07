@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 // useRouter removed as it's not directly used after swipe removal
 import {
@@ -109,4 +110,13 @@ const MobileTaskListItem = ({ task, projectContext = null }) => {
   );
 };
 
-export default MobileTaskListItem; 
+export default React.memo(MobileTaskListItem, (prevProps, nextProps) => {
+  return (
+    prevProps.task.id === nextProps.task.id &&
+    prevProps.task.updated_at === nextProps.task.updated_at &&
+    prevProps.task.name === nextProps.task.name &&
+    prevProps.task.is_completed === nextProps.task.is_completed &&
+    prevProps.task.priority === nextProps.task.priority &&
+    prevProps.task.due_date === nextProps.task.due_date
+  );
+}); 

@@ -22,16 +22,16 @@ export const authOptions = {
         });
 
         if (error) {
-          console.error('Supabase login error:', error.message);
           return null; // Returning null will trigger a failed login
         }
 
-        if (data.user) {
+        if (data.user && data.session) {
           // You can return a custom object here.
           // The `user` object will be encoded in the JWT.
           return {
             id: data.user.id,
             email: data.user.email,
+            accessToken: data.session.access_token,
             // You can add other properties from your user table here
             // e.g. name: data.user.user_metadata.full_name
           };
@@ -60,7 +60,9 @@ export const authOptions = {
   // 4. Custom cookie configuration for maximum security
   cookies: {
     sessionToken: {
-      name: `__Host-next-auth.session-token`,
+      name: process.env.NODE_ENV === 'production' 
+        ? `__Host-next-auth.session-token`
+        : `next-auth.session-token`,
       options: {
         httpOnly: true, // not accessible from JS
         secure: process.env.NODE_ENV === 'production',
@@ -79,6 +81,7 @@ export const authOptions = {
       // We can add properties to the token here, and they will be available on subsequent requests.
       if (user) {
         token.id = user.id;
+        token.accessToken = user.accessToken;
         // token.role = user.role // Example of adding a role
       }
       return token;
@@ -88,6 +91,8 @@ export const authOptions = {
       // We can add properties to the session object here.
       if (session.user) {
         session.user.id = token.id;
+        // SECURITY: Do not expose accessToken to client-side
+        // The token is available server-side via getServerSession
         // session.user.role = token.role; // Pass role to session
       }
       return session;

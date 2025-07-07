@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, forwardRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { quickPickOptions } from '@/lib/dateUtils';
+import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { 
   ChevronDownIcon, ChevronUpIcon, PlusCircleIcon, EyeIcon, EyeSlashIcon, 
   ChatBubbleLeftEllipsisIcon, ClipboardDocumentIcon, EllipsisVerticalIcon,
@@ -93,6 +94,7 @@ const getStatusClasses = (status) => {
 };
 
 const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
+  const supabase = useSupabase();
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
@@ -154,10 +156,15 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .order('is_completed', { ascending: true })
         .order('due_date', { ascending: true, nullsFirst: false })
         .order('priority', { ascending: true, nullsFirst: false });
-      if (error) throw error;
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'fetch');
+        handleError(error, 'fetchTasks', { showAlert: true, fallbackMessage: errorMessage });
+        setTasks([]);
+        return;
+      }
       setTasks(data || []);
     } catch (err) {
-      console.error(`Error fetching tasks for project ${project.id}:`, err);
+      handleError(err, 'fetchTasks', { showAlert: true });
       setTasks([]);
     } finally {
       setIsLoadingTasks(false);
@@ -178,10 +185,15 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .eq('project_id', project.id)
         .is('task_id', null)
         .order('created_at', { ascending: true });
-      if (error) throw error;
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'fetch');
+        handleError(error, 'fetchProjectNotes', { fallbackMessage: errorMessage });
+        setProjectNotes([]);
+        return;
+      }
       setProjectNotes(data || []);
     } catch (err) {
-      console.error('Error fetching notes for project:', err);
+      handleError(err, 'fetchProjectNotes');
       setProjectNotes([]);
     } finally {
       setIsLoadingProjectNotes(false);
@@ -240,7 +252,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
   const updateParentProjectTimestamp = async () => {
     if (!project || !project.id) {
-      console.warn('Cannot update project timestamp: project or project.id is missing.');
       return;
     }
     try {
@@ -249,11 +260,12 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .update({ updated_at: new Date().toISOString() })
         .eq('id', project.id);
       if (error) {
-        console.error('Error updating project timestamp in DB:', error);
-        // Potentially alert the user or log more formally
+        // Silently fail - timestamp update is non-critical
+        handleError(error, 'updateParentProjectTimestamp');
       }
     } catch (err) {
-      console.error('Exception while updating project timestamp:', err);
+      // Silently fail - timestamp update is non-critical
+      handleError(err, 'updateParentProjectTimestamp');
     }
   };
 
@@ -297,11 +309,14 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     if (project && window.confirm('Are you sure you want to delete project "' + project.name + '" and all its tasks? This action cannot be undone.')) {
         try {
             const { error } = await supabase.from('projects').delete().eq('id', project.id);
-            if (error) throw error;
+            if (error) {
+              const errorMessage = handleSupabaseError(error, 'delete');
+              handleError(error, 'handleDeleteProject', { showAlert: true, fallbackMessage: errorMessage });
+              return;
+            }
             if (onProjectDeleted) onProjectDeleted(project.id);
         } catch (err) {
-            console.error('Error deleting project:', err);
-            alert(`Failed to delete project: ${err.message}`);
+            handleError(err, 'handleDeleteProject', { showAlert: true });
         }
     }
     setIsMenuOpen(false);
@@ -374,8 +389,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         projectDataText += `  No tasks for this project.\n`;
       }
     } catch (err) {
-      console.error('Error fetching tasks and notes for copy:', err);
-      projectDataText += `  Error fetching task details.\n`;
+      const errorMessage = handleSupabaseError(err, 'fetch');
+      projectDataText += `  Error fetching task details: ${errorMessage}\n`;
       setCopyStatus('Error!');
       setTimeout(() => setCopyStatus('Copy'), 2000);
       return;
@@ -385,7 +400,6 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
       await navigator.clipboard.writeText(projectDataText);
       setCopyStatus('Copied!');
     } catch (err) {
-      console.error('Failed to copy project data:', err);
       setCopyStatus('Failed!');
     }
     setTimeout(() => setCopyStatus('Copy'), 2000);
@@ -400,15 +414,19 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         .eq('id', project.id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'update');
+        handleError(error, 'updateProjectStatusInDb', { showAlert: true, fallbackMessage: errorMessage });
+        setCurrentStatus(project ? project.status || 'Open' : 'Open');
+        return false;
+      }
       setCurrentStatus(newStatus);
       if (onProjectDataChange && project) { // Pass the full updated project object or essential fields
           onProjectDataChange(project.id, data, 'project_status_changed');
       }
       return true;
     } catch (err) {
-      console.error('Error updating project status:', err);
-      alert(`Failed to update project status: ${err.message}`);
+      handleError(err, 'updateProjectStatusInDb', { showAlert: true });
       setCurrentStatus(project ? project.status || 'Open' : 'Open'); 
       return false;
     }
@@ -442,8 +460,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         await Promise.all(updates);
         fetchTasks();
       } catch (err) {
-        console.error('Error completing open tasks:', err);
-        alert('Could not complete all open tasks. Project status not changed.');
+        handleError(err, 'handleConfirmCompleteTasksAndProject', { 
+          showAlert: true, 
+          fallbackMessage: 'Could not complete all open tasks. Project status not changed.' 
+        });
         return;
       }
     }
@@ -460,7 +480,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
   const createUpdateHandler = (field, currentValue, originalValue, setter, editSetter, isArray = false, isDate = false) => async (optionalValue) => {
     if (!project) {
-        alert('Cannot update: project data is missing.');
+        handleError(new Error('Project data is missing'), 'createUpdateHandler', { 
+          showAlert: true,
+          fallbackMessage: 'Cannot update: project data is missing.'
+        });
         if (editSetter) editSetter(false);
         return;
     }
@@ -496,7 +519,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           updateObject[field] = null;
       }
       const { data, error } = await supabase.from('projects').update(updateObject).eq('id', project.id).select().single();
-      if (error) throw error;
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'update');
+        throw new Error(errorMessage);
+      }
       if (data) {
         setter(
           isDate && data[field] ? format(new Date(data[field]), 'yyyy-MM-dd') : 
@@ -509,7 +535,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         }
         if (field === 'priority') setCurrentPriority(data.priority); // Local state for UI
       } else {
-         alert(`Failed to update project ${field}. No data returned.`);
+         const errorMessage = `Failed to update project ${field}. No data returned.`;
+         handleError(new Error(errorMessage), 'createUpdateHandler', { showAlert: true, fallbackMessage: errorMessage });
          setter(
             isDate ? (originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : '') :
             isArray ? (originalValue ? originalValue.join(', ') : '') :
@@ -517,8 +544,11 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
          );
       }
     } catch (err) {
-      console.error(`Error updating project ${field}:`, err);
-      alert(`Failed to update project ${field}: ${err.message}`);
+      const errorMessage = handleSupabaseError(err, 'update') || err.message;
+      handleError(err, 'createUpdateHandler', { 
+        showAlert: true, 
+        fallbackMessage: `Failed to update project ${field}: ${errorMessage}`
+      });
       setter(
         isDate ? (originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : '') :
         isArray ? (originalValue ? originalValue.join(', ') : '') :
@@ -691,7 +721,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                 setShowStatusDropdown(!showStatusDropdown); 
               }}
               disabled={isProjectCompletedOrCancelled || isEditingPriority || isEditingDueDate || isEditingStakeholders}
-              className={`text-xs font-medium px-2 py-1 rounded-full flex items-center whitespace-nowrap ${projectStatusClasses} ${isProjectCompletedOrCancelled ? 'cursor-not-allowed' : 'hover:opacity-80'}`}
+              className={`touch-target-sm text-xs font-medium px-2 py-1 rounded-full flex items-center whitespace-nowrap ${projectStatusClasses} ${isProjectCompletedOrCancelled ? 'cursor-not-allowed' : 'hover:opacity-80'}`}
             >
               {currentStatus} <ChevronDownIcon className="w-3 h-3 ml-1 opacity-70"/>
             </button>
@@ -701,7 +731,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                   <button
                     key={option}
                     onClick={(e) => { e.stopPropagation(); handleChangeProjectStatus(option); }}
-                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 focus:bg-gray-100"
+                    className="touch-target-sm block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 focus:bg-gray-100"
                   >
                     {option}
                   </button>
@@ -745,7 +775,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                                 setCurrentDueDate(newDate);
                                 createUpdateHandler('due_date', newDate, project.due_date, setCurrentDueDate, setIsEditingDueDate, false, true)();
                               }}
-                              className="px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                              className="touch-target-sm px-1.5 py-0.5 text-3xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-full cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300"
                             >
                               {option.label}
                             </button>
@@ -796,7 +826,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
           <div className="relative order-last sm:order-none ml-auto sm:ml-0 flex items-center gap-x-1">
               <button
                 onClick={(e) => { e.stopPropagation(); setShowProjectNotes(!showProjectNotes); }}
-                className="p-1.5 rounded-full text-gray-500 hover:bg-gray-200 hover:text-indigo-600 flex items-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
+                className="icon-button rounded-full text-gray-500 hover:bg-gray-200 hover:text-indigo-600 flex items-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
                 aria-expanded={showProjectNotes}
                 aria-controls={`project-notes-section-${project.id}`}
                 disabled={isLoadingProjectNotes}
@@ -812,7 +842,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
               <button
                 onClick={(e) => { e.stopPropagation(); handleCopyProjectData(); }}
-                className="p-1.5 rounded-full text-gray-500 hover:bg-gray-200 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
+                className="icon-button rounded-full text-gray-500 hover:bg-gray-200 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
                 title={`Copy project data (${copyStatus})`}
               >
                 <ClipboardDocumentIcon className="h-5 w-5" />
@@ -820,7 +850,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
               <button
                   onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen);}}
-                  className="p-1.5 rounded-full hover:bg-gray-200 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
+                  className="icon-button rounded-full hover:bg-gray-200 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
                   aria-haspopup="true" aria-expanded={isMenuOpen}
                   title="More actions"
               >
@@ -870,7 +900,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
                 {tasks.length > 0 && completedTasksCount > 0 && (
                     <button
                         onClick={(e) => {e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks);}}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center"
+                        className="touch-target-sm text-xs text-indigo-600 hover:text-indigo-800 flex items-center"
                     >
                         {showCompletedTasks ? <EyeSlashIcon className="w-3.5 h-3.5 mr-1"/> : <EyeIcon className="w-3.5 h-3.5 mr-1"/>}
                         {showCompletedTasks ? 'Hide' : 'Show'} Completed
@@ -949,4 +979,16 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
 ProjectItem.displayName = 'ProjectItem';
 
-export default ProjectItem;
+export default React.memo(ProjectItem, (prevProps, nextProps) => {
+  // Only re-render if these specific props change
+  return (
+    prevProps.project.id === nextProps.project.id &&
+    prevProps.project.updated_at === nextProps.project.updated_at &&
+    prevProps.project.name === nextProps.project.name &&
+    prevProps.project.status === nextProps.project.status &&
+    prevProps.project.priority === nextProps.project.priority &&
+    prevProps.project.due_date === nextProps.project.due_date &&
+    prevProps.isExpanded === nextProps.isExpanded &&
+    prevProps.isTargetProject === nextProps.isTargetProject
+  );
+});

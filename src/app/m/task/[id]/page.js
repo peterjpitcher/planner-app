@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { useSupabase } from "@/contexts/SupabaseContext";
 import { useSession } from "next-auth/react";
 import MobileLayout from "@/components/Mobile/MobileLayout";
 import {
@@ -75,6 +75,7 @@ const getDueDateStatusText = (dateString) => {
 };
 
 const MobileTaskDetailPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -118,7 +119,6 @@ const MobileTaskDetailPage = () => {
       if (notesError) throw notesError;
       setNotes(notesData || []);
     } catch (e) {
-      console.error("Error fetching task details or notes:", e);
       setError("Failed to load task information or notes.");
       setTask(null);
       setNotes([]);
@@ -137,7 +137,6 @@ const MobileTaskDetailPage = () => {
   }, [user, status, taskId, router, fetchData]);
 
   const handleEditTask = () => {
-    console.log("Edit task clicked:", taskId);
     router.push(`/m/task/${taskId}/edit`);
   };
 
@@ -160,7 +159,6 @@ const MobileTaskDetailPage = () => {
       if (updateError) throw updateError;
       setTask(updatedTask); // Update local state with the full task object
     } catch (err) {
-      console.error("Error toggling task status:", err);
       // Optionally show an error message to the user
       alert("Failed to update task status. Please try again.");
     } finally {
@@ -196,7 +194,6 @@ const MobileTaskDetailPage = () => {
         .update({ updated_at: new Date().toISOString() })
         .eq("id", task.id);
     } catch (err) {
-      console.error("Error adding note:", err);
       alert("Failed to add note. Please try again.");
     } finally {
       setIsAddingNote(false);

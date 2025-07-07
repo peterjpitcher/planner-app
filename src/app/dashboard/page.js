@@ -3,13 +3,35 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import ProjectList from '@/components/Projects/ProjectList';
 import AddProjectModal from '@/components/Projects/AddProjectModal';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
 import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIcon, ClockIcon, CalendarDaysIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
 import Link from 'next/link';
+import { ProjectListSkeleton, TaskListSkeleton } from '@/components/ui/LoadingStates';
+import { EmptyProjects, EmptyFilteredResults } from '@/components/ui/EmptyStates';
+
+// Extract FilterButton component outside to prevent recreation on every render
+const FilterButton = ({ filterKey, icon, label, count, activeDashboardFilters, toggleDashboardFilter }) => {
+  const isActive = activeDashboardFilters[filterKey];
+  const hasItems = count > 0;
+  return (
+    <button
+      onClick={() => toggleDashboardFilter(filterKey)}
+      className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors
+        ${isActive ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-300' 
+          : hasItems ? 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200' 
+          : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}
+        ${!hasItems && !isActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+      disabled={!hasItems && !isActive}
+      title={isActive ? `Deactivate '${label}' filter` : `Activate '${label}' filter (${count} items)`}>
+      {icon}<span>{label}</span>
+      <span className={`px-1.5 py-0.5 rounded-full text-xs ml-1 ${isActive ? 'bg-white text-indigo-600' : hasItems ? 'bg-red-200 text-red-800' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
+    </button>
+  );
+};
 
 export default function DashboardPage() {
   // All hooks must be called at the top level, before any conditional returns.
@@ -17,6 +39,7 @@ export default function DashboardPage() {
   const user = session?.user;
   const loading = status === 'loading';
   const router = useRouter();
+  const supabase = useSupabase();
   const [projects, setProjects] = useState([]);
   const [allUserTasks, setAllUserTasks] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -113,13 +136,12 @@ export default function DashboardPage() {
       const sortedTasks = (taskData || []).sort(sortTasksByDateDescThenPriority);
       setAllUserTasks(sortedTasks);
     } catch (error) {
-      console.error('Error fetching data:', error);
       setProjects([]);
       setAllUserTasks([]);
     } finally {
       setIsLoadingData(false);
     }
-  }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority]);
+  }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority, supabase]);
 
   useEffect(() => {
     if (status === 'authenticated' && user) {
@@ -171,7 +193,6 @@ export default function DashboardPage() {
 
   const handleProjectAdded = useCallback((newProject) => {
     if (!newProject || !newProject.id) {
-      console.error('Attempted to add invalid project', newProject);
       fetchData(); 
       return;
     }
@@ -190,7 +211,6 @@ export default function DashboardPage() {
     if (itemType === 'task_added') {
       const newTask = details?.task;
       if (!newTask || !newTask.id) { 
-        console.error('Task added event received without valid task data. Full details:', details, 'Item ID:', itemId, 'Changed Data:', changedData);
         fetchData(); 
         return;
       }
@@ -232,9 +252,44 @@ export default function DashboardPage() {
   const toggleDashboardFilter = useCallback((filterName) => {
     setActiveDashboardFilters(prev => ({ ...prev, [filterName]: !prev[filterName] }));
   }, []);
+
+  // Memoize select change handler
+  const handleStakeholderChange = useCallback((e) => {
+    setSelectedStakeholder(e.target.value);
+  }, []);
+
+  // Memoize button click handlers
+  const handleShowAddProjectModal = useCallback(() => setShowAddProjectModal(true), []);
+  const handleHideAddProjectModal = useCallback(() => setShowAddProjectModal(false), []);
+  const handleToggleCompletedProjects = useCallback(() => setShowCompletedProjects(prev => !prev), []);
+  const handleToggleHideBill = useCallback(() => setHideBillStakeholder(prev => !prev), []);
+  const handleSignOut = useCallback(async () => {
+    const currentUrl = window.location.origin;
+    await signOut({ callbackUrl: `${currentUrl}/login` });
+  }, []);
+
+  // Memoize task update handler
+  const handleTaskUpdate = useCallback((updatedTask) => {
+    handleProjectDataChange(updatedTask.id, updatedTask, 'task_updated');
+  }, [handleProjectDataChange]);
+
+  // Memoize active filter check
+  const hasActiveFilters = useMemo(() => {
+    return selectedStakeholder !== 'All Stakeholders' || 
+           activeDashboardFilters.overdue || 
+           activeDashboardFilters.noTasks || 
+           activeDashboardFilters.untouched || 
+           activeDashboardFilters.noDueDate ||
+           hideBillStakeholder;
+  }, [selectedStakeholder, activeDashboardFilters, hideBillStakeholder]);
+
+  // Memoize project title
+  const projectSectionTitle = useMemo(() => {
+    return hasActiveFilters ? 'Filtered Projects' : 'Your Projects';
+  }, [hasActiveFilters]);
   
   // Conditional return must be AFTER all hook definitions
-  if (loading || (status === 'authenticated' && isLoadingData)) {
+  if (loading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <p>Loading dashboard...</p>
@@ -242,25 +297,6 @@ export default function DashboardPage() {
     );
   }
   
-  const FilterButton = ({ filterKey, icon, label, count }) => {
-    const isActive = activeDashboardFilters[filterKey];
-    const hasItems = count > 0;
-    return (
-      <button
-        onClick={() => toggleDashboardFilter(filterKey)}
-        className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors
-          ${isActive ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-300' 
-            : hasItems ? 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200' 
-            : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}
-          ${!hasItems && !isActive ? 'opacity-60 cursor-not-allowed' : ''}`}
-        disabled={!hasItems && !isActive}
-        title={isActive ? `Deactivate '${label}' filter` : `Activate '${label}' filter (${count} items)`}>
-        {icon}<span>{label}</span>
-        <span className={`px-1.5 py-0.5 rounded-full text-xs ml-1 ${isActive ? 'bg-white text-indigo-600' : hasItems ? 'bg-red-200 text-red-800' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
-      </button>
-    );
-  }; // FilterButton should also be defined before the main return if it uses hooks, or outside if it doesn't.
-     // In this case, it's a simple component not using hooks, so its position is fine here as a helper within DashboardPage.
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
@@ -274,23 +310,19 @@ export default function DashboardPage() {
             <div className="flex items-center space-x-3 mt-3 sm:mt-0">
                 <Link
                   href="/completed-report"
-                  legacyBehavior>
-                  <a className="flex items-center px-3 py-2 bg-green-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-green-600 transition-colors shadow-sm">
-                    <CalendarDaysIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5" />
-                    Completed Report
-                  </a>
+                  className="flex items-center px-3 py-2 bg-green-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-green-600 transition-colors shadow-sm">
+                  <CalendarDaysIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5" />
+                  Completed Report
                 </Link>
                 <button 
-                    onClick={() => setShowAddProjectModal(true)}
+                    onClick={handleShowAddProjectModal}
                     className="flex items-center px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm">
                     <PlusCircleIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5" />
                     New Project
                 </button>
                 {user && (
                 <button
-                    onClick={async () => {
-                      await signOut({ callbackUrl: '/login' });
-                    }}
+                    onClick={handleSignOut}
                     className="px-3 py-2 bg-red-500 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-red-600 transition-colors shadow-sm">
                     Sign Out
                 </button>
@@ -312,7 +344,7 @@ export default function DashboardPage() {
                     name="stakeholder-filter"
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
                     value={selectedStakeholder}
-                    onChange={(e) => setSelectedStakeholder(e.target.value)}>
+                    onChange={handleStakeholderChange}>
                     <option value="All Stakeholders">All Stakeholders</option>
                     {uniqueStakeholders.map(stakeholder => (
                       <option key={stakeholder} value={stakeholder}>{stakeholder}</option>
@@ -322,7 +354,7 @@ export default function DashboardPage() {
                 
                 <div className="flex md:justify-start items-center pt-5 space-x-3">
                     <button
-                        onClick={() => { setShowCompletedProjects(prev => !prev); /* This will trigger re-fetch via fetchData dependency */ }}
+                        onClick={handleToggleCompletedProjects}
                         className="flex items-center text-sm text-gray-600 hover:text-indigo-600 p-2 rounded-md hover:bg-gray-100"
                         title={showCompletedProjects ? "Hide completed/cancelled projects" : "Show completed/cancelled projects"}>
                         {showCompletedProjects ? <EyeSlashIcon className="h-5 w-5 mr-1.5" /> : <EyeIcon className="h-5 w-5 mr-1.5" />}
@@ -336,7 +368,7 @@ export default function DashboardPage() {
                         {areAllTasksExpanded ? 'Collapse All Tasks' : 'Expand All Tasks'}
                     </button>
                     <button
-                        onClick={() => setHideBillStakeholder(prev => !prev)}
+                        onClick={handleToggleHideBill}
                         className={`flex items-center text-sm p-2 rounded-md hover:bg-gray-100 ${hideBillStakeholder ? 'text-red-600 font-semibold' : 'text-gray-600'}`}
                         title={hideBillStakeholder ? "Show projects with Bill as stakeholder" : "Hide projects with Bill as stakeholder"}>
                         <EyeSlashIcon className="h-5 w-5 mr-1.5" />
@@ -346,41 +378,34 @@ export default function DashboardPage() {
               </div>
               
               <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-200">
-                <FilterButton filterKey="overdue" icon={<ExclamationTriangleIcon className="h-4 w-4"/>} label="Overdue" count={projectAnalysis.overdue.length} />
-                <FilterButton filterKey="noTasks" icon={<InboxIcon className="h-4 w-4"/>} label="No Tasks" count={projectAnalysis.noTasks.length} />
-                <FilterButton filterKey="untouched" icon={<ClockIcon className="h-4 w-4"/>} label="Untouched (2wk)" count={projectAnalysis.untouched.length} />
-                <FilterButton filterKey="noDueDate" icon={<CalendarDaysIcon className="h-4 w-4"/>} label="No Due Date" count={projectAnalysis.noDueDate.length} />
+                <FilterButton filterKey="overdue" icon={<ExclamationTriangleIcon className="h-4 w-4"/>} label="Overdue" count={projectAnalysis.overdue.length} activeDashboardFilters={activeDashboardFilters} toggleDashboardFilter={toggleDashboardFilter} />
+                <FilterButton filterKey="noTasks" icon={<InboxIcon className="h-4 w-4"/>} label="No Tasks" count={projectAnalysis.noTasks.length} activeDashboardFilters={activeDashboardFilters} toggleDashboardFilter={toggleDashboardFilter} />
+                <FilterButton filterKey="untouched" icon={<ClockIcon className="h-4 w-4"/>} label="Untouched (2wk)" count={projectAnalysis.untouched.length} activeDashboardFilters={activeDashboardFilters} toggleDashboardFilter={toggleDashboardFilter} />
+                <FilterButton filterKey="noDueDate" icon={<CalendarDaysIcon className="h-4 w-4"/>} label="No Due Date" count={projectAnalysis.noDueDate.length} activeDashboardFilters={activeDashboardFilters} toggleDashboardFilter={toggleDashboardFilter} />
               </div>
             </section>
 
             <section>
                 <h2 className="text-xl font-semibold text-gray-700 mb-3">
-                { selectedStakeholder !== 'All Stakeholders' || activeDashboardFilters.overdue || activeDashboardFilters.noTasks || activeDashboardFilters.untouched || activeDashboardFilters.noDueDate 
-                    ? `Filtered Projects` 
-                    : `Your Projects`
-                }
+                {projectSectionTitle}
                 <span className="text-base font-normal text-gray-500 ml-2">({baseFilteredProjects.length} showing)</span>
                 </h2>
                 {isLoadingData ? (
-                <p className="text-center py-10 text-gray-500">Loading projects...</p>
+                  <ProjectListSkeleton />
                 ) : baseFilteredProjects.length > 0 ? (
-                <ProjectList 
-                  projects={baseFilteredProjects}
-                  onProjectDataChange={handleProjectDataChange} 
-                  onProjectDeleted={handleProjectDeleted} 
-                  areAllTasksExpanded={areAllTasksExpanded}
-                />
+                  <ProjectList 
+                    projects={baseFilteredProjects}
+                    onProjectDataChange={handleProjectDataChange} 
+                    onProjectDeleted={handleProjectDeleted} 
+                    areAllTasksExpanded={areAllTasksExpanded}
+                  />
                 ) : (
-                <div className="text-center py-10 bg-white p-6 rounded-lg shadow">
-                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                    </svg>
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No projects match your filters</h3>
-                    <p className="mt-1 text-sm text-gray-500">Try adjusting your filter criteria or add a new project.</p>
-                    { (projects.length === 0 && selectedStakeholder === 'All Stakeholders' && !activeDashboardFilters.overdue && !activeDashboardFilters.noTasks && !activeDashboardFilters.untouched && !activeDashboardFilters.noDueDate) &&
-                        <p className="mt-1 text-sm text-gray-500">You currently have no projects. Get started by adding one!</p>
-                    }
-                </div>
+                  // Check if filters are active
+                  hasActiveFilters ? (
+                    <EmptyFilteredResults />
+                  ) : (
+                    <EmptyProjects />
+                  )
                 )}
             </section>
           </div>
@@ -388,14 +413,12 @@ export default function DashboardPage() {
           {/* Right column: Standalone Task List */}
           <aside className="lg:w-1/3 lg:sticky lg:top-24 h-full lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
             {isLoadingData ? (
-                <div className="bg-white shadow rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-500">Loading tasks...</p>
-                </div>
+                <TaskListSkeleton />
             ) : (
                 <StandaloneTaskList 
                     allUserTasks={allUserTasks} 
                     projects={projects} 
-                    onTaskUpdateNeeded={(updatedTask) => handleProjectDataChange(updatedTask.id, updatedTask, 'task_updated')}
+                    onTaskUpdateNeeded={handleTaskUpdate}
                     hideBillStakeholder={hideBillStakeholder} 
                 />
             )}
@@ -405,7 +428,7 @@ export default function DashboardPage() {
       {showAddProjectModal && (
         <AddProjectModal 
           isOpen={showAddProjectModal}
-          onClose={() => setShowAddProjectModal(false)} 
+          onClose={handleHideAddProjectModal} 
           onProjectAdded={handleProjectAdded}
         />
       )}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { useSupabase } from "@/contexts/SupabaseContext";
 import { useSession } from "next-auth/react";
 import MobileLayout from "@/components/Mobile/MobileLayout";
 import MobileTaskListItem from "@/components/Mobile/MobileTaskListItem"; // Re-use for listing tasks
@@ -49,6 +49,7 @@ const getPriorityStyles = (priority) => {
 };
 
 const MobileProjectDetailPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -106,7 +107,6 @@ const MobileProjectDetailPage = () => {
       if (notesError) throw notesError;
       setProjectNotes(notesData || []);
     } catch (e) {
-      console.error("Error fetching project details, tasks, or notes:", e);
       setError("Failed to load project information.");
       setProject(null);
       setTasks([]);
@@ -127,18 +127,15 @@ const MobileProjectDetailPage = () => {
 
   const handleTaskClick = (taskId) => {
     // For future: navigate to a task detail view or open an edit modal
-    console.log("Task clicked on project detail page:", taskId);
     router.push(`/m/task/${taskId}`); // Navigate to task detail page
   };
 
   const handleEditProject = () => {
     // Future: navigate to an edit project page or open modal
-    console.log("Edit project clicked:", projectId);
     router.push(`/m/project/${projectId}/edit`);
   };
 
   const handleAddTask = () => {
-    console.log("Add task to project clicked:", projectId);
     router.push(`/m/project/${projectId}/add-task`);
   };
 
@@ -200,7 +197,6 @@ const MobileProjectDetailPage = () => {
         .update({ updated_at: new Date().toISOString() })
         .eq("id", project.id);
     } catch (err) {
-      console.error("Error adding project note:", err);
       alert("Failed to add note. Please try again.");
     } finally {
       setIsAddingProjectNote(false);

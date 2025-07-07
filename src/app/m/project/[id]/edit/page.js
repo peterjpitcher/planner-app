@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 
 const MobileEditProjectPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -61,7 +62,6 @@ const MobileEditProjectPage = () => {
             setError('Project not found.');
           }
         } catch (e) {
-          console.error('Error fetching project for edit:', e);
           setError('Failed to load project data.');
         }
         setIsLoading(false);
@@ -100,7 +100,6 @@ const MobileEditProjectPage = () => {
       router.replace(`/m/project/${projectId}`); // Navigate back using replace
       // router.refresh(); // Consider if a refresh is needed or if optimistic update is better
     } catch (err) {
-      console.error('Error updating project:', err);
       setFormError('Failed to save project. ' + (err.message || ''));
     } finally {
       setIsSaving(false);
@@ -124,7 +123,6 @@ const MobileEditProjectPage = () => {
       // and ideally, the dashboard should re-fetch or update its list.
       router.replace('/m/dashboard'); 
     } catch (err) {
-      console.error('Error deleting project:', err);
       setFormError('Failed to delete project. ' + (err.message || ''));
       setIsDeleting(false); // Only set to false on error, otherwise page navigates away
     }

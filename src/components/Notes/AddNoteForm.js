@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, forwardRef } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 
 // Wrapped component with forwardRef
 const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled }, ref) => {
+  const supabase = useSupabase();
   const { data: session } = useSession();
   const user = session?.user;
   const [noteContent, setNoteContent] = useState('');
@@ -55,7 +56,6 @@ const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled },
         onNoteAdded(data); // Pass the newly added note back
       }
     } catch (err) {
-      console.error('Error saving note:', err);
       setError(err.message || 'Failed to save note.');
     } finally {
       setIsSaving(false);

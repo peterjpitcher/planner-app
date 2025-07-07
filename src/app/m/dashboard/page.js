@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileProjectListItem from '@/components/Mobile/MobileProjectListItem';
 import { useSession } from 'next-auth/react';
 import { FunnelIcon, XMarkIcon } from '@heroicons/react/20/solid'; // For filter icons
 
 const MobileDashboardPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -66,7 +67,6 @@ const MobileDashboardPage = () => {
       setProjects(projectsWithOpenTaskCount);
 
     } catch (e) {
-      console.error('Error fetching projects:', e);
       setError('Failed to load projects.');
       setProjects([]);
     } finally {

@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { 
   startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, 
   addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, format, isEqual,
@@ -12,6 +14,9 @@ import Link from 'next/link';
 import NoteList from '@/components/Notes/NoteList'; // Assuming this can be reused
 
 const CompletedReportPage = () => {
+  const supabase = useSupabase();
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState('day'); // 'day', 'week', 'month'
   const [dateRange, setDateRange] = useState({ startDate: startOfDay(new Date()), endDate: endOfDay(new Date()) });
@@ -27,6 +32,13 @@ const CompletedReportPage = () => {
   const [projectsInPeriod, setProjectsInPeriod] = useState([]);
   const [copyStatusMessage, setCopyStatusMessage] = useState('Copy Report');
   const [hideBillStakeholder, setHideBillStakeholder] = useState(false);
+
+  // Authentication check
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.replace('/login');
+    }
+  }, [status, router]);
 
   // Calculate date range based on viewType and currentDate
   useEffect(() => {
@@ -100,7 +112,6 @@ const CompletedReportPage = () => {
       setAllUserNotes(notes || []);
 
     } catch (err) {
-      console.error('Error fetching completed items:', err);
       setError(err.message || 'Failed to fetch data.');
       setCompletedTasksData([]);
       setCompletedProjectsData([]);
@@ -206,18 +217,6 @@ const CompletedReportPage = () => {
             if (hideBillStakeholder && task.project_id && Array.isArray(task.project_id.stakeholders)) {
               taskIsBillHidden = task.project_id.stakeholders.includes('Bill');
             }
-            
-            console.log('[Debug Task Filter]', { 
-              taskId: task.id, 
-              taskName: task.name, 
-              hideBillFlag: hideBillStakeholder, 
-              parentProjectId: task.project_id?.id, 
-              parentProjectName: task.project_id?.name, 
-              parentProjectStakeholders: task.project_id?.stakeholders, 
-              taskIsBillHiddenLogic: taskIsBillHidden, 
-              taskIsVisibleLogic: isVisible, 
-              isPassingThroughFilter: isVisible && !taskIsBillHidden 
-            });
             return isVisible && !taskIsBillHidden;
           })
           .map(task => ({ ...task, type: 'task', date: parseISO(task.completed_at) })),
@@ -226,7 +225,6 @@ const CompletedReportPage = () => {
             const isVisible = projectVisibility[project.id];
             // Bill filtering for directly completed projects remains the same (uses project.stakeholders)
             const isBillHidden = hideBillStakeholder && project.stakeholders?.includes('Bill');
-            // console.log('[Debug Project Filter]', { projectId: project.id, name: project.name, hideBillFlag: hideBillStakeholder, stakeholders: project.stakeholders, isBillHidden, isVisible, isPassing: isVisible && !isBillHidden });
             return isVisible && !isBillHidden;
           })
           .map(project => ({ ...project, type: 'project', date: parseISO(project.updated_at) })), // Assuming updated_at is completion
@@ -250,24 +248,12 @@ const CompletedReportPage = () => {
                 (!note.tasks && !note.projects); // Standalone notes are visible if not filtered by Bill
 
             if (!note.tasks && !note.projects) { // Note not linked to any project
-              console.log('[Debug Note Filter - Standalone]', { noteId: note.id, content: note.content?.substring(0,20), hideBillFlag: hideBillStakeholder, isVisible: isNoteVisibleByProjectParent, isPassing: isNoteVisibleByProjectParent });
               return isNoteVisibleByProjectParent; 
             }
             
             if (hideBillStakeholder && Array.isArray(parentProjectForNoteStakeholders)) {
               noteIsBillHidden = parentProjectForNoteStakeholders.includes('Bill');
             }
-            
-            console.log('[Debug Note Filter - Project-Linked]', { 
-              noteId: note.id, 
-              content: note.content?.substring(0,20), 
-              hideBillFlag: hideBillStakeholder, 
-              parentInfo: parentProjectForNoteInfo ? {id: parentProjectForNoteInfo.id, name: parentProjectForNoteInfo.name, stakeholders: parentProjectForNoteInfo.stakeholders} : null,
-              // projectStakeholders: parentProjectForNoteStakeholders, // Redundant, covered by parentInfo
-              noteIsBillHiddenLogic: noteIsBillHidden, 
-              noteIsVisibleByParentLogic: isNoteVisibleByProjectParent, 
-              isPassingThroughFilter: isNoteVisibleByProjectParent && !noteIsBillHidden 
-            });
             return isNoteVisibleByProjectParent && !noteIsBillHidden;
           })
           .map(note => ({ ...note, type: 'note', date: parseISO(note.created_at) }))
@@ -379,7 +365,6 @@ const CompletedReportPage = () => {
       await navigator.clipboard.writeText(reportText);
       setCopyStatusMessage('Copied!');
     } catch (err) {
-      console.error('Failed to copy report:', err);
       setCopyStatusMessage('Error copying!');
     }
     setTimeout(() => setCopyStatusMessage('Copy Report'), 2000);
@@ -461,6 +446,15 @@ const CompletedReportPage = () => {
     });
   };
 
+
+  // Authentication and loading states
+  if (status === 'loading') {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+
+  if (!session?.user) {
+    return null; // Middleware will handle redirect
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">

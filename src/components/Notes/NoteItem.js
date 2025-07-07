@@ -1,8 +1,9 @@
 'use client';
 
+import React from 'react';
 import { format } from 'date-fns';
 
-export default function NoteItem({ note }) {
+function NoteItem({ note }) {
   if (!note) return null;
 
   const formattedDate = format(new Date(note.created_at), 'EEEE, MMM do, h:mm a');
@@ -14,4 +15,8 @@ export default function NoteItem({ note }) {
       </p>
     </div>
   );
-} 
+}
+
+export default React.memo(NoteItem, (prevProps, nextProps) => {
+  return prevProps.note.id === nextProps.note.id;
+}); 

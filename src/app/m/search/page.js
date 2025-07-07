@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileProjectListItem from '@/components/Mobile/MobileProjectListItem';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
 
 function SearchResults() {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -44,7 +45,7 @@ function SearchResults() {
         .ilike('name', `%${query}%`); // Case-insensitive search on name
         // Add .or(`description.ilike.%${query}%`) if searching descriptions too
       
-      if (projectError) console.error('Project search error:', projectError);
+      if (projectError) {} // Project search error
       const projectsWithOpenTaskCount = (projectData || []).map(p => ({
         ...p,
         open_tasks_count: p.tasks ? p.tasks.filter(t => !t.is_completed).length : 0,
@@ -59,7 +60,7 @@ function SearchResults() {
         .ilike('name', `%${query}%`);
         // Add .or(`description.ilike.%${query}%`) if searching descriptions too
 
-      if (taskError) console.error('Task search error:', taskError);
+      if (taskError) {} // Task search error
       setTasks(taskData || []);
 
       if (projectError || taskError) {
@@ -67,7 +68,6 @@ function SearchResults() {
       }
 
     } catch (e) {
-      console.error('Global search error:', e);
       setError('Search failed. Please try again.');
       setProjects([]);
       setTasks([]);

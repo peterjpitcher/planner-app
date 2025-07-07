@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 import { quickPickOptions } from '@/lib/dateUtils';
 
 const MobileAddTaskPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -50,7 +51,6 @@ const MobileAddTaskPage = () => {
             setPriority(data.priority); // Set default task priority from project
           }
         } catch (err) {
-          console.error('Error fetching project priority for new task:', err);
           // Keep default medium if project fetch fails
         }
         setIsLoadingProject(false);
@@ -117,7 +117,6 @@ const MobileAddTaskPage = () => {
         router.replace(`/m/project/${projectId}`); // Use replace to avoid edit page in history
       }
     } catch (err) {
-      console.error('Error creating task:', err);
       setFormError('Failed to create task. ' + (err.message || ''));
     } finally {
       setIsSaving(false);

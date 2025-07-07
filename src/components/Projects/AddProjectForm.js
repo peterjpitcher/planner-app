@@ -1,11 +1,15 @@
 'use client';
 
 import { useState, useRef, useEffect, Fragment } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
-import { quickPickOptions } from '@/lib/dateUtils'; // Import quickPickOptions
+import { quickPickOptions } from '@/lib/dateUtils';
+import { validateProject, validateTask, sanitizeInput } from '@/lib/validators';
+import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
+import { handleSupabaseError } from '@/lib/errorHandler';
 
 export default function AddProjectForm({ onProjectAdded, onClose }) {
+  const supabase = useSupabase();
   const { data: session } = useSession();
   const user = session?.user;
   const [name, setName] = useState('');
@@ -43,29 +47,45 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
       setError('You must be logged in to add a project.');
       return;
     }
-    if (!name.trim()) {
-        setError('Project name is required.');
-        return;
+    // Prepare and validate project data
+    const projectData = {
+      user_id: user.id,
+      name: sanitizeInput(name),
+      due_date: dueDate || null,
+      priority: priority || PRIORITY.MEDIUM,
+      stakeholders: stakeholders.split(',').map(s => sanitizeInput(s)).filter(s => s),
+      description: sanitizeInput(description) || null,
+      status: PROJECT_STATUS.OPEN,
+    };
+    
+    const projectValidation = validateProject(projectData);
+    if (!projectValidation.isValid) {
+      setError(Object.values(projectValidation.errors)[0]); // Show first error
+      return;
     }
-    const newTaskErrors = tasks.map(t => (t.name.trim() || (!t.name.trim() && !t.description.trim() && !t.dueDate && !t.priority)) ? null : 'Task name is required if other task fields are present.');
+    
+    // Validate tasks
+    const tasksToValidate = tasks.filter(t => t.name.trim() || t.description.trim() || t.dueDate || t.priority);
+    const newTaskErrors = tasksToValidate.map((t, idx) => {
+      const taskData = {
+        name: sanitizeInput(t.name),
+        description: sanitizeInput(t.description),
+        due_date: t.dueDate || null,
+        priority: t.priority || priority,
+        project_id: 'temp' // Placeholder for validation
+      };
+      const validation = validateTask(taskData);
+      return validation.isValid ? null : Object.values(validation.errors)[0];
+    });
+    
     if (newTaskErrors.some(err => err !== null)) {
-        setTaskErrors(newTaskErrors);
-        return;
+      setTaskErrors(newTaskErrors);
+      return;
     }
     setTaskErrors([]);
 
     setError(null);
     setLoading(true);
-
-    const projectData = {
-      user_id: user.id,
-      name: name.trim(),
-      due_date: dueDate || null,
-      priority,
-      stakeholders: stakeholders.split(',').map(s => s.trim()).filter(s => s),
-      description: description.trim() || null,
-      status: 'Open',
-    };
 
     try {
       const { data: project, error: insertError } = await supabase
@@ -83,8 +103,8 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
             .insert(tasksToAdd.map(t => ({
               project_id: project.id,
               user_id: user.id,
-              name: t.name.trim(),
-              description: t.description.trim() || null,
+              name: sanitizeInput(t.name),
+              description: sanitizeInput(t.description) || null,
               due_date: t.dueDate || null,
               priority: t.priority || priority, // Default to project priority if task priority not set
             })));
@@ -99,7 +119,6 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
         }
       }
     } catch (err) {
-      console.error('Error adding project or tasks:', err);
       setError(err.message || 'Failed to add project or tasks.');
     } finally {
       setLoading(false);

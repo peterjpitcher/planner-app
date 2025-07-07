@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import {
   ChevronRightIcon,
@@ -118,4 +119,13 @@ const MobileProjectListItem = ({ project }) => {
   );
 };
 
-export default MobileProjectListItem; 
+export default React.memo(MobileProjectListItem, (prevProps, nextProps) => {
+  return (
+    prevProps.project.id === nextProps.project.id &&
+    prevProps.project.updated_at === nextProps.project.updated_at &&
+    prevProps.project.name === nextProps.project.name &&
+    prevProps.project.status === nextProps.project.status &&
+    prevProps.project.priority === nextProps.project.priority &&
+    prevProps.project.due_date === nextProps.project.due_date
+  );
+}); 

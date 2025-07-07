@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
@@ -20,6 +20,7 @@ const getPriorityValue = (priority) => {
 };
 
 const MobileTasksPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -64,7 +65,6 @@ const MobileTasksPage = () => {
       setProjects(projectsData || []);
 
     } catch (e) {
-      console.error('Error fetching tasks or projects:', e);
       setError('Failed to load data.');
       setTasks([]);
       setProjects([]);

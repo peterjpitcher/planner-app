@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { PencilIcon, CheckCircleIcon as OutlineCheckCircleIcon } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
@@ -69,6 +69,7 @@ const getPriorityValue = (priority) => {
 };
 
 function StandaloneTaskItem({ task, project, onTaskUpdated }) {
+  const supabase = useSupabase();
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(task.name);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
@@ -106,7 +107,6 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       if (onTaskUpdated) onTaskUpdated(data);
       setIsEditingName(false);
     } catch (err) {
-      console.error('Error updating task name:', err);
       setCurrentName(task.name); // revert
       setIsEditingName(false);
     }
@@ -129,7 +129,6 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       if (onTaskUpdated) onTaskUpdated(data);
       setIsEditingDueDate(false);
     } catch (err) {
-      console.error('Error updating task due date:', err);
       setCurrentDueDate(originalFormattedDate); // revert
       setIsEditingDueDate(false);
     }
@@ -146,7 +145,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       if (error) throw error;
       if (onTaskUpdated) onTaskUpdated(data);
     } catch (err) {
-      console.error('Error updating task status:', err);
+      // Error updating task status
     }
   };
 
@@ -166,7 +165,6 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       if (onTaskUpdated) onTaskUpdated(data);
       setIsEditingPriority(false);
     } catch (err) {
-      console.error('Error updating task priority:', err);
       setCurrentPriority(task.priority || ''); // revert
       setIsEditingPriority(false);
     }
@@ -286,6 +284,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
 }
 
 export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder }) {
+  const supabase = useSupabase();
   const [isLoading, setIsLoading] = useState(true);
   const { targetProjectId, setTargetProjectId, actionedProjectIdRef } = useTargetProject();
 

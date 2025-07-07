@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 
 const MobileEditTaskPage = () => {
+  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -58,7 +59,6 @@ const MobileEditTaskPage = () => {
             setError('Task not found.');
           }
         } catch (e) {
-          console.error('Error fetching task for edit:', e);
           setError('Failed to load task data.');
         }
         setIsLoading(false);
@@ -92,7 +92,6 @@ const MobileEditTaskPage = () => {
       if (updateError) throw updateError;
       router.replace(`/m/task/${taskId}`); // Navigate back to task detail page
     } catch (err) {
-      console.error('Error updating task:', err);
       setFormError('Failed to save task. ' + (err.message || ''));
     } finally {
       setIsSaving(false);
@@ -119,7 +118,6 @@ const MobileEditTaskPage = () => {
         router.replace('/m/tasks'); // Fallback if no project_id (should not happen for tasks)
       }
     } catch (err) {
-      console.error('Error deleting task:', err);
       setFormError('Failed to delete task. ' + (err.message || ''));
       setIsDeleting(false);
     }

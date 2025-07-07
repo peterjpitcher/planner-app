@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
-import { supabase } from '@/lib/supabaseClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { quickPickOptions } from '@/lib/dateUtils';
+import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
 import NoteList from '@/components/Notes/NoteList';
@@ -61,7 +62,8 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   return { text, classes, fullDate: fullDateText };
 };
 
-export default function TaskItem({ task, onTaskUpdated }) {
+function TaskItem({ task, onTaskUpdated }) {
+  const supabase = useSupabase();
   // All useState hooks
   const [isCompleted, setIsCompleted] = useState(task ? task.is_completed : false);
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
@@ -106,10 +108,15 @@ export default function TaskItem({ task, onTaskUpdated }) {
     try {
       // Sort notes by created_at descending (newest first)
       const { data, error } = await supabase.from('notes').select('*').eq('task_id', task.id).order('created_at', { ascending: false });
-      if (error) throw error;
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'fetch');
+        handleError(error, 'fetchNotes', { fallbackMessage: errorMessage });
+        setNotes([]);
+        return;
+      }
       setNotes(data || []);
     } catch (error) {
-      console.error('Error fetching notes for task:', error);
+      handleError(error, 'fetchNotes');
       setNotes([]);
     } finally {
       setIsLoadingNotes(false);
@@ -124,15 +131,19 @@ export default function TaskItem({ task, onTaskUpdated }) {
   }, [task?.id]); // fetchNotes is memoized, direct task.id is fine
   
   useEffect(() => {
+    let timeoutId;
     if (showNotes && task && task.id) { 
       fetchNotes(); // Re-fetch if already shown, or fetch if just shown
       // Delay focus slightly to ensure the input field is rendered and visible
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         if (noteInputRef.current) {
           noteInputRef.current.focus();
         }
       }, 100); // 100ms delay, adjust if needed
     }
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [showNotes, task, fetchNotes]); // Added fetchNotes to dependencies as it's called
   
   const taskNameInputRef = useRef(null);
@@ -177,13 +188,15 @@ export default function TaskItem({ task, onTaskUpdated }) {
         updated_at: new Date().toISOString() 
       }).eq('id', task.id);
       if (error) {
-        console.error('Error updating task status:', error);
+        const errorMessage = handleSupabaseError(error, 'update');
+        handleError(error, 'handleToggleComplete', { showAlert: true, fallbackMessage: errorMessage });
+        return;
       } else {
         setIsCompleted(newCompletedStatus);
         if (onTaskUpdated) onTaskUpdated({ ...task, is_completed: newCompletedStatus, completed_at: newCompletedStatus ? new Date().toISOString() : null, updated_at: new Date().toISOString() });
       }
     } catch (err) {
-      console.error('Exception while updating task:', err);
+      handleError(err, 'handleToggleComplete', { showAlert: true });
     } finally {
       setIsUpdatingTask(false);
     }
@@ -197,7 +210,10 @@ export default function TaskItem({ task, onTaskUpdated }) {
   const createUpdateHandler = (field, currentValue, originalValue, setter, editSetter, isDate = false) => async () => {
     // Ensure task exists before trying to update
     if (!task) {
-        alert('Cannot update: task data is missing.');
+        handleError(new Error('Task data is missing'), 'createUpdateHandler', { 
+          showAlert: true,
+          fallbackMessage: 'Cannot update: task data is missing.'
+        });
         if (editSetter) editSetter(false);
         return;
     }
@@ -217,17 +233,24 @@ export default function TaskItem({ task, onTaskUpdated }) {
       }
 
       const { data, error } = await supabase.from('tasks').update(updateObject).eq('id', task.id).select().single();
-      if (error) throw error;
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'update');
+        throw new Error(errorMessage);
+      }
       if (data) {
         if (onTaskUpdated) onTaskUpdated(data); // Pass the updated task object
         setter(isDate && data[field] ? format(new Date(data[field]), 'yyyy-MM-dd') : data[field]);
       } else {
-        alert(`Failed to update task ${field}. No data returned.`);
+        const errorMessage = `Failed to update task ${field}. No data returned.`;
+        handleError(new Error(errorMessage), 'createUpdateHandler', { showAlert: true, fallbackMessage: errorMessage });
         setter(originalValue); // Revert on failure
       }
     } catch (err) {
-      console.error(`Error updating task ${field}:`, err);
-      alert(`Failed to update task ${field}: ${err.message}`);
+      const errorMessage = handleSupabaseError(err, 'update') || err.message;
+      handleError(err, 'createUpdateHandler', { 
+        showAlert: true, 
+        fallbackMessage: `Failed to update task ${field}: ${errorMessage}`
+      });
       setter(isDate && originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : (originalValue || (isDate ? '' : ''))); 
     } finally {
       editSetter(false);
@@ -266,22 +289,22 @@ export default function TaskItem({ task, onTaskUpdated }) {
 
   const itemBaseClasses = "p-1.5 rounded-md shadow-sm mb-1.5 flex flex-col transition-all hover:shadow-md";
   const completedItemVisualClasses = isCompleted ? "opacity-60 hover:opacity-80" : "";
-  const editableTextClasses = (isEditState) => `cursor-text hover:bg-gray-100 p-0.5 rounded-sm ${isCompleted && !isEditState ? 'line-through text-gray-500' : 'text-gray-800'}`;
+  const editableTextClasses = (isEditState) => `cursor-text hover:bg-gray-100 rounded-sm ${isCompleted && !isEditState ? 'line-through text-gray-500' : 'text-gray-800'}`;
 
   return (
     <div 
-      className={`p-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} transition-opacity duration-150 relative group`}
+      className={`py-0.5 px-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} transition-opacity duration-150 relative group`}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-2">
         <input
           type="checkbox"
           checked={isCompleted}
           onChange={handleToggleComplete}
           disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
-          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2.5 mt-0.5 flex-shrink-0"
+          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0"
         />
-        <div className="flex-grow min-w-0">
-          <div className="flex items-baseline gap-x-1.5">
+        <div className="flex-grow min-w-0 flex items-center gap-2">
+          <div className="flex items-center gap-x-1.5 flex-grow">
             {isEditingTaskName ? (
               <input
                 type="text"
@@ -295,7 +318,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
             ) : (
               <span 
                 onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
-                className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0 break-words`}
+                className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0`}
                 title={currentTaskName}
               >
                 {currentTaskName || 'Untitled Task'}
@@ -316,7 +339,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
               ) : (
                 <span 
                   onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
-                  className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''} truncate`}
+                  className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''}`}
                   title={currentTaskDescription}
                 >
                   {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
@@ -325,19 +348,21 @@ export default function TaskItem({ task, onTaskUpdated }) {
             )}
           </div>
         </div>
-        <div className="flex-shrink-0 ml-2">
+        <div className="flex-shrink-0">
           {!isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && !isEditingPriority && (
-            <PencilIcon 
-              className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
+            <button
+              className="icon-button text-gray-400 hover:text-indigo-600 cursor-pointer"
               onClick={() => {
                 setIsEditingTaskName(true);
               }}
               title="Edit task details"
-            />
+            >
+              <PencilIcon className="h-4 w-4" />
+            </button>
           )}
         </div>
 
-        <div className="flex items-center space-x-2 sm:space-x-3 text-xs mt-1 sm:mt-0 pl-[2.125rem] sm:pl-0 flex-shrink-0">
+        <div className="flex items-center space-x-2 text-xs flex-shrink-0">
           {isEditingPriority ? (
             <select 
               value={currentPriority}
@@ -387,7 +412,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
           
           <button 
             onClick={() => setShowNotes(!showNotes)} 
-            className="relative text-gray-400 hover:text-indigo-600 flex items-center"
+            className="icon-button relative text-gray-400 hover:text-indigo-600 flex items-center"
             aria-expanded={showNotes}
             aria-controls={`notes-section-${task.id}`}
             disabled={isLoadingNotes}
@@ -406,7 +431,7 @@ export default function TaskItem({ task, onTaskUpdated }) {
       </div>
 
       {showNotes && (
-        <div id={`notes-section-${task.id}`} className="mt-2 pt-1.5 border-t border-gray-200">
+        <div id={`notes-section-${task.id}`} className="mt-1 pt-1 border-t border-gray-200">
           <AddNoteForm
             ref={noteInputRef}
             parentId={task.id}
@@ -422,4 +447,15 @@ export default function TaskItem({ task, onTaskUpdated }) {
       )}
     </div>
   );
-} 
+}
+
+export default React.memo(TaskItem, (prevProps, nextProps) => {
+  return (
+    prevProps.task.id === nextProps.task.id &&
+    prevProps.task.updated_at === nextProps.task.updated_at &&
+    prevProps.task.name === nextProps.task.name &&
+    prevProps.task.is_completed === nextProps.task.is_completed &&
+    prevProps.task.priority === nextProps.task.priority &&
+    prevProps.task.due_date === nextProps.task.due_date
+  );
+}); 
