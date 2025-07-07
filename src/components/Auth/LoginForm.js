@@ -23,9 +23,18 @@ export default function LoginForm() {
         password,
       });
 
-      if (result.error) {
-        // You can customize error messages based on `result.error`
-        setError('Invalid login credentials. Please try again.');
+      if (result?.error) {
+        // Log error for debugging in production
+        console.error('Login error:', result.error);
+        
+        // Provide more specific error messages
+        if (result.error === 'CredentialsSignin') {
+          setError('Invalid email or password. Please try again.');
+        } else if (result.error === 'Configuration') {
+          setError('Server configuration error. Please contact support.');
+        } else {
+          setError(`Login failed: ${result.error}`);
+        }
         setLoading(false);
         return;
       }
@@ -37,12 +46,18 @@ export default function LoginForm() {
         // and let a server component handle the redirect logic.
       }
     } catch (err) {
-      // This catch block might not be necessary for signIn errors,
-      // but it's good practice to have it for unexpected issues.
-      setError(err.message || 'An unexpected error occurred.');
+      // Log the full error for debugging
+      console.error('Unexpected login error:', err);
+      setError('An unexpected error occurred. Please try again later.');
       setLoading(false);
+    } finally {
+      // Always reset loading state if we're still on the page
+      setTimeout(() => {
+        if (document.querySelector('[type="submit"]')) {
+          setLoading(false);
+        }
+      }, 5000); // Timeout after 5 seconds as a safety measure
     }
-    // No need to set loading to false here if redirecting
   };
 
   return (
