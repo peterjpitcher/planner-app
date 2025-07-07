@@ -2,6 +2,14 @@ import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { supabase } from '@/lib/supabaseClient';
 
+// Debug environment on startup (remove in production)
+console.log('NextAuth Config:', {
+  NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
+  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
+  NODE_ENV: process.env.NODE_ENV,
+  SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET',
+});
+
 export const authOptions = {
   // 1. Choose your sign-in methods
   providers: [
@@ -13,31 +21,43 @@ export const authOptions = {
       },
       authorize: async (credentials) => {
         if (!credentials?.email || !credentials.password) {
+          console.error('NextAuth: Missing credentials');
           return null;
         }
 
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: credentials.email,
-          password: credentials.password,
-        });
+        try {
+          console.log('NextAuth: Attempting Supabase login for:', credentials.email);
+          
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: credentials.email,
+            password: credentials.password,
+          });
 
-        if (error) {
-          return null; // Returning null will trigger a failed login
+          if (error) {
+            console.error('NextAuth: Supabase auth error:', error.message);
+            console.error('NextAuth: Error details:', error);
+            return null; // Returning null will trigger a failed login
+          }
+
+          if (data.user && data.session) {
+            console.log('NextAuth: Login successful for user:', data.user.id);
+            // You can return a custom object here.
+            // The `user` object will be encoded in the JWT.
+            return {
+              id: data.user.id,
+              email: data.user.email,
+              accessToken: data.session.access_token,
+              // You can add other properties from your user table here
+              // e.g. name: data.user.user_metadata.full_name
+            };
+          }
+
+          console.error('NextAuth: No user or session data returned');
+          return null;
+        } catch (err) {
+          console.error('NextAuth: Unexpected error during authorization:', err);
+          return null;
         }
-
-        if (data.user && data.session) {
-          // You can return a custom object here.
-          // The `user` object will be encoded in the JWT.
-          return {
-            id: data.user.id,
-            email: data.user.email,
-            accessToken: data.session.access_token,
-            // You can add other properties from your user table here
-            // e.g. name: data.user.user_metadata.full_name
-          };
-        }
-
-        return null;
       },
     }),
     // …or add OAuth providers (Google, GitHub, etc.)
@@ -101,8 +121,11 @@ export const authOptions = {
 
   pages: {
     signIn: '/login',
-    // error: '/auth/error', // You can specify a custom error page
+    error: '/login', // Redirect errors back to login page with error params
   },
+  
+  // Enable debug mode in development
+  debug: process.env.NODE_ENV === 'development',
 };
 
 const handler = NextAuth(authOptions);
