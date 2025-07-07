@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { useSession } from 'next-auth/react';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { validateTask, sanitizeInput } from '@/lib/validators';
@@ -12,7 +12,6 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 // If `projectId` is provided, it's for adding a task to a specific project.
 // If `projects` array is provided, it's for adding a task from a general page, requiring project selection.
 export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose, defaultPriority = 'Medium' }) {
-  const supabase = useSupabase();
   const { data: session } = useSession();
   const user = session?.user;
   const [name, setName] = useState('');
@@ -147,19 +146,9 @@ export default function AddTaskForm({ projectId, projects, onTaskAdded, onClose,
     try {
       // If isRepeating, here you would generate multiple tasks based on recurrence rules
       // and insert them. For now, it just inserts one.
-      const { data: newTask, error: insertError } = await supabase
-        .from('tasks')
-        .insert(taskData) // This would become an array insert if repeating
-        .select('*, projects(id, name)') 
-        .single(); // Adjust if inserting multiple
+      const newTask = await apiClient.createTask(taskData);
 
-      if (insertError) throw insertError;
-
-      // Update parent project's updated_at timestamp
-      await supabase
-        .from('projects')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', selectedProjectId);
+      // Update parent project's updated_at timestamp is handled by the API
 
       if (onTaskAdded) {
         onTaskAdded(newTask); 

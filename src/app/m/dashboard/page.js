@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileProjectListItem from '@/components/Mobile/MobileProjectListItem';
 import { useSession } from 'next-auth/react';
 import { FunnelIcon, XMarkIcon } from '@heroicons/react/20/solid'; // For filter icons
 
 const MobileDashboardPage = () => {
-  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -31,18 +30,22 @@ const MobileDashboardPage = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: dbError } = await supabase
-        .from('projects')
-        .select('*, tasks(id, is_completed)') // Fetch tasks to count open ones
-        .eq('user_id', user.id)
-        .not('status', 'in', '("Completed", "Cancelled")'); // Filter out completed or cancelled projects
-
-      if (dbError) throw dbError;
+      // Fetch projects (excluding completed/cancelled)
+      const projectData = await apiClient.getProjects(false);
       
-      let projectsWithOpenTaskCount = data.map(p => ({
-        ...p,
-        open_tasks_count: p.tasks ? p.tasks.filter(t => !t.is_completed).length : 0,
-      }));
+      // Fetch tasks for each project to count open ones
+      const projectsWithOpenTaskCount = await Promise.all(
+        projectData.map(async (project) => {
+          try {
+            const tasks = await apiClient.getTasks(project.id);
+            const openTasksCount = tasks.filter(t => !t.is_completed).length;
+            return { ...project, open_tasks_count: openTasksCount };
+          } catch (error) {
+            console.error(`Failed to fetch tasks for project ${project.id}:`, error);
+            return { ...project, open_tasks_count: 0 };
+          }
+        })
+      );
 
       // Apply comprehensive client-side sorting
       projectsWithOpenTaskCount.sort((a, b) => {

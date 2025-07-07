@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon } from '@heroicons/react/24/outline';
@@ -63,7 +63,6 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
 };
 
 function TaskItem({ task, onTaskUpdated }) {
-  const supabase = useSupabase();
   // All useState hooks
   const [isCompleted, setIsCompleted] = useState(task ? task.is_completed : false);
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
@@ -106,15 +105,12 @@ function TaskItem({ task, onTaskUpdated }) {
     if (!task || !task.id) return; 
     setIsLoadingNotes(true);
     try {
+      const data = await apiClient.getNotes(null, task.id);
       // Sort notes by created_at descending (newest first)
-      const { data, error } = await supabase.from('notes').select('*').eq('task_id', task.id).order('created_at', { ascending: false });
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'fetch');
-        handleError(error, 'fetchNotes', { fallbackMessage: errorMessage });
-        setNotes([]);
-        return;
-      }
-      setNotes(data || []);
+      const sortedNotes = (data || []).sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
+      setNotes(sortedNotes);
     } catch (error) {
       handleError(error, 'fetchNotes');
       setNotes([]);
@@ -182,19 +178,13 @@ function TaskItem({ task, onTaskUpdated }) {
     setIsUpdatingTask(true);
     const newCompletedStatus = !isCompleted;
     try {
-      const { error } = await supabase.from('tasks').update({ 
+      const data = await apiClient.updateTask(task.id, { 
         is_completed: newCompletedStatus, 
         completed_at: newCompletedStatus ? new Date().toISOString() : null,
         updated_at: new Date().toISOString() 
-      }).eq('id', task.id);
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'update');
-        handleError(error, 'handleToggleComplete', { showAlert: true, fallbackMessage: errorMessage });
-        return;
-      } else {
-        setIsCompleted(newCompletedStatus);
-        if (onTaskUpdated) onTaskUpdated({ ...task, is_completed: newCompletedStatus, completed_at: newCompletedStatus ? new Date().toISOString() : null, updated_at: new Date().toISOString() });
-      }
+      });
+      setIsCompleted(newCompletedStatus);
+      if (onTaskUpdated) onTaskUpdated(data);
     } catch (err) {
       handleError(err, 'handleToggleComplete', { showAlert: true });
     } finally {
@@ -232,11 +222,7 @@ function TaskItem({ task, onTaskUpdated }) {
           updateObject[field] = null;
       }
 
-      const { data, error } = await supabase.from('tasks').update(updateObject).eq('id', task.id).select().single();
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'update');
-        throw new Error(errorMessage);
-      }
+      const data = await apiClient.updateTask(task.id, updateObject);
       if (data) {
         if (onTaskUpdated) onTaskUpdated(data); // Pass the updated task object
         setter(isDate && data[field] ? format(new Date(data[field]), 'yyyy-MM-dd') : data[field]);

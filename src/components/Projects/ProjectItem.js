@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, forwardRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { 
@@ -94,7 +94,6 @@ const getStatusClasses = (status) => {
 };
 
 const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
-  const supabase = useSupabase();
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
@@ -149,20 +148,21 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     if (!project || !project.id) return;
     setIsLoadingTasks(true);
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('is_completed', { ascending: true })
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('priority', { ascending: true, nullsFirst: false });
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'fetch');
-        handleError(error, 'fetchTasks', { showAlert: true, fallbackMessage: errorMessage });
-        setTasks([]);
-        return;
-      }
-      setTasks(data || []);
+      const data = await apiClient.getTasks(project.id);
+      // Sort tasks client-side
+      const sortedTasks = (data || []).sort((a, b) => {
+        if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+        // Sort by due date
+        const dateA = a.due_date ? new Date(a.due_date) : null;
+        const dateB = b.due_date ? new Date(b.due_date) : null;
+        if (dateA && dateB) return dateA - dateB;
+        if (dateA) return -1;
+        if (dateB) return 1;
+        // Sort by priority
+        const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
+        return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+      });
+      setTasks(sortedTasks);
     } catch (err) {
       handleError(err, 'fetchTasks', { showAlert: true });
       setTasks([]);
@@ -179,19 +179,12 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     if (!project || !project.id) return;
     setIsLoadingProjectNotes(true);
     try {
-      const { data, error } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('project_id', project.id)
-        .is('task_id', null)
-        .order('created_at', { ascending: true });
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'fetch');
-        handleError(error, 'fetchProjectNotes', { fallbackMessage: errorMessage });
-        setProjectNotes([]);
-        return;
-      }
-      setProjectNotes(data || []);
+      const data = await apiClient.getNotes(project.id);
+      // Sort notes by created_at ascending
+      const sortedNotes = (data || []).sort((a, b) => 
+        new Date(a.created_at) - new Date(b.created_at)
+      );
+      setProjectNotes(sortedNotes);
     } catch (err) {
       handleError(err, 'fetchProjectNotes');
       setProjectNotes([]);
@@ -255,14 +248,9 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
       return;
     }
     try {
-      const { error } = await supabase
-        .from('projects')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', project.id);
-      if (error) {
-        // Silently fail - timestamp update is non-critical
-        handleError(error, 'updateParentProjectTimestamp');
-      }
+      await apiClient.updateProject(project.id, { 
+        updated_at: new Date().toISOString() 
+      });
     } catch (err) {
       // Silently fail - timestamp update is non-critical
       handleError(err, 'updateParentProjectTimestamp');
@@ -308,12 +296,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const handleDeleteProject = async () => {
     if (project && window.confirm('Are you sure you want to delete project "' + project.name + '" and all its tasks? This action cannot be undone.')) {
         try {
-            const { error } = await supabase.from('projects').delete().eq('id', project.id);
-            if (error) {
-              const errorMessage = handleSupabaseError(error, 'delete');
-              handleError(error, 'handleDeleteProject', { showAlert: true, fallbackMessage: errorMessage });
-              return;
-            }
+            await apiClient.deleteProject(project.id);
             if (onProjectDeleted) onProjectDeleted(project.id);
         } catch (err) {
             handleError(err, 'handleDeleteProject', { showAlert: true });
@@ -354,18 +337,23 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
 
     projectDataText += `\nTasks:\n`;
 
-    // Fetch all tasks for this project to ensure we have latest, including their notes
+    // Fetch all tasks for this project to ensure we have latest
     try {
-      const { data: tasksWithDetails, error: tasksError } = await supabase
-        .from('tasks')
-        .select('*, notes(*)') // Fetch tasks and their related notes
-        .eq('project_id', project.id)
-        .order('created_at', { ascending: true });
-
-      if (tasksError) throw tasksError;
-
-      if (tasksWithDetails && tasksWithDetails.length > 0) {
-        tasksWithDetails.forEach(taskItem => {
+      const tasksWithDetails = await apiClient.getTasks(project.id);
+      
+      // For each task, fetch its notes
+      const tasksWithNotes = await Promise.all(
+        tasksWithDetails.map(async (task) => {
+          try {
+            const notes = await apiClient.getNotes(null, task.id);
+            return { ...task, notes: notes || [] };
+          } catch (err) {
+            return { ...task, notes: [] };
+          }
+        })
+      ); // Fetch tasks and their related notes
+      if (tasksWithNotes && tasksWithNotes.length > 0) {
+        tasksWithNotes.forEach(taskItem => {
           // Exclude taskItem.id and taskItem.project_id
           projectDataText += `  - Task: ${taskItem.name}\n`;
           projectDataText += `    Description: ${taskItem.description || 'N/A'}\n`;
@@ -408,18 +396,10 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
   const updateProjectStatusInDb = async (newStatus) => {
     if (!project) return false;
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', project.id)
-        .select()
-        .single();
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'update');
-        handleError(error, 'updateProjectStatusInDb', { showAlert: true, fallbackMessage: errorMessage });
-        setCurrentStatus(project ? project.status || 'Open' : 'Open');
-        return false;
-      }
+      const data = await apiClient.updateProject(project.id, { 
+        status: newStatus, 
+        updated_at: new Date().toISOString() 
+      });
       setCurrentStatus(newStatus);
       if (onProjectDataChange && project) { // Pass the full updated project object or essential fields
           onProjectDataChange(project.id, data, 'project_status_changed');
@@ -450,14 +430,15 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     const openTasks = tasks.filter(task => !task.is_completed);
     if (openTasks.length > 0) {
       try {
-        const updates = openTasks.map(task => 
-          supabase.from('tasks').update({ 
-            is_completed: true, 
-            completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }).eq('id', task.id)
+        await Promise.all(
+          openTasks.map(task => 
+            apiClient.updateTask(task.id, { 
+              is_completed: true, 
+              completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+          )
         );
-        await Promise.all(updates);
         fetchTasks();
       } catch (err) {
         handleError(err, 'handleConfirmCompleteTasksAndProject', { 
@@ -518,11 +499,7 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
       if (isDate && !processedValue) {
           updateObject[field] = null;
       }
-      const { data, error } = await supabase.from('projects').update(updateObject).eq('id', project.id).select().single();
-      if (error) {
-        const errorMessage = handleSupabaseError(error, 'update');
-        throw new Error(errorMessage);
-      }
+      const data = await apiClient.updateProject(project.id, updateObject);
       if (data) {
         setter(
           isDate && data[field] ? format(new Date(data[field]), 'yyyy-MM-dd') : 

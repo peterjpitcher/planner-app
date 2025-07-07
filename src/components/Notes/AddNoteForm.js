@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, forwardRef } from 'react';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { useSession } from 'next-auth/react';
 
 // Wrapped component with forwardRef
 const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled }, ref) => {
-  const supabase = useSupabase();
   const { data: session } = useSession();
   const user = session?.user;
   const [noteContent, setNoteContent] = useState('');
@@ -28,28 +27,18 @@ const AddNoteForm = forwardRef(({ parentId, parentType, onNoteAdded, disabled },
 
     const noteData = {
       content: noteContent.trim(),
-      user_id: user.id,
-      // parent_type: parentType, // Not needed for DB, but good for logic
+      project_id: parentType === 'project' ? parentId : null,
+      task_id: parentType === 'task' ? parentId : null
     };
 
-    if (parentType === 'project') {
-      noteData.project_id = parentId;
-    } else if (parentType === 'task') {
-      noteData.task_id = parentId;
-    } else {
+    if (parentType !== 'project' && parentType !== 'task') {
       setError('Invalid parent type for note.');
       setIsSaving(false);
       return;
     }
 
     try {
-      const { data, error: insertError } = await supabase
-        .from('notes')
-        .insert(noteData)
-        .select()
-        .single(); // Assuming we expect one note back
-
-      if (insertError) throw insertError;
+      const data = await apiClient.createNote(noteData);
 
       setNoteContent(''); // Clear input
       if (onNoteAdded && data) { // Check if data is not null

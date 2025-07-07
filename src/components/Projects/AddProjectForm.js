@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, Fragment } from 'react';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { useSession } from 'next-auth/react';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { validateProject, validateTask, sanitizeInput } from '@/lib/validators';
@@ -9,7 +9,6 @@ import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
 export default function AddProjectForm({ onProjectAdded, onClose }) {
-  const supabase = useSupabase();
   const { data: session } = useSession();
   const user = session?.user;
   const [name, setName] = useState('');
@@ -88,27 +87,27 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
     setLoading(true);
 
     try {
-      const { data: project, error: insertError } = await supabase
-        .from('projects')
-        .insert([projectData])
-        .select()
-        .single();
-      if (insertError) throw insertError;
+      const project = await apiClient.createProject(projectData);
       if (project) {
         const tasksToAdd = tasks.filter(t => t.name.trim());
         let taskInsertError = null;
         if (tasksToAdd.length > 0) {
-          const { error: taskError } = await supabase
-            .from('tasks')
-            .insert(tasksToAdd.map(t => ({
-              project_id: project.id,
-              user_id: user.id,
-              name: sanitizeInput(t.name),
-              description: sanitizeInput(t.description) || null,
-              due_date: t.dueDate || null,
-              priority: t.priority || priority, // Default to project priority if task priority not set
-            })));
-          if (taskError) taskInsertError = taskError;
+          try {
+            await Promise.all(
+              tasksToAdd.map(t => 
+                apiClient.createTask({
+                  project_id: project.id,
+                  user_id: user.id,
+                  name: sanitizeInput(t.name),
+                  description: sanitizeInput(t.description) || null,
+                  due_date: t.dueDate || null,
+                  priority: t.priority || priority, // Default to project priority if task priority not set
+                })
+              )
+            );
+          } catch (taskError) {
+            taskInsertError = taskError;
+          }
         }
         onProjectAdded(project);
         if (taskInsertError) {
