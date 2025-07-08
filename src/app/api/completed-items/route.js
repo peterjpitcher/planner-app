@@ -70,9 +70,9 @@ export async function GET(request) {
       .select('*, stakeholders')
       .eq('user_id', session.user.id)
       .eq('status', 'Completed')
-      .gte('completed_at', startDate)
-      .lte('completed_at', endDate)
-      .order('completed_at', { ascending: true });
+      .gte('updated_at', startDate)
+      .lte('updated_at', endDate)
+      .order('updated_at', { ascending: true });
       
     if (projectsError) {
       const errorMessage = handleSupabaseError(projectsError, 'fetch');

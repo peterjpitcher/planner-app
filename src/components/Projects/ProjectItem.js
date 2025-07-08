@@ -93,7 +93,7 @@ const getStatusClasses = (status) => {
   }
 };
 
-const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
+const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
   const [tasks, setTasks] = useState(propTasks || []);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
@@ -917,6 +917,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange
               ) : tasks.length > 0 ? (
                 <TaskList
                   tasks={tasks}
+                  notesByTask={notesByTask}
                   isLoading={isLoadingTasks}
                   onTaskUpdated={handleTaskUpdated}
                   showCompletedTasks={showCompletedTasks}

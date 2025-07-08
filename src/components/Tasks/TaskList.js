@@ -2,7 +2,7 @@
 
 import TaskItem from './TaskItem';
 
-export default function TaskList({ tasks, onTaskUpdated, showCompletedTasks }) {
+export default function TaskList({ tasks, notesByTask, onTaskUpdated, showCompletedTasks }) {
   if (!tasks) {
     return <p className="text-xs text-gray-500 py-1 italic">Loading tasks...</p>; // Or handle null state differently
   }
@@ -19,7 +19,7 @@ export default function TaskList({ tasks, onTaskUpdated, showCompletedTasks }) {
   return (
     <ul className="space-y-1">
       {filteredTasks.map(task => (
-        <TaskItem key={task.id} task={task} onTaskUpdated={onTaskUpdated} />
+        <TaskItem key={task.id} task={task} notes={notesByTask?.[task.id] || []} onTaskUpdated={onTaskUpdated} />
       ))}
     </ul>
   );

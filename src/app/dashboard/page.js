@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState([]);
   const [allUserTasks, setAllUserTasks] = useState([]);
   const [tasksByProject, setTasksByProject] = useState({});
+  const [notesByTask, setNotesByTask] = useState({});
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
   const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true);
@@ -139,15 +140,26 @@ export default function DashboardPage() {
         });
         const sortedTasks = allTasks.sort(sortTasksByDateDescThenPriority);
         setAllUserTasks(sortedTasks);
+        
+        // Batch fetch notes for all tasks
+        if (allTasks.length > 0) {
+          const taskIds = allTasks.map(t => t.id);
+          const batchedNotes = await apiClient.getNotesBatch(taskIds);
+          setNotesByTask(batchedNotes || {});
+        } else {
+          setNotesByTask({});
+        }
       } else {
         setTasksByProject({});
         setAllUserTasks([]);
+        setNotesByTask({});
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       setProjects([]);
       setAllUserTasks([]);
       setTasksByProject({});
+      setNotesByTask({});
     } finally {
       setIsLoadingData(false);
     }
@@ -456,6 +468,7 @@ export default function DashboardPage() {
                   <ProjectList 
                     projects={baseFilteredProjects}
                     tasksByProject={tasksByProject}
+                    notesByTask={notesByTask}
                     onProjectDataChange={handleProjectDataChange} 
                     onProjectDeleted={handleProjectDeleted} 
                     onProjectUpdated={handleProjectUpdate}

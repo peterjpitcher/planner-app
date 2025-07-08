@@ -102,6 +102,14 @@ class APIClient {
     });
   }
 
+  // Batch fetch notes for multiple tasks
+  async getNotesBatch(taskIds) {
+    return this.fetchWithAuth('/api/notes/batch', {
+      method: 'POST',
+      body: JSON.stringify({ taskIds }),
+    });
+  }
+
   // Completed items report
   async getCompletedItems(startDate, endDate) {
     const params = new URLSearchParams({

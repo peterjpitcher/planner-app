@@ -62,12 +62,12 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   return { text, classes, fullDate: fullDateText };
 };
 
-function TaskItem({ task, onTaskUpdated }) {
+function TaskItem({ task, notes: propNotes, onTaskUpdated }) {
   // All useState hooks
   const [isCompleted, setIsCompleted] = useState(task ? task.is_completed : false);
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [notes, setNotes] = useState([]);
+  const [notes, setNotes] = useState(propNotes || []);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isEditingTaskName, setIsEditingTaskName] = useState(false);
   const [currentTaskName, setCurrentTaskName] = useState(task ? task.name : '');
@@ -119,24 +119,32 @@ function TaskItem({ task, onTaskUpdated }) {
     }
   }, [task]); 
 
-  // Don't fetch notes on initial mount - only when notes section is opened
-  // This prevents hundreds of API calls when dashboard loads
+  // Update notes when propNotes changes
+  useEffect(() => {
+    if (propNotes) {
+      setNotes(propNotes);
+    }
+  }, [propNotes]);
   
+  // Only fetch notes if we don't have them from props
   useEffect(() => {
     let timeoutId;
-    if (showNotes && task && task.id) { 
-      fetchNotes(); // Re-fetch if already shown, or fetch if just shown
+    if (showNotes && task && task.id && !propNotes) { 
+      fetchNotes(); // Only fetch if not provided via props
       // Delay focus slightly to ensure the input field is rendered and visible
       timeoutId = setTimeout(() => {
         if (noteInputRef.current) {
           noteInputRef.current.focus();
         }
       }, 100); // 100ms delay, adjust if needed
+    } else if (showNotes && noteInputRef.current) {
+      // If we have notes from props, just focus the input
+      noteInputRef.current.focus();
     }
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [showNotes, task, fetchNotes]); // Added fetchNotes to dependencies as it's called
+  }, [showNotes, task, fetchNotes, propNotes]);
   
   const taskNameInputRef = useRef(null);
   useEffect(() => {
