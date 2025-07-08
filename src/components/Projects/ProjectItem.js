@@ -702,14 +702,45 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange
           </div>
 
           <div className="relative order-2 sm:order-none">
-            <div 
-              className="flex items-center cursor-pointer hover:bg-gray-200/50 p-0.5 rounded" 
-              onClick={(e) => {e.stopPropagation(); setIsEditingPriority(true); setTargetProjectId(null);}}
-              title={`Priority: ${currentPriority || 'N/A'}`}
-            >
-              {priorityStyles.icon}
-              <span className={`ml-1 text-xs ${priorityStyles.textClass}`}>{currentPriority || 'No Priority'}</span>
-            </div>
+            {isEditingPriority && !isProjectCompletedOrCancelled ? (
+              <select 
+                value={currentPriority}
+                onChange={handlePriorityChange}
+                onBlur={handlePriorityUpdate}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handlePriorityUpdate();
+                  } else if (e.key === 'Escape') {
+                    setCurrentPriority(project ? project.priority : 'Medium');
+                    setIsEditingPriority(false);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs p-1 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                autoFocus
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </select>
+            ) : (
+              <div 
+                className="flex items-center cursor-pointer hover:bg-gray-200/50 p-0.5 rounded" 
+                onClick={(e) => {
+                  e.stopPropagation(); 
+                  if (!isProjectCompletedOrCancelled && !isEditingName && !isEditingDescription && !isEditingDueDate && !isEditingStakeholders) {
+                    setIsEditingPriority(true); 
+                    setTargetProjectId(null);
+                  }
+                }}
+                title={`Priority: ${currentPriority || 'N/A'}`}
+              >
+                {priorityStyles.icon}
+                <span className={`ml-1 text-xs ${priorityStyles.textClass}`}>{currentPriority || 'No Priority'}</span>
+              </div>
+            )}
           </div>
 
           <div className="relative order-3 sm:order-none">
