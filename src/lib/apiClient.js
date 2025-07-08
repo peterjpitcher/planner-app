@@ -24,7 +24,8 @@ class APIClient {
     const params = new URLSearchParams();
     if (includeCompleted) params.append('includeCompleted', 'true');
     
-    return this.fetchWithAuth(`/api/projects?${params}`);
+    const response = await this.fetchWithAuth(`/api/projects?${params}`);
+    return response.data || [];
   }
 
   async createProject(projectData) {
@@ -53,7 +54,8 @@ class APIClient {
     if (projectId) params.append('projectId', projectId);
     if (includeCompleted) params.append('includeCompleted', 'true');
     
-    return this.fetchWithAuth(`/api/tasks?${params}`);
+    const response = await this.fetchWithAuth(`/api/tasks?${params}`);
+    return response.data || [];
   }
 
   async createTask(taskData) {
@@ -82,7 +84,8 @@ class APIClient {
     if (projectId) params.append('projectId', projectId);
     if (taskId) params.append('taskId', taskId);
     
-    return this.fetchWithAuth(`/api/notes?${params}`);
+    const response = await this.fetchWithAuth(`/api/notes?${params}`);
+    return response.data || [];
   }
 
   async createNote(noteData) {
