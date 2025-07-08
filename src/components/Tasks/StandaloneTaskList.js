@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { PencilIcon, CheckCircleIcon as OutlineCheckCircleIcon } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
@@ -69,7 +69,6 @@ const getPriorityValue = (priority) => {
 };
 
 function StandaloneTaskItem({ task, project, onTaskUpdated }) {
-  const supabase = useSupabase();
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(task.name);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
@@ -97,13 +96,10 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       return;
     }
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({ name: currentName.trim(), updated_at: new Date().toISOString() })
-        .eq('id', task.id)
-        .select()
-        .single();
-      if (error) throw error;
+      const data = await apiClient.updateTask(task.id, { 
+        name: currentName.trim(), 
+        updated_at: new Date().toISOString() 
+      });
       if (onTaskUpdated) onTaskUpdated(data);
       setIsEditingName(false);
     } catch (err) {
@@ -119,13 +115,10 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       return;
     }
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({ due_date: currentDueDate || null, updated_at: new Date().toISOString() })
-        .eq('id', task.id)
-        .select()
-        .single();
-      if (error) throw error;
+      const data = await apiClient.updateTask(task.id, { 
+        due_date: currentDueDate || null, 
+        updated_at: new Date().toISOString() 
+      });
       if (onTaskUpdated) onTaskUpdated(data);
       setIsEditingDueDate(false);
     } catch (err) {
@@ -137,12 +130,11 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   const handleToggleComplete = async () => {
     const newCompletedStatus = !task.is_completed;
     try {
-      const { data, error } = await supabase.from('tasks').update({ 
+      const data = await apiClient.updateTask(task.id, { 
         is_completed: newCompletedStatus, 
         completed_at: newCompletedStatus ? new Date().toISOString() : null,
         updated_at: new Date().toISOString() 
-      }).eq('id', task.id).select().single();
-      if (error) throw error;
+      });
       if (onTaskUpdated) onTaskUpdated(data);
     } catch (err) {
       // Error updating task status
@@ -155,13 +147,10 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
       return;
     }
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({ priority: currentPriority || null, updated_at: new Date().toISOString() })
-        .eq('id', task.id)
-        .select()
-        .single();
-      if (error) throw error;
+      const data = await apiClient.updateTask(task.id, { 
+        priority: currentPriority || null, 
+        updated_at: new Date().toISOString() 
+      });
       if (onTaskUpdated) onTaskUpdated(data);
       setIsEditingPriority(false);
     } catch (err) {
@@ -284,7 +273,6 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
 }
 
 export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder }) {
-  const supabase = useSupabase();
   const [isLoading, setIsLoading] = useState(true);
   const { targetProjectId, setTargetProjectId, actionedProjectIdRef } = useTargetProject();
 

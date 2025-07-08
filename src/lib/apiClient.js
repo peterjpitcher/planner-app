@@ -92,8 +92,7 @@ class APIClient {
     if (projectId) params.append('projectId', projectId);
     if (taskId) params.append('taskId', taskId);
     
-    const response = await this.fetchWithAuth(`/api/notes?${params}`);
-    return response.data || [];
+    return this.fetchWithAuth(`/api/notes?${params}`);
   }
 
   async createNote(noteData) {

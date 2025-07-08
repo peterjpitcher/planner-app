@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { apiClient } from '@/lib/apiClient';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -14,7 +14,6 @@ import Link from 'next/link';
 import NoteList from '@/components/Notes/NoteList'; // Assuming this can be reused
 
 const CompletedReportPage = () => {
-  const supabase = useSupabase();
   const { data: session, status } = useSession();
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -65,51 +64,18 @@ const CompletedReportPage = () => {
 
   // Fetch completed items and all notes
   const fetchCompletedItems = useCallback(async () => {
-    if (!dateRange.startDate || !dateRange.endDate) return;
+    if (!dateRange.startDate || !dateRange.endDate || status !== 'authenticated') return;
 
     setIsLoading(true);
     setError(null);
     setCopyStatusMessage('Copy Report');
 
     try {
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !sessionData.session) {
-        throw new Error(sessionError?.message || 'User not authenticated');
-      }
-      const userId = sessionData.session.user.id;
-
-      // Fetch completed tasks within date range
-      const { data: tasks, error: tasksError } = await supabase
-        .from('tasks')
-        .select('*, project_id (id, name, stakeholders), notes(*)')
-        .eq('user_id', userId)
-        .eq('is_completed', true)
-        .gte('completed_at', dateRange.startDate.toISOString())
-        .lte('completed_at', dateRange.endDate.toISOString())
-        .order('completed_at', { ascending: true });
-      if (tasksError) throw tasksError;
-      setCompletedTasksData(tasks || []);
-
-      // Fetch completed projects within date range
-      const { data: projects, error: projectsError } = await supabase
-        .from('projects')
-        .select('*, notes(*), stakeholders') // Ensure stakeholders are fetched
-        .eq('user_id', userId)
-        .eq('status', 'Completed')
-        .gte('updated_at', dateRange.startDate.toISOString()) // Assuming updated_at reflects completion date for projects
-        .lte('updated_at', dateRange.endDate.toISOString())
-        .order('updated_at', { ascending: true });
-      if (projectsError) throw projectsError;
-      setCompletedProjectsData(projects || []);
-
-      // Fetch all user notes (not just within period initially, for "Other notes" calculation)
-      const { data: notes, error: notesError } = await supabase
-        .from('notes')
-        .select('*, tasks(name, project_id (id, name, stakeholders)), projects(id, name, stakeholders)')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true });
-      if (notesError) throw notesError;
-      setAllUserNotes(notes || []);
+      const data = await apiClient.getCompletedItems(dateRange.startDate, dateRange.endDate);
+      
+      setCompletedTasksData(data.tasks || []);
+      setCompletedProjectsData(data.projects || []);
+      setAllUserNotes(data.allNotes || []);
 
     } catch (err) {
       setError(err.message || 'Failed to fetch data.');
@@ -119,7 +85,7 @@ const CompletedReportPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [dateRange]);
+  }, [dateRange, status]);
 
   useEffect(() => {
     fetchCompletedItems();
@@ -144,11 +110,11 @@ const CompletedReportPage = () => {
     });
 
     completedTasksData.forEach(task => {
-      if (task.project_id && !projectsMap.has(task.project_id.id)) {
-        projectsMap.set(task.project_id.id, { 
-          id: task.project_id.id, 
-          name: task.project_id.name,
-          stakeholders: task.project_id.stakeholders || [] // Will be populated by the new query
+      if (task.project && !projectsMap.has(task.project.id)) {
+        projectsMap.set(task.project.id, { 
+          id: task.project.id, 
+          name: task.project.name,
+          stakeholders: task.project.stakeholders || [] // Will be populated by the new query
         });
       }
     });
@@ -211,11 +177,11 @@ const CompletedReportPage = () => {
       ...completedTasksData
           .filter(task => {
             // const project = projectsInPeriod.find(p => p.id === task.project_id?.id); // No longer need to find in projectsInPeriod for stakeholders
-            const isVisible = !!(task.project_id && projectVisibility[task.project_id.id]); // Ensure boolean
+            const isVisible = !!(task.project && projectVisibility[task.project.id]); // Ensure boolean
             
             let taskIsBillHidden = false;
-            if (hideBillStakeholder && task.project_id && Array.isArray(task.project_id.stakeholders)) {
-              taskIsBillHidden = task.project_id.stakeholders.includes('Bill');
+            if (hideBillStakeholder && task.project && Array.isArray(task.project.stakeholders)) {
+              taskIsBillHidden = task.project.stakeholders.includes('Bill');
             }
             return isVisible && !taskIsBillHidden;
           })
@@ -324,7 +290,7 @@ const CompletedReportPage = () => {
         report += `\nDate: ${format(parseISO(dateKey), 'EEEE, MMM do, yyyy')}\n`;
         items.forEach(item => {
           if (item.type === 'task') {
-            report += `  Task: ${item.name} (Project: ${item.project_id?.name || 'N/A'})\n`;
+            report += `  Task: ${item.name} (Project: ${item.project?.name || 'N/A'})\n`;
             report += `    Completed: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
             if (item.description) report += `    Description: ${item.description}\n`;
             if (item.notes && item.notes.length > 0) {
@@ -384,8 +350,8 @@ const CompletedReportPage = () => {
             <h3 className="text-md font-semibold mt-1.5 text-gray-800">
               {item.name || item.content.substring(0, 50) + (item.content.length > 50 ? '...' : '')}
             </h3>
-            {item.type === 'task' && item.project_id && (
-              <p className="text-xs text-gray-500">Project: {item.project_id.name}</p>
+            {item.type === 'task' && item.project && (
+              <p className="text-xs text-gray-500">Project: {item.project.name}</p>
             )}
              {item.type === 'note' && (
               <p className="text-xs text-gray-500">
