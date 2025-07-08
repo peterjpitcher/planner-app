@@ -31,6 +31,9 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 export const authOptions = {
+  // Configure the base URL for production
+  url: process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
+  
   // 1. Choose your sign-in methods
   providers: [
     CredentialsProvider({
@@ -108,9 +111,7 @@ export const authOptions = {
   // 4. Custom cookie configuration for maximum security
   cookies: {
     sessionToken: {
-      name: process.env.NODE_ENV === 'production' 
-        ? `__Host-next-auth.session-token`
-        : `next-auth.session-token`,
+      name: `next-auth.session-token`,
       options: {
         httpOnly: true, // not accessible from JS
         secure: process.env.NODE_ENV === 'production',

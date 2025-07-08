@@ -63,9 +63,11 @@ export default function LoginForm() {
 
       if (result?.ok) {
         console.log('Login successful, redirecting to dashboard...');
-        // On successful login, redirect to the dashboard.
-        router.push('/dashboard');
-        router.refresh(); // Force refresh to update auth state
+        // Wait a moment for the session to be established
+        setTimeout(() => {
+          // Use window.location for a hard redirect to ensure session is loaded
+          window.location.href = '/dashboard';
+        }, 100);
       }
     } catch (err) {
       // Log the full error for debugging

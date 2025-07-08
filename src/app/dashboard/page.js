@@ -139,6 +139,7 @@ export default function DashboardPage() {
   }, [user, showCompletedProjects, sortProjectsByPriorityThenDateDesc, sortTasksByDateDescThenPriority]);
 
   useEffect(() => {
+    console.log('Dashboard session status:', status, 'user:', user);
     if (status === 'authenticated' && user) {
       fetchData();
     }
@@ -146,6 +147,7 @@ export default function DashboardPage() {
   
   useEffect(() => {
     if (status === 'unauthenticated') {
+      console.log('Dashboard: User is unauthenticated, redirecting to login');
       router.replace('/login');
     }
   }, [status, router]);
@@ -299,6 +301,15 @@ export default function DashboardPage() {
     );
   }
   
+  // Debug: Check if we have no session
+  if (!session || !user) {
+    console.log('Dashboard: No session or user, status:', status);
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-24">
+        <p>No active session. Redirecting...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
