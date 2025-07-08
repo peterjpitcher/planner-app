@@ -88,11 +88,10 @@ export const authOptions = {
             if (process.env.NODE_ENV === 'development') {
               console.log('NextAuth: Login successful for user:', data.user.id);
             }
-            // You can return a custom object here.
-            // The `user` object will be encoded in the JWT.
+            // Return user object with all necessary fields
             return {
               id: data.user.id,
-              email: data.user.email,
+              email: data.user.email || credentials.email, // Fallback to input email
               accessToken: data.session.access_token,
               // You can add other properties from your user table here
               // e.g. name: data.user.user_metadata.full_name
@@ -134,19 +133,19 @@ export const authOptions = {
       // We can add properties to the token here, and they will be available on subsequent requests.
       if (user) {
         token.id = user.id;
+        token.email = user.email;
         token.accessToken = user.accessToken;
-        // token.role = user.role // Example of adding a role
       }
       return token;
     },
     async session({ session, token }) {
       // The session callback is called whenever a session is checked.
-      // We can add properties to the session object here.
-      if (session.user) {
-        session.user.id = token.id;
-        // SECURITY: Do not expose accessToken to client-side
-        // The token is available server-side via getServerSession
-        // session.user.role = token.role; // Pass role to session
+      // Ensure session.user exists and populate it with token data
+      if (token) {
+        session.user = {
+          id: token.id,
+          email: token.email,
+        };
       }
       return session;
     },
