@@ -20,10 +20,28 @@ const createSupabaseClient = () => {
   });
 };
 
+// Determine the correct URL for callbacks
+const getUrl = () => {
+  // In production, use the actual domain
+  if (process.env.NODE_ENV === 'production') {
+    // First check for explicitly set NEXTAUTH_URL
+    if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+    // Then check for Vercel URL
+    if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+    // Fallback to hardcoded production domain if needed
+    return 'https://planner.orangejelly.co.uk';
+  }
+  // In development, use localhost
+  return process.env.NEXTAUTH_URL || 'http://localhost:3000';
+};
+
+const authUrl = getUrl();
+
 // Only log in development
 if (process.env.NODE_ENV === 'development') {
   console.log('NextAuth Config:', {
     NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
+    COMPUTED_URL: authUrl,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
     NODE_ENV: process.env.NODE_ENV,
     SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET',
@@ -32,7 +50,7 @@ if (process.env.NODE_ENV === 'development') {
 
 export const authOptions = {
   // Configure the base URL for production
-  url: process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
+  url: authUrl,
   
   // 1. Choose your sign-in methods
   providers: [
