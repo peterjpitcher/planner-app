@@ -22,13 +22,9 @@ const createSupabaseClient = () => {
 
 // Determine the correct URL for callbacks
 const getUrl = () => {
-  // In production, use the actual domain
+  // In production, ALWAYS use the production domain
   if (process.env.NODE_ENV === 'production') {
-    // First check for explicitly set NEXTAUTH_URL
-    if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
-    // Then check for Vercel URL
-    if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-    // Fallback to hardcoded production domain if needed
+    // Force production URL regardless of environment variable
     return 'https://planner.orangejelly.co.uk';
   }
   // In development, use localhost
@@ -37,20 +33,22 @@ const getUrl = () => {
 
 const authUrl = getUrl();
 
-// Only log in development
-if (process.env.NODE_ENV === 'development') {
-  console.log('NextAuth Config:', {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
-    COMPUTED_URL: authUrl,
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
-    NODE_ENV: process.env.NODE_ENV,
-    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET',
-  });
+// Log configuration issues
+console.log('NextAuth Config:', {
+  NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
+  COMPUTED_URL: authUrl,
+  NODE_ENV: process.env.NODE_ENV,
+  WARNING: process.env.NODE_ENV === 'production' && process.env.NEXTAUTH_URL?.includes('localhost') 
+    ? 'NEXTAUTH_URL is set to localhost in production!' 
+    : null
+});
+
+// Override NEXTAUTH_URL environment variable in production
+if (process.env.NODE_ENV === 'production') {
+  process.env.NEXTAUTH_URL = 'https://planner.orangejelly.co.uk';
 }
 
 export const authOptions = {
-  // Configure the base URL for production
-  url: authUrl,
   
   // 1. Choose your sign-in methods
   providers: [
