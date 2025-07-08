@@ -304,9 +304,19 @@ export default function DashboardPage() {
   
   // If authenticated but no user data yet, show loading
   if (status === 'authenticated' && !user) {
+    console.log('Dashboard - Full session object:', session);
+    console.log('Dashboard - Session user:', session?.user);
+    console.log('Dashboard - User variable:', user);
+    
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <p>Loading user data...</p>
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 p-4 bg-gray-100 rounded">
+            <p className="text-sm text-gray-600">Debug Info:</p>
+            <pre className="text-xs mt-2">{JSON.stringify({ status, session, user }, null, 2)}</pre>
+          </div>
+        )}
       </div>
     );
   }

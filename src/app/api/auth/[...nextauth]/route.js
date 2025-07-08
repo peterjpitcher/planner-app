@@ -132,14 +132,25 @@ export const authOptions = {
       // Log for debugging
       if (process.env.NODE_ENV === 'development') {
         console.log('JWT callback - trigger:', trigger, 'user:', !!user, 'token:', !!token);
+        if (user) console.log('JWT callback - user data:', user);
       }
       
       // The `user` object is only passed on the first login.
       // We can add properties to the token here, and they will be available on subsequent requests.
       if (user) {
+        // Store all necessary user data in the token
         token.id = user.id;
         token.email = user.email;
         token.accessToken = user.accessToken;
+        
+        // Log what we're storing
+        if (process.env.NODE_ENV === 'development') {
+          console.log('JWT callback - storing in token:', { 
+            id: token.id, 
+            email: token.email,
+            hasAccessToken: !!token.accessToken 
+          });
+        }
       }
       
       // Handle session updates
@@ -152,20 +163,34 @@ export const authOptions = {
     async session({ session, token }) {
       // Log for debugging
       if (process.env.NODE_ENV === 'development') {
-        console.log('Session callback - token:', token);
+        console.log('Session callback - Initial session:', JSON.stringify(session, null, 2));
+        console.log('Session callback - Token data:', {
+          id: token?.id,
+          email: token?.email,
+          sub: token?.sub,
+          hasAccessToken: !!token?.accessToken
+        });
       }
       
-      // The session callback is called whenever a session is checked.
-      // Ensure session.user exists and populate it with token data
-      if (token && session) {
-        session.user = session.user || {};
-        session.user.id = token.id;
-        session.user.email = token.email;
-        // Add the access token to the session (optional, only if needed client-side)
-        // session.accessToken = token.accessToken;
+      // CRITICAL: Always return a properly structured session with user data from token
+      if (token) {
+        // Ensure we return a complete session structure
+        return {
+          user: {
+            id: token.id || token.sub, // Use sub as fallback
+            email: token.email || '',
+            // name: null, // Add if you have name data
+          },
+          expires: session?.expires || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        };
       }
       
-      return session;
+      // This should never happen if authentication is working
+      console.error('Session callback - No token provided!');
+      return {
+        user: null,
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
     },
     async redirect({ url, baseUrl }) {
       // Log for debugging
