@@ -186,6 +186,7 @@ export const authOptions = {
             email: token.email || '',
             // name: null, // Add if you have name data
           },
+          accessToken: token.accessToken, // Include Supabase access token
           expires: session?.expires || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         };
       }

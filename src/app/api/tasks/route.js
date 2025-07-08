@@ -6,21 +6,33 @@ import { validateTask } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 
-// Create a Supabase client with the service role key for server-side operations
-function getSupabaseServer() {
+// Create a Supabase client for server-side operations
+function getSupabaseServer(accessToken = null) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl || !supabaseKey) {
     throw new Error('Missing Supabase environment variables');
   }
   
-  return createClient(supabaseUrl, supabaseServiceKey, {
+  const options = {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     }
-  });
+  };
+  
+  // If we have a service key, use it (bypasses RLS)
+  // Otherwise, use anon key with user's access token
+  if (!process.env.SUPABASE_SERVICE_KEY && accessToken) {
+    options.global = {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    };
+  }
+  
+  return createClient(supabaseUrl, supabaseKey, options);
 }
 
 // GET /api/tasks - Fetch tasks (optionally filtered by project)
@@ -46,7 +58,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer();
+    const supabase = getSupabaseServer(session.accessToken);
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
     const includeCompleted = searchParams.get('includeCompleted') === 'true';
@@ -116,7 +128,7 @@ export async function POST(request) {
       }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer();
+    const supabase = getSupabaseServer(session.accessToken);
     
     // Verify project ownership
     const { data: project, error: projectError } = await supabase
@@ -173,7 +185,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer();
+    const supabase = getSupabaseServer(session.accessToken);
     
     // Verify ownership
     const { data: existingTask, error: fetchError } = await supabase
@@ -238,7 +250,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer();
+    const supabase = getSupabaseServer(session.accessToken);
     
     // Verify ownership
     const { data: existingTask, error: fetchError } = await supabase
