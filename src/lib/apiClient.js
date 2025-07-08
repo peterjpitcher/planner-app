@@ -78,6 +78,14 @@ class APIClient {
     });
   }
 
+  // Batch fetch tasks for multiple projects
+  async getTasksBatch(projectIds) {
+    return this.fetchWithAuth('/api/tasks/batch', {
+      method: 'POST',
+      body: JSON.stringify({ projectIds }),
+    });
+  }
+
   // Notes
   async getNotes(projectId = null, taskId = null) {
     const params = new URLSearchParams();

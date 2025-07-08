@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [allUserTasks, setAllUserTasks] = useState([]);
+  const [tasksByProject, setTasksByProject] = useState({});
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
   const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true);
@@ -125,14 +126,28 @@ export default function DashboardPage() {
       const finalSortedProjects = (projectData || []).sort(sortProjectsByPriorityThenDateDesc);
       setProjects(finalSortedProjects);
 
-      // Fetch tasks using API
-      const taskData = await apiClient.getTasks(null, false);
-      const sortedTasks = (taskData || []).sort(sortTasksByDateDescThenPriority);
-      setAllUserTasks(sortedTasks);
+      // Batch fetch tasks for all projects
+      if (finalSortedProjects.length > 0) {
+        const projectIds = finalSortedProjects.map(p => p.id);
+        const batchedTasks = await apiClient.getTasksBatch(projectIds);
+        setTasksByProject(batchedTasks || {});
+        
+        // Flatten tasks for allUserTasks
+        const allTasks = [];
+        Object.values(batchedTasks || {}).forEach(tasks => {
+          allTasks.push(...tasks);
+        });
+        const sortedTasks = allTasks.sort(sortTasksByDateDescThenPriority);
+        setAllUserTasks(sortedTasks);
+      } else {
+        setTasksByProject({});
+        setAllUserTasks([]);
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       setProjects([]);
       setAllUserTasks([]);
+      setTasksByProject({});
     } finally {
       setIsLoadingData(false);
     }
@@ -211,13 +226,41 @@ export default function DashboardPage() {
         fetchData(); 
         return;
       }
+      // Update both allUserTasks and tasksByProject
       setAllUserTasks(prevTasks => [newTask, ...prevTasks].sort(sortTasksByDateDescThenPriority));
+      setTasksByProject(prev => ({
+        ...prev,
+        [newTask.project_id]: [newTask, ...(prev[newTask.project_id] || [])].sort((a, b) => {
+          if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+          const dateA = a.due_date ? new Date(a.due_date) : null;
+          const dateB = b.due_date ? new Date(b.due_date) : null;
+          if (dateA && dateB) return dateA - dateB;
+          if (dateA) return -1;
+          if (dateB) return 1;
+          const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
+          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+        })
+      }));
       setProjects(prevProjects => 
         prevProjects.map(p => p.id === newTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)
       );
     } else if (itemType === 'task_updated') {
       const updatedTask = changedData;
+      // Update both allUserTasks and tasksByProject
       setAllUserTasks(prevTasks => prevTasks.map(t => t.id === updatedTask.id ? updatedTask : t).sort(sortTasksByDateDescThenPriority));
+      setTasksByProject(prev => ({
+        ...prev,
+        [updatedTask.project_id]: (prev[updatedTask.project_id] || []).map(t => t.id === updatedTask.id ? updatedTask : t).sort((a, b) => {
+          if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+          const dateA = a.due_date ? new Date(a.due_date) : null;
+          const dateB = b.due_date ? new Date(b.due_date) : null;
+          if (dateA && dateB) return dateA - dateB;
+          if (dateA) return -1;
+          if (dateB) return 1;
+          const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
+          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+        })
+      }));
       setProjects(prevProjects => 
         prevProjects.map(p => p.id === updatedTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)
       );
@@ -412,6 +455,7 @@ export default function DashboardPage() {
                 ) : baseFilteredProjects.length > 0 ? (
                   <ProjectList 
                     projects={baseFilteredProjects}
+                    tasksByProject={tasksByProject}
                     onProjectDataChange={handleProjectDataChange} 
                     onProjectDeleted={handleProjectDeleted} 
                     onProjectUpdated={handleProjectUpdate}

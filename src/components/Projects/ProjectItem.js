@@ -93,8 +93,8 @@ const getStatusClasses = (status) => {
   }
 };
 
-const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
-  const [tasks, setTasks] = useState([]);
+const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
+  const [tasks, setTasks] = useState(propTasks || []);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
@@ -144,13 +144,11 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     }
   }, [project]);
 
-  const fetchTasks = useCallback(async () => {
-    if (!project || !project.id) return;
-    setIsLoadingTasks(true);
-    try {
-      const data = await apiClient.getTasks(project.id);
+  // Update tasks when propTasks changes
+  useEffect(() => {
+    if (propTasks) {
       // Sort tasks client-side
-      const sortedTasks = (data || []).sort((a, b) => {
+      const sortedTasks = [...propTasks].sort((a, b) => {
         if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
         // Sort by due date
         const dateA = a.due_date ? new Date(a.due_date) : null;
@@ -163,17 +161,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
         return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
       });
       setTasks(sortedTasks);
-    } catch (err) {
-      handleError(err, 'fetchTasks', { showAlert: true });
-      setTasks([]);
-    } finally {
-      setIsLoadingTasks(false);
     }
-  }, [project]);
-
-  useEffect(() => {
-    if (project && project.id) fetchTasks();
-  }, [project, fetchTasks]);
+  }, [propTasks]);
 
   const fetchProjectNotes = useCallback(async () => {
     if (!project || !project.id) return;

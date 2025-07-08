@@ -283,7 +283,8 @@ function TaskItem({ task, onTaskUpdated }) {
           checked={isCompleted}
           onChange={handleToggleComplete}
           disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
-          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0"
+          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0 cursor-pointer"
+          style={{ minWidth: '16px', minHeight: '16px' }}
         />
         <div className="flex-grow min-w-0 flex items-center gap-2">
           <div className="flex items-center gap-x-1.5 flex-grow">
