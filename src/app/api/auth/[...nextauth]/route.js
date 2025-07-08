@@ -33,15 +33,15 @@ const getUrl = () => {
 
 const authUrl = getUrl();
 
-// Log configuration issues
-console.log('NextAuth Config:', {
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
-  COMPUTED_URL: authUrl,
-  NODE_ENV: process.env.NODE_ENV,
-  WARNING: process.env.NODE_ENV === 'production' && process.env.NEXTAUTH_URL?.includes('localhost') 
-    ? 'NEXTAUTH_URL is set to localhost in production!' 
-    : null
-});
+// Log configuration issues only in development
+if (process.env.NODE_ENV === 'development') {
+  console.log('NextAuth Config:', {
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
+    COMPUTED_URL: authUrl,
+    NODE_ENV: process.env.NODE_ENV,
+  });
+}
 
 // Override NEXTAUTH_URL environment variable in production
 if (process.env.NODE_ENV === 'production') {
@@ -123,12 +123,17 @@ export const authOptions = {
     // encryption: true
   },
 
-  // 4. Use default cookie settings for better compatibility
+  // 4. Use default cookie names in production (no custom configuration needed)
   // NextAuth will handle cookie configuration automatically
 
-  // 5. Optional callbacks (e.g. to add roles, extra props)
+  // 5. Callbacks with proper error handling
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account, trigger, session }) {
+      // Log for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('JWT callback - trigger:', trigger, 'user:', !!user, 'token:', !!token);
+      }
+      
       // The `user` object is only passed on the first login.
       // We can add properties to the token here, and they will be available on subsequent requests.
       if (user) {
@@ -136,18 +141,41 @@ export const authOptions = {
         token.email = user.email;
         token.accessToken = user.accessToken;
       }
+      
+      // Handle session updates
+      if (trigger === 'update' && session) {
+        token = { ...token, ...session };
+      }
+      
       return token;
     },
     async session({ session, token }) {
+      // Log for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Session callback - token:', token);
+      }
+      
       // The session callback is called whenever a session is checked.
       // Ensure session.user exists and populate it with token data
-      if (token) {
-        session.user = {
-          id: token.id,
-          email: token.email,
-        };
+      if (token && session) {
+        session.user = session.user || {};
+        session.user.id = token.id;
+        session.user.email = token.email;
+        // Add the access token to the session (optional, only if needed client-side)
+        // session.accessToken = token.accessToken;
       }
+      
       return session;
+    },
+    async redirect({ url, baseUrl }) {
+      // Log for debugging
+      console.log('Redirect callback - url:', url, 'baseUrl:', baseUrl);
+      
+      // Allows relative callback URLs
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      // Allows callback URLs on the same origin
+      else if (new URL(url).origin === baseUrl) return url;
+      return baseUrl;
     },
   },
 
@@ -156,11 +184,12 @@ export const authOptions = {
     error: '/login', // Redirect errors back to login page with error params
   },
   
-  // Enable debug logs to troubleshoot
-  debug: true,
+  // 6. Environment-specific settings
+  secret: process.env.NEXTAUTH_SECRET, // Explicitly set the secret
+  debug: process.env.NODE_ENV === 'development', // Only debug in development
   
-  // Ensure cookies work properly
-  useSecureCookies: process.env.NODE_ENV === 'production',
+  // 7. Trust the host in production (critical for Vercel deployments)
+  trustHost: true,
 };
 
 const handler = NextAuth(authOptions);
