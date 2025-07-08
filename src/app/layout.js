@@ -1,7 +1,6 @@
 import './globals.css'
 import NextAuthProvider from '@/components/NextAuthProvider' // Adjust path as necessary
 import { TargetProjectProvider } from '@/contexts/TargetProjectContext'
-import { SupabaseProvider } from '@/contexts/SupabaseContext'
 import ErrorBoundary from '@/components/ErrorBoundary'
 
 export const metadata = {
@@ -15,11 +14,9 @@ export default function RootLayout({ children }) {
       <body>
         <ErrorBoundary>
           <NextAuthProvider>
-            <SupabaseProvider>
-              <TargetProjectProvider>
-                {children}
-              </TargetProjectProvider>
-            </SupabaseProvider>
+            <TargetProjectProvider>
+              {children}
+            </TargetProjectProvider>
           </NextAuthProvider>
         </ErrorBoundary>
       </body>

@@ -124,20 +124,8 @@ export const authOptions = {
     // encryption: true
   },
 
-  // 4. Custom cookie configuration for maximum security
-  cookies: {
-    sessionToken: {
-      name: `next-auth.session-token`,
-      options: {
-        httpOnly: true, // not accessible from JS
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax', // protects against CSRF
-        path: '/', // valid on all routes
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-      },
-    },
-    // you can override other cookies (e.g. csrfToken) similarly if needed
-  },
+  // 4. Use default cookie settings for better compatibility
+  // NextAuth will handle cookie configuration automatically
 
   // 5. Optional callbacks (e.g. to add roles, extra props)
   callbacks: {
@@ -169,8 +157,11 @@ export const authOptions = {
     error: '/login', // Redirect errors back to login page with error params
   },
   
-  // Enable debug mode in development
-  debug: process.env.NODE_ENV === 'development',
+  // Enable debug logs to troubleshoot
+  debug: true,
+  
+  // Ensure cookies work properly
+  useSecureCookies: process.env.NODE_ENV === 'production',
 };
 
 const handler = NextAuth(authOptions);

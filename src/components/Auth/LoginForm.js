@@ -66,11 +66,8 @@ export default function LoginForm() {
 
       if (result?.ok) {
         console.log('Login successful, redirecting to:', callbackUrl);
-        // Wait a moment for the session to be established
-        setTimeout(() => {
-          // Use replace to avoid redirect loops
-          router.replace(callbackUrl);
-        }, 100);
+        // Force a hard redirect to ensure cookies are properly set
+        window.location.href = callbackUrl;
       }
     } catch (err) {
       // Log the full error for debugging
