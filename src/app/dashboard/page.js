@@ -146,9 +146,10 @@ export default function DashboardPage() {
   }, [status, user, fetchData]);
   
   useEffect(() => {
+    // Only redirect if we're sure the user is unauthenticated
     if (status === 'unauthenticated') {
       console.log('Dashboard: User is unauthenticated, redirecting to login');
-      router.replace('/login');
+      router.push('/login');
     }
   }, [status, router]);
 
@@ -301,14 +302,18 @@ export default function DashboardPage() {
     );
   }
   
-  // Debug: Check if we have no session
-  if (!session || !user) {
-    console.log('Dashboard: No session or user, status:', status);
+  // If authenticated but no user data yet, show loading
+  if (status === 'authenticated' && !user) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
-        <p>No active session. Redirecting...</p>
+        <p>Loading user data...</p>
       </div>
     );
+  }
+  
+  // Don't render dashboard if not authenticated
+  if (status === 'unauthenticated') {
+    return null;
   }
 
   return (

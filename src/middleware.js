@@ -3,16 +3,14 @@ import { NextResponse } from "next/server";
 
 export default withAuth(
   function middleware(req) {
-    // Custom logic can go here if needed
-    console.log('Middleware: Path:', req.nextUrl.pathname, 'Has token:', !!req.nextauth?.token);
+    // The token exists if we reach here
     return NextResponse.next();
   },
   {
     callbacks: {
-      authorized: ({ token, req }) => {
-        const isAuthorized = !!token;
-        console.log('Middleware authorized check:', req.nextUrl.pathname, 'authorized:', isAuthorized);
-        return isAuthorized;
+      authorized: ({ token }) => {
+        // Allow the request if there's a valid token
+        return !!token;
       },
     },
     pages: {
@@ -28,11 +26,12 @@ export const config = {
      * Match all request paths except:
      * - /login (authentication page)
      * - /api/auth/* (NextAuth.js routes)
+     * - /api/debug-env (debug endpoint)
      * - /_next/static (static files)
      * - /_next/image (image optimization files)
      * - /favicon.ico (favicon file)
      * - /public/* (public files)
      */
-    "/((?!login|api/auth|_next/static|_next/image|favicon.ico|public).*)",
+    "/((?!login|api/auth|api/debug-env|_next/static|_next/image|favicon.ico|public).*)",
   ],
 };

@@ -12,6 +12,9 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
+  // Get the callback URL from search params
+  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  
   // Check for NextAuth error in URL params
   useEffect(() => {
     const urlError = searchParams.get('error');
@@ -40,7 +43,7 @@ export default function LoginForm() {
         redirect: false, // Don't redirect automatically, handle it manually
         email,
         password,
-        callbackUrl: '/dashboard'
+        callbackUrl: callbackUrl
       });
 
       console.log('SignIn result:', result);
@@ -62,11 +65,11 @@ export default function LoginForm() {
       }
 
       if (result?.ok) {
-        console.log('Login successful, redirecting to dashboard...');
+        console.log('Login successful, redirecting to:', callbackUrl);
         // Wait a moment for the session to be established
         setTimeout(() => {
-          // Use window.location for a hard redirect to ensure session is loaded
-          window.location.href = '/dashboard';
+          // Use replace to avoid redirect loops
+          router.replace(callbackUrl);
         }, 100);
       }
     } catch (err) {
