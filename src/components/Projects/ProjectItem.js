@@ -618,7 +618,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange
                 type="text"
                 value={currentName}
                 onChange={handleNameChange}
-                onBlur={handleNameUpdate}
+                onBlur={() => handleNameUpdate()}
                 onKeyDown={handleNameInputKeyDown}
                 className={`w-full text-base sm:text-lg font-semibold p-0.5 border-b border-indigo-500 focus:outline-none ${isProjectCompletedOrCancelled ? disabledInputClasses : ''}`}
                 autoFocus
@@ -706,7 +706,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange
               <select 
                 value={currentPriority}
                 onChange={handlePriorityChange}
-                onBlur={handlePriorityUpdate}
+                onBlur={() => handlePriorityUpdate()}
                 onKeyDown={(e) => {
                   e.stopPropagation();
                   if (e.key === 'Enter') {
@@ -796,7 +796,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange
                       type="text"
                       value={currentStakeholdersText}
                       onChange={handleStakeholdersChange}
-                      onBlur={handleStakeholdersUpdate}
+                      onBlur={() => handleStakeholdersUpdate()}
                       onKeyDown={handleStakeholdersInputKeyDown}
                       className={`${commonInputClasses} w-full sm:w-32`}
                       placeholder="e.g., Team A, Client"
@@ -856,7 +856,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, onProjectDataChange
             <textarea
               value={currentDescription}
               onChange={handleDescriptionChange}
-              onBlur={handleDescriptionUpdate}
+              onBlur={() => handleDescriptionUpdate()}
               onKeyDown={handleDescriptionKeyDown}
               className={`${commonInputClasses} w-full min-h-[50px] resize-y text-xs`}
               rows="2"
