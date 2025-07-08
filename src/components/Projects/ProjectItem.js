@@ -197,13 +197,8 @@ const ProjectItem = forwardRef(({ project, onProjectDataChange, onProjectDeleted
     if (showProjectNotes && project && project.id) fetchProjectNotes();
   }, [showProjectNotes, project, fetchProjectNotes]);
 
-  // Fetch project notes on initial mount or when project.id changes to get note count
-  useEffect(() => {
-    if (project && project.id) {
-      fetchProjectNotes();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id]); // fetchProjectNotes is memoized with project, so direct project.id is fine
+  // Don't fetch notes on initial mount - only when notes section is opened
+  // This prevents excessive API calls when dashboard loads
 
   if (!project) return null;
 

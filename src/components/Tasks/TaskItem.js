@@ -119,12 +119,8 @@ function TaskItem({ task, onTaskUpdated }) {
     }
   }, [task]); 
 
-  useEffect(() => {
-    if (task && task.id) {
-      fetchNotes(); // Fetch notes on initial mount/task change for note count
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.id]); // fetchNotes is memoized, direct task.id is fine
+  // Don't fetch notes on initial mount - only when notes section is opened
+  // This prevents hundreds of API calls when dashboard loads
   
   useEffect(() => {
     let timeoutId;

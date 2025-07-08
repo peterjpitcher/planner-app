@@ -33,15 +33,7 @@ const getUrl = () => {
 
 const authUrl = getUrl();
 
-// Log configuration issues only in development
-if (process.env.NODE_ENV === 'development') {
-  console.log('NextAuth Config:', {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? 'SET' : 'NOT SET',
-    COMPUTED_URL: authUrl,
-    NODE_ENV: process.env.NODE_ENV,
-  });
-}
+// Configuration logging disabled for cleaner output
 
 // Override NEXTAUTH_URL environment variable in production
 if (process.env.NODE_ENV === 'production') {
@@ -70,10 +62,6 @@ export const authOptions = {
         }
 
         try {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('NextAuth: Attempting Supabase login for:', credentials.email);
-          }
-          
           // Create a fresh Supabase client for this auth attempt
           const supabase = createSupabaseClient();
           
@@ -83,16 +71,10 @@ export const authOptions = {
           });
 
           if (error) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error('NextAuth: Supabase auth error:', error.message);
-            }
             return null; // Returning null will trigger a failed login
           }
 
           if (data.user && data.session) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('NextAuth: Login successful for user:', data.user.id);
-            }
             // Return user object with all necessary fields
             return {
               id: data.user.id,
@@ -134,11 +116,6 @@ export const authOptions = {
   // 5. Callbacks with proper error handling
   callbacks: {
     async jwt({ token, user, account, trigger, session }) {
-      // Log for debugging
-      if (process.env.NODE_ENV === 'development') {
-        console.log('JWT callback - trigger:', trigger, 'user:', !!user, 'token:', !!token);
-        if (user) console.log('JWT callback - user data:', user);
-      }
       
       // The `user` object is only passed on the first login.
       // We can add properties to the token here, and they will be available on subsequent requests.
@@ -147,15 +124,6 @@ export const authOptions = {
         token.id = user.id;
         token.email = user.email;
         token.accessToken = user.accessToken;
-        
-        // Log what we're storing
-        if (process.env.NODE_ENV === 'development') {
-          console.log('JWT callback - storing in token:', { 
-            id: token.id, 
-            email: token.email,
-            hasAccessToken: !!token.accessToken 
-          });
-        }
       }
       
       // Handle session updates
@@ -166,16 +134,6 @@ export const authOptions = {
       return token;
     },
     async session({ session, token }) {
-      // Log for debugging
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Session callback - Initial session:', JSON.stringify(session, null, 2));
-        console.log('Session callback - Token data:', {
-          id: token?.id,
-          email: token?.email,
-          sub: token?.sub,
-          hasAccessToken: !!token?.accessToken
-        });
-      }
       
       // CRITICAL: Always return a properly structured session with user data from token
       if (token) {
@@ -199,9 +157,6 @@ export const authOptions = {
       };
     },
     async redirect({ url, baseUrl }) {
-      // Log for debugging
-      console.log('Redirect callback - url:', url, 'baseUrl:', baseUrl);
-      
       // Allows relative callback URLs
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       // Allows callback URLs on the same origin
@@ -217,7 +172,7 @@ export const authOptions = {
   
   // 6. Environment-specific settings
   secret: process.env.NEXTAUTH_SECRET, // Explicitly set the secret
-  debug: process.env.NODE_ENV === 'development', // Only debug in development
+  debug: false, // Disable debug logging
   
   // 7. Trust the host in production (critical for Vercel deployments)
   trustHost: true,

@@ -37,9 +37,9 @@ function getSupabaseServer(accessToken = null) {
 // GET /api/notes - Fetch notes for a project or task
 export async function GET(request) {
   try {
-    // Rate limiting
+    // Rate limiting - increased limit for notes since they're fetched per task
     const clientId = getClientIdentifier(request);
-    const rateLimitResult = checkRateLimit(`notes-get-${clientId}`, 30, 60000);
+    const rateLimitResult = checkRateLimit(`notes-get-${clientId}`, 100, 60000);
     
     if (!rateLimitResult.allowed) {
       return NextResponse.json(
