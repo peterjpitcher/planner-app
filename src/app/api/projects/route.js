@@ -53,7 +53,6 @@ export async function GET(request) {
     let query = supabase
       .from('projects')
       .select('*')
-      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
     
     if (!includeCompleted) {
@@ -67,7 +66,7 @@ export async function GET(request) {
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
     
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: data || [] });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
