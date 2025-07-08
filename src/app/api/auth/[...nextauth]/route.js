@@ -48,6 +48,11 @@ if (process.env.NODE_ENV === 'production') {
   process.env.NEXTAUTH_URL = 'https://planner.orangejelly.co.uk';
 }
 
+// Ensure NEXTAUTH_URL matches the actual port in development
+if (process.env.NODE_ENV === 'development' && process.env.PORT) {
+  process.env.NEXTAUTH_URL = `http://localhost:${process.env.PORT}`;
+}
+
 export const authOptions = {
   
   // 1. Choose your sign-in methods

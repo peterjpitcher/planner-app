@@ -35,7 +35,8 @@ const FilterButton = ({ filterKey, icon, label, count, activeDashboardFilters, t
 
 export default function DashboardPage() {
   // All hooks must be called at the top level, before any conditional returns.
-  const { data: session, status } = useSession();
+  const { data: sessionData, status } = useSession();
+  const session = sessionData;
   const user = session?.user;
   const loading = status === 'loading';
   const router = useRouter();
@@ -304,17 +305,34 @@ export default function DashboardPage() {
   
   // If authenticated but no user data yet, show loading
   if (status === 'authenticated' && !user) {
-    console.log('Dashboard - Full session object:', session);
+    console.log('Dashboard - Full sessionData object:', sessionData);
+    console.log('Dashboard - Session object:', session);
     console.log('Dashboard - Session user:', session?.user);
     console.log('Dashboard - User variable:', user);
+    
+    // Check if sessionData has a nested structure
+    const actualSession = sessionData?.session || sessionData;
+    const actualUser = actualSession?.user;
+    
+    if (actualUser) {
+      // If we found the user in a nested structure, redirect to refresh
+      window.location.reload();
+    }
     
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <p>Loading user data...</p>
         {process.env.NODE_ENV === 'development' && (
-          <div className="mt-4 p-4 bg-gray-100 rounded">
+          <div className="mt-4 p-4 bg-gray-100 rounded max-w-2xl overflow-auto">
             <p className="text-sm text-gray-600">Debug Info:</p>
-            <pre className="text-xs mt-2">{JSON.stringify({ status, session, user }, null, 2)}</pre>
+            <pre className="text-xs mt-2">{JSON.stringify({ 
+              status, 
+              sessionData,
+              session,
+              user,
+              actualSession,
+              actualUser
+            }, null, 2)}</pre>
           </div>
         )}
       </div>
