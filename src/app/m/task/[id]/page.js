@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSupabase } from "@/contexts/SupabaseContext";
+import { useApiClient } from "@/hooks/useApiClient";
+import { handleError } from "@/lib/errorHandler";
 import { useSession } from "next-auth/react";
 import MobileLayout from "@/components/Mobile/MobileLayout";
 import {
@@ -75,7 +76,7 @@ const getDueDateStatusText = (dateString) => {
 };
 
 const MobileTaskDetailPage = () => {
-  const supabase = useSupabase();
+  const api = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -99,27 +100,36 @@ const MobileTaskDetailPage = () => {
     setIsLoadingNotes(true); // Start loading notes as well
 
     try {
-      const { data: taskData, error: taskError } = await supabase
-        .from("tasks")
-        .select("*, projects(id, name)") // Fetch parent project name
-        .eq("id", taskId)
-        .eq("user_id", user.id)
-        .single();
-
-      if (taskError) throw taskError;
+      // Fetch all tasks to find the specific task (since we need project info)
+      const { data: tasksData, error: taskError } = await api.tasks.list();
+      if (taskError) throw new Error(taskError);
+      
+      const taskData = tasksData?.find(t => t.id === taskId);
+      if (!taskData) {
+        throw new Error('Task not found');
+      }
+      
+      // Get project info if needed
+      if (taskData.project_id) {
+        const { data: projectsData, error: projectError } = await api.projects.list();
+        if (projectError) throw new Error(projectError);
+        
+        const project = projectsData?.find(p => p.id === taskData.project_id);
+        if (project) {
+          taskData.projects = { id: project.id, name: project.name };
+        }
+      }
+      
       setTask(taskData);
 
       // Fetch task notes
-      const { data: notesData, error: notesError } = await supabase
-        .from("notes")
-        .select("*")
-        .eq("task_id", taskId)
-        .order("created_at", { ascending: false }); // Show newest notes first
-
-      if (notesError) throw notesError;
+      const { data: notesData, error: notesError } = await api.notes.list(null, taskId);
+      if (notesError) throw new Error(notesError);
+      
       setNotes(notesData || []);
     } catch (e) {
-      setError("Failed to load task information or notes.");
+      const errorMsg = handleError(e, 'fetch task information or notes');
+      setError(errorMsg);
       setTask(null);
       setNotes([]);
     } finally {
@@ -145,22 +155,24 @@ const MobileTaskDetailPage = () => {
     setIsUpdatingStatus(true);
     const newCompletedStatus = !task.is_completed;
     try {
-      const { data: updatedTask, error: updateError } = await supabase
-        .from("tasks")
-        .update({
-          is_completed: newCompletedStatus,
-          completed_at: newCompletedStatus ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", task.id)
-        .select("*, projects(id,name)") // Re-select to get projects info for UI consistency
-        .single();
+      const { data: updatedTask, error: updateError } = await api.tasks.update(task.id, {
+        is_completed: newCompletedStatus,
+        completed_at: newCompletedStatus ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      });
 
-      if (updateError) throw updateError;
-      setTask(updatedTask); // Update local state with the full task object
+      if (updateError) throw new Error(updateError);
+      
+      // Update local state - preserve the projects info
+      setTask(prev => ({
+        ...prev,
+        is_completed: newCompletedStatus,
+        completed_at: newCompletedStatus ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }));
     } catch (err) {
-      // Optionally show an error message to the user
-      alert("Failed to update task status. Please try again.");
+      const errorMsg = handleError(err, 'update task status');
+      alert(errorMsg);
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -172,29 +184,22 @@ const MobileTaskDetailPage = () => {
     setIsAddingNote(true);
 
     try {
-      const { data: newNote, error: insertError } = await supabase
-        .from("notes")
-        .insert({
-          content: newNoteContent.trim(),
-          task_id: task.id,
-          project_id: null, // Set project_id to null for task-specific notes
-          user_id: user.id,
-        })
-        .select()
-        .single();
+      const { data: newNote, error: insertError } = await api.notes.create({
+        content: newNoteContent.trim(),
+        task_id: task.id,
+        project_id: null, // Set project_id to null for task-specific notes
+      });
 
-      if (insertError) throw insertError;
+      if (insertError) throw new Error(insertError);
 
       setNotes((prevNotes) => [newNote, ...prevNotes]); // Add to top for newest first
       setNewNoteContent("");
 
       // Update task's updated_at timestamp
-      await supabase
-        .from("tasks")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", task.id);
+      await api.tasks.update(task.id, { updated_at: new Date().toISOString() });
     } catch (err) {
-      alert("Failed to add note. Please try again.");
+      const errorMsg = handleError(err, 'add note');
+      alert(errorMsg);
     } finally {
       setIsAddingNote(false);
     }

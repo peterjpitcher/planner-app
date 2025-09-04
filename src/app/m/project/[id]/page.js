@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSupabase } from "@/contexts/SupabaseContext";
+import { useApiClient } from '@/hooks/useApiClient';
+import { handleError } from '@/lib/errorHandler';
 import { useSession } from "next-auth/react";
 import MobileLayout from "@/components/Mobile/MobileLayout";
 import MobileTaskListItem from "@/components/Mobile/MobileTaskListItem"; // Re-use for listing tasks
@@ -20,6 +21,15 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon as SolidCheckIcon,
 } from "@heroicons/react/20/solid";
+
+const getPriorityValue = (priority) => {
+  switch (priority) {
+    case 'High': return 3;
+    case 'Medium': return 2;
+    case 'Low': return 1;
+    default: return 0;
+  }
+};
 
 const getPriorityStyles = (priority) => {
   switch (priority) {
@@ -49,7 +59,7 @@ const getPriorityStyles = (priority) => {
 };
 
 const MobileProjectDetailPage = () => {
-  const supabase = useSupabase();
+  const apiClient = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -74,39 +84,25 @@ const MobileProjectDetailPage = () => {
 
     try {
       // Fetch project details
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", projectId)
-        .eq("user_id", user.id)
-        .single();
-
-      if (projectError) throw projectError;
-      setProject(projectData);
+      const projectData = await apiClient.projects.get(projectId);
+      setProject(projectData.data);
 
       // Fetch project tasks
-      const { data: tasksData, error: tasksError } = await supabase
-        .from("tasks")
-        .select("*, projects(id, name)") // projects needed by MobileTaskListItem
-        .eq("project_id", projectId)
-        .eq("user_id", user.id)
-        .order("is_completed", { ascending: true })
-        .order("due_date", { ascending: true, nullsFirst: true })
-        .order("priority", { ascending: false });
-
-      if (tasksError) throw tasksError;
-      setTasks(tasksData || []);
+      const tasksResponse = await apiClient.tasks.list({
+        projectId,
+        includeCompleted: true,
+        limit: 200
+      });
+      setTasks(tasksResponse.data || []);
 
       // Fetch project notes
-      const { data: notesData, error: notesError } = await supabase
-        .from("notes")
-        .select("*")
-        .eq("project_id", projectId)
-        .is("task_id", null) // Ensure these are project-specific notes
-        .order("created_at", { ascending: false }); // Newest first
-      if (notesError) throw notesError;
-      setProjectNotes(notesData || []);
+      const notesResponse = await apiClient.notes.list({
+        projectId,
+        limit: 100
+      });
+      setProjectNotes(notesResponse.data || []);
     } catch (e) {
+      handleError(e, "Failed to load project information");
       setError("Failed to load project information.");
       setProject(null);
       setTasks([]);
@@ -115,7 +111,7 @@ const MobileProjectDetailPage = () => {
       setIsLoading(false);
       setIsLoadingProjectNotes(false);
     }
-  }, [user, projectId]);
+  }, [user, projectId, apiClient]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -175,28 +171,15 @@ const MobileProjectDetailPage = () => {
     setIsAddingProjectNote(true);
 
     try {
-      const { data: newNote, error: insertError } = await supabase
-        .from("notes")
-        .insert({
-          content: newProjectNoteContent.trim(),
-          project_id: project.id,
-          user_id: user.id,
-          // task_id remains null for project notes
-        })
-        .select()
-        .single();
+      const response = await apiClient.notes.create({
+        content: newProjectNoteContent.trim(),
+        project_id: project.id
+      });
 
-      if (insertError) throw insertError;
-
-      setProjectNotes((prevNotes) => [newNote, ...prevNotes]);
+      setProjectNotes((prevNotes) => [response.data, ...prevNotes]);
       setNewProjectNoteContent("");
-
-      // Update project's updated_at timestamp
-      await supabase
-        .from("projects")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", project.id);
     } catch (err) {
+      handleError(err, "Failed to add note");
       alert("Failed to add note. Please try again.");
     } finally {
       setIsAddingProjectNote(false);

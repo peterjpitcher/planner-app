@@ -6,7 +6,7 @@ import { validateTask } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 
-// GET /api/tasks - Fetch tasks (optionally filtered by project)
+// GET /api/tasks - Fetch tasks with support for upcoming range
 export async function GET(request) {
   try {
     // Rate limiting
@@ -31,31 +31,94 @@ export async function GET(request) {
     
     const supabase = getSupabaseServer(session.accessToken);
     const { searchParams } = new URL(request.url);
+    
+    // Parse query parameters
     const projectId = searchParams.get('projectId');
     const includeCompleted = searchParams.get('includeCompleted') === 'true';
+    const range = searchParams.get('range'); // 'upcoming' or undefined
+    const days = parseInt(searchParams.get('days') || '14', 10);
+    const includeOverdue = searchParams.get('includeOverdue') !== 'false'; // default true
+    const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 200);
+    const offset = parseInt(searchParams.get('offset') || '0', 10);
     
+    // Build base query
     let query = supabase
       .from('tasks')
-      .select('*, projects(id, name)')
-      .order('created_at', { ascending: false });
+      .select('*, projects(id, name)', { count: 'exact' })
+      .eq('user_id', session.user.id);
     
+    // Apply project filter if specified
     if (projectId) {
       query = query.eq('project_id', projectId);
     }
     
+    // Apply completion filter
     if (!includeCompleted) {
       query = query.eq('is_completed', false);
     }
     
-    const { data, error } = await query;
+    // Apply upcoming range filter
+    if (range === 'upcoming') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+      
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + days);
+      endDate.setHours(23, 59, 59, 999);
+      const endDateISO = endDate.toISOString();
+      
+      // Build date filter conditions
+      if (includeOverdue) {
+        // Include all tasks with due_date <= endDate (includes overdue)
+        query = query.lte('due_date', endDateISO);
+      } else {
+        // Only include tasks from today onwards
+        query = query.gte('due_date', todayISO).lte('due_date', endDateISO);
+      }
+      
+      // Sort by due_date first for upcoming view
+      query = query.order('due_date', { ascending: true, nullsFirst: false })
+                   .order('priority', { ascending: false }) // High -> Medium -> Low
+                   .order('created_at', { ascending: false });
+    } else {
+      // Default sorting for non-upcoming views
+      query = query.order('created_at', { ascending: false });
+    }
+    
+    // Apply pagination
+    query = query.range(offset, offset + limit - 1);
+    
+    const { data, error, count } = await query;
     
     if (error) {
       const errorMessage = handleSupabaseError(error, 'fetch');
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
     
-    return NextResponse.json({ data: data || [] });
+    // Transform data to include project_name at top level for easier consumption
+    const transformedData = (data || []).map(task => ({
+      ...task,
+      project_name: task.projects?.name || null
+    }));
+    
+    // Build response with pagination info if count is available
+    const response = {
+      data: transformedData
+    };
+    
+    if (count !== null) {
+      response.pagination = {
+        total: count,
+        limit,
+        offset,
+        hasMore: (offset + limit) < count
+      };
+    }
+    
+    return NextResponse.json(response);
   } catch (error) {
+    console.error('GET /api/tasks error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

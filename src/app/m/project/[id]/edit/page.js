@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { useApiClient } from '@/hooks/useApiClient';
+import { handleError } from '@/lib/errorHandler';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 
 const MobileEditProjectPage = () => {
-  const supabase = useSupabase();
+  const api = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -43,26 +44,24 @@ const MobileEditProjectPage = () => {
         setIsLoading(true);
         setError(null);
         try {
-          const { data, error: dbError } = await supabase
-            .from('projects')
-            .select('*')
-            .eq('id', projectId)
-            .eq('user_id', user.id)
-            .single();
-          if (dbError) throw dbError;
-          if (data) {
-            setProject(data);
-            setName(data.name || '');
-            setDescription(data.description || '');
-            setDueDate(data.due_date ? format(parseISO(data.due_date), 'yyyy-MM-dd') : '');
-            setPriority(data.priority || 'Medium');
-            setProjectStatus(data.status || 'Open');
-            setStakeholders(data.stakeholders ? data.stakeholders.join(', ') : '');
+          const { data, error: dbError } = await api.projects.list();
+          if (dbError) throw new Error(dbError);
+          
+          const project = data?.find(p => p.id === projectId);
+          if (project) {
+            setProject(project);
+            setName(project.name || '');
+            setDescription(project.description || '');
+            setDueDate(project.due_date ? format(parseISO(project.due_date), 'yyyy-MM-dd') : '');
+            setPriority(project.priority || 'Medium');
+            setProjectStatus(project.status || 'Open');
+            setStakeholders(project.stakeholders ? project.stakeholders.join(', ') : '');
           } else {
             setError('Project not found.');
           }
         } catch (e) {
-          setError('Failed to load project data.');
+          const errorMsg = handleError(e, 'fetch project data');
+          setError(errorMsg);
         }
         setIsLoading(false);
       };
@@ -82,25 +81,22 @@ const MobileEditProjectPage = () => {
     const stakeholdersArray = stakeholders.split(',').map(s => s.trim()).filter(s => s);
 
     try {
-      const { error: updateError } = await supabase
-        .from('projects')
-        .update({
-          name: name.trim(),
-          description: description.trim(),
-          due_date: dueDate || null,
-          priority: priority,
-          status: projectStatus,
-          stakeholders: stakeholdersArray,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', projectId)
-        .eq('user_id', user.id);
+      const { data, error: updateError } = await api.projects.update(projectId, {
+        name: name.trim(),
+        description: description.trim(),
+        due_date: dueDate || null,
+        priority: priority,
+        status: projectStatus,
+        stakeholders: stakeholdersArray,
+        updated_at: new Date().toISOString(),
+      });
 
-      if (updateError) throw updateError;
+      if (updateError) throw new Error(updateError);
       router.replace(`/m/project/${projectId}`); // Navigate back using replace
       // router.refresh(); // Consider if a refresh is needed or if optimistic update is better
     } catch (err) {
-      setFormError('Failed to save project. ' + (err.message || ''));
+      const errorMsg = handleError(err, 'save project');
+      setFormError(errorMsg);
     } finally {
       setIsSaving(false);
     }
@@ -113,17 +109,14 @@ const MobileEditProjectPage = () => {
     setIsDeleting(true);
     setFormError('');
     try {
-      const { error: deleteError } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', projectId)
-        .eq('user_id', user.id);
-      if (deleteError) throw deleteError;
+      const { data, error: deleteError } = await api.projects.delete(projectId);
+      if (deleteError) throw new Error(deleteError);
       // On successful deletion, navigate to the mobile dashboard
       // and ideally, the dashboard should re-fetch or update its list.
       router.replace('/m/dashboard'); 
     } catch (err) {
-      setFormError('Failed to delete project. ' + (err.message || ''));
+      const errorMsg = handleError(err, 'delete project');
+      setFormError(errorMsg);
       setIsDeleting(false); // Only set to false on error, otherwise page navigates away
     }
     // No finally setIsDeleting(false) needed if navigation occurs on success.

@@ -88,9 +88,27 @@ export function useApiClient() {
     }, [apiCall]),
   };
 
+  // Notes methods
+  const notes = {
+    list: useCallback(async (projectId = null, taskId = null) => {
+      let url = '/api/notes?';
+      if (projectId) url += `projectId=${projectId}&`;
+      if (taskId) url += `taskId=${taskId}&`;
+      return apiCall(url);
+    }, [apiCall]),
+    
+    create: useCallback(async (noteData) => {
+      return apiCall('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify(noteData),
+      });
+    }, [apiCall]),
+  };
+
   return {
     projects,
     tasks,
+    notes,
   };
 }
 

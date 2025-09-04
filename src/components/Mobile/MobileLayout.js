@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
 import { signOut } from 'next-auth/react';
 import {
   PlusCircleIcon, ArrowUturnLeftIcon, ArrowLeftOnRectangleIcon, 
@@ -13,7 +12,6 @@ import AddProjectModal from '@/components/Projects/AddProjectModal'; // Assuming
 import { PlusIcon } from '@heroicons/react/20/solid'; // Added for FAB
 
 const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
-  const supabase = useSupabase();
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,8 +39,8 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col text-gray-900">
-      <header className="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
+    <div className="min-h-screen bg-gray-100 flex flex-col text-gray-900 pb-safe">
+      <header className="bg-indigo-600 text-white shadow-md sticky top-0 z-50 pt-safe">
         <div className="container mx-auto px-2 sm:px-4 py-3">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold truncate flex-shrink-0 mr-2">{title}</h1>
@@ -90,10 +88,10 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
           )} */}
         </div>
       </header>
-      <main className="flex-grow container mx-auto px-2 py-3 sm:px-4">
+      <main className="flex-grow container mx-auto px-safe py-3">
         {children}
       </main>
-      <footer className="bg-white border-t border-gray-200 p-3 pb-safe sticky bottom-0 z-50 shadow-t-md">
+      <footer className="bg-white border-t border-gray-200 p-3 pb-safe sticky bottom-0 z-50 shadow-lg">
         <nav className="flex justify-around items-center">
           <Link 
             href="/m/dashboard" 
@@ -117,7 +115,7 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
           onClick={() => {
             setShowAddProjectModal(true);
           }}
-          className="touch-target fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-[60]"
+          className="touch-target fixed bottom-20 right-4 sm:bottom-24 sm:right-6 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 z-40"
           title="Add New Project"
         >
           <PlusIcon className="h-6 w-6" />

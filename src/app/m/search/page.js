@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { useApiClient } from '@/hooks/useApiClient';
+import { handleError } from '@/lib/errorHandler';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileProjectListItem from '@/components/Mobile/MobileProjectListItem';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
 
 function SearchResults() {
-  const supabase = useSupabase();
+  const api = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -38,37 +39,43 @@ function SearchResults() {
 
     try {
       // Search projects
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*, tasks(id, is_completed)') // For open_tasks_count
-        .eq('user_id', user.id)
-        .ilike('name', `%${query}%`); // Case-insensitive search on name
-        // Add .or(`description.ilike.%${query}%`) if searching descriptions too
+      const { data: projectData, error: projectError } = await api.projects.list();
+      if (projectError) throw new Error(projectError);
       
-      if (projectError) {} // Project search error
-      const projectsWithOpenTaskCount = (projectData || []).map(p => ({
+      // Filter projects by search query
+      const filteredProjects = (projectData || []).filter(project => 
+        project.name.toLowerCase().includes(query.toLowerCase())
+      );
+      
+      // Get tasks for open task count calculation
+      const { data: allTasks, error: allTasksError } = await api.tasks.list();
+      if (allTasksError) throw new Error(allTasksError);
+      
+      const projectsWithOpenTaskCount = filteredProjects.map(p => ({
         ...p,
-        open_tasks_count: p.tasks ? p.tasks.filter(t => !t.is_completed).length : 0,
+        open_tasks_count: (allTasks || []).filter(t => t.project_id === p.id && !t.is_completed).length,
       }));
       setProjects(projectsWithOpenTaskCount);
 
       // Search tasks
-      const { data: taskData, error: taskError } = await supabase
-        .from('tasks')
-        .select('*, projects(id, name)') // For project context
-        .eq('user_id', user.id)
-        .ilike('name', `%${query}%`);
-        // Add .or(`description.ilike.%${query}%`) if searching descriptions too
-
-      if (taskError) {} // Task search error
-      setTasks(taskData || []);
-
-      if (projectError || taskError) {
-        setError('An error occurred during the search.');
-      }
+      const filteredTasks = (allTasks || []).filter(task => 
+        task.name.toLowerCase().includes(query.toLowerCase())
+      );
+      
+      // Add project info to tasks
+      const tasksWithProject = filteredTasks.map(task => {
+        const project = projectData?.find(p => p.id === task.project_id);
+        return {
+          ...task,
+          projects: project ? { id: project.id, name: project.name } : null
+        };
+      });
+      
+      setTasks(tasksWithProject);
 
     } catch (e) {
-      setError('Search failed. Please try again.');
+      const errorMsg = handleError(e, 'perform search');
+      setError(errorMsg);
       setProjects([]);
       setTasks([]);
     } finally {

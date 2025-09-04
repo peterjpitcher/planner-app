@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { useApiClient } from '@/hooks/useApiClient';
+import { handleError } from '@/lib/errorHandler';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 import { quickPickOptions } from '@/lib/dateUtils';
 
 const MobileAddTaskPage = () => {
-  const supabase = useSupabase();
+  const api = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -40,15 +41,12 @@ const MobileAddTaskPage = () => {
       const fetchProjectPriority = async () => {
         setIsLoadingProject(true);
         try {
-          const { data, error } = await supabase
-            .from('projects')
-            .select('priority')
-            .eq('id', projectId)
-            .eq('user_id', user.id)
-            .single();
-          if (error) throw error;
-          if (data && data.priority) {
-            setPriority(data.priority); // Set default task priority from project
+          const { data, error } = await api.projects.list();
+          if (error) throw new Error(error);
+          
+          const project = data?.find(p => p.id === projectId);
+          if (project && project.priority) {
+            setPriority(project.priority); // Set default task priority from project
           }
         } catch (err) {
           // Keep default medium if project fetch fails
@@ -91,24 +89,22 @@ const MobileAddTaskPage = () => {
     setIsSaving(true);
 
     try {
-      const { error: insertError } = await supabase.from('tasks').insert({
+      const { data, error: insertError } = await api.tasks.create({
         name: taskName.trim(),
         description: description.trim(),
         due_date: dueDate || null,
         priority: priority,
         project_id: projectId,
-        user_id: user.id,
         is_completed: false, // New tasks are not completed
         // created_at and updated_at will be set by default by Supabase
       });
 
-      if (insertError) throw insertError;
+      if (insertError) throw new Error(insertError);
       
       // Also update the parent project's updated_at timestamp
-      await supabase
-        .from('projects')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', projectId);
+      await api.projects.update(projectId, { 
+        updated_at: new Date().toISOString() 
+      });
 
       if (isAddingAnother) {
         resetForm();
@@ -117,7 +113,8 @@ const MobileAddTaskPage = () => {
         router.replace(`/m/project/${projectId}`); // Use replace to avoid edit page in history
       }
     } catch (err) {
-      setFormError('Failed to create task. ' + (err.message || ''));
+      const errorMsg = handleError(err, 'create task');
+      setFormError(errorMsg);
     } finally {
       setIsSaving(false);
     }

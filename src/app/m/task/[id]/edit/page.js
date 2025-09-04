@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { useApiClient } from '@/hooks/useApiClient';
+import { handleError } from '@/lib/errorHandler';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import { format, parseISO } from 'date-fns';
 
 const MobileEditTaskPage = () => {
-  const supabase = useSupabase();
+  const api = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -41,25 +42,23 @@ const MobileEditTaskPage = () => {
         setIsLoading(true);
         setError(null);
         try {
-          const { data, error: dbError } = await supabase
-            .from('tasks')
-            .select('*')
-            .eq('id', taskId)
-            .eq('user_id', user.id)
-            .single();
-          if (dbError) throw dbError;
-          if (data) {
-            setTask(data);
-            setName(data.name || '');
-            setDescription(data.description || '');
-            setDueDate(data.due_date ? format(parseISO(data.due_date), 'yyyy-MM-dd') : '');
-            setPriority(data.priority || 'Medium');
-            setProjectId(data.project_id || '');
+          const { data, error: dbError } = await api.tasks.list();
+          if (dbError) throw new Error(dbError);
+          
+          const task = data?.find(t => t.id === taskId);
+          if (task) {
+            setTask(task);
+            setName(task.name || '');
+            setDescription(task.description || '');
+            setDueDate(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '');
+            setPriority(task.priority || 'Medium');
+            setProjectId(task.project_id || '');
           } else {
             setError('Task not found.');
           }
         } catch (e) {
-          setError('Failed to load task data.');
+          const errorMsg = handleError(e, 'fetch task data');
+          setError(errorMsg);
         }
         setIsLoading(false);
       };
@@ -77,22 +76,19 @@ const MobileEditTaskPage = () => {
     setIsSaving(true);
 
     try {
-      const { error: updateError } = await supabase
-        .from('tasks')
-        .update({
-          name: name.trim(),
-          description: description.trim(),
-          due_date: dueDate || null,
-          priority: priority,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', taskId)
-        .eq('user_id', user.id);
+      const { data, error: updateError } = await api.tasks.update(taskId, {
+        name: name.trim(),
+        description: description.trim(),
+        due_date: dueDate || null,
+        priority: priority,
+        updated_at: new Date().toISOString(),
+      });
 
-      if (updateError) throw updateError;
+      if (updateError) throw new Error(updateError);
       router.replace(`/m/task/${taskId}`); // Navigate back to task detail page
     } catch (err) {
-      setFormError('Failed to save task. ' + (err.message || ''));
+      const errorMsg = handleError(err, 'save task');
+      setFormError(errorMsg);
     } finally {
       setIsSaving(false);
     }
@@ -105,12 +101,8 @@ const MobileEditTaskPage = () => {
     setIsDeleting(true);
     setFormError('');
     try {
-      const { error: deleteError } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', taskId)
-        .eq('user_id', user.id);
-      if (deleteError) throw deleteError;
+      const { data, error: deleteError } = await api.tasks.delete(taskId);
+      if (deleteError) throw new Error(deleteError);
       // On successful deletion, navigate to the parent project or tasks list
       if (projectId) {
         router.replace(`/m/project/${projectId}`);
@@ -118,7 +110,8 @@ const MobileEditTaskPage = () => {
         router.replace('/m/tasks'); // Fallback if no project_id (should not happen for tasks)
       }
     } catch (err) {
-      setFormError('Failed to delete task. ' + (err.message || ''));
+      const errorMsg = handleError(err, 'delete task');
+      setFormError(errorMsg);
       setIsDeleting(false);
     }
     // No finally setIsDeleting(false) if navigating away

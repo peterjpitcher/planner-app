@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSupabase } from '@/contexts/SupabaseContext';
+import { useApiClient } from '@/hooks/useApiClient';
+import { handleError } from '@/lib/errorHandler';
 import { useSession } from 'next-auth/react';
 import MobileLayout from '@/components/Mobile/MobileLayout';
 import MobileTaskListItem from '@/components/Mobile/MobileTaskListItem';
@@ -20,7 +21,7 @@ const getPriorityValue = (priority) => {
 };
 
 const MobileTasksPage = () => {
-  const supabase = useSupabase();
+  const apiClient = useApiClient();
   const { data: session, status } = useSession();
   const user = session?.user;
   const authLoading = status === 'loading';
@@ -46,25 +47,22 @@ const MobileTasksPage = () => {
     setIsLoadingProjects(true);
     setError(null);
     try {
-      const { data: tasksData, error: tasksDbError } = await supabase
-        .from('tasks')
-        .select('*, projects(id, name)')
-        .eq('user_id', user.id)
-        .order('due_date', { ascending: true, nullsFirst: true })
-        .order('priority', { ascending: false });
-      if (tasksDbError) throw tasksDbError;
-      setTasks(tasksData || []);
+      // Fetch tasks using API client
+      const tasksResponse = await apiClient.tasks.list({
+        includeCompleted: false,
+        limit: 200
+      });
+      setTasks(tasksResponse.data || []);
 
-      const { data: projectsData, error: projectsDbError } = await supabase
-        .from('projects')
-        .select('id, name')
-        .eq('user_id', user.id)
-        .not('status', 'in', '("Completed", "Cancelled")')
-        .order('name', { ascending: true });
-      if (projectsDbError) throw projectsDbError;
-      setProjects(projectsData || []);
+      // Fetch projects using API client
+      const projectsResponse = await apiClient.projects.list({
+        includeCompleted: false,
+        limit: 100
+      });
+      setProjects(projectsResponse.data || []);
 
     } catch (e) {
+      handleError(e, 'Failed to load data');
       setError('Failed to load data.');
       setTasks([]);
       setProjects([]);
@@ -72,7 +70,7 @@ const MobileTasksPage = () => {
       setIsLoading(false);
       setIsLoadingProjects(false);
     }
-  }, [user]);
+  }, [user, apiClient]);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
