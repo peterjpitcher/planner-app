@@ -33,8 +33,19 @@ export function useApiClient() {
 
   // Project methods
   const projects = {
-    list: useCallback(async (includeCompleted = false) => {
-      return apiCall(`/api/projects?includeCompleted=${includeCompleted}`);
+    list: useCallback(async (options = {}) => {
+      const params = new URLSearchParams();
+      if (options.includeCompleted) params.append('includeCompleted', 'true');
+      if (options.limit) params.append('limit', options.limit);
+      if (options.offset) params.append('offset', options.offset);
+      return apiCall(`/api/projects?${params.toString()}`);
+    }, [apiCall]),
+    
+    get: useCallback(async (id) => {
+      const response = await apiCall(`/api/projects?includeCompleted=true`);
+      if (response.error) return response;
+      const project = response.data?.find(p => p.id === id);
+      return { data: project || null, error: project ? null : 'Project not found' };
     }, [apiCall]),
     
     create: useCallback(async (projectData) => {
@@ -60,11 +71,16 @@ export function useApiClient() {
 
   // Task methods
   const tasks = {
-    list: useCallback(async (projectId = null, includeCompleted = false) => {
-      let url = '/api/tasks?';
-      if (projectId) url += `projectId=${projectId}&`;
-      url += `includeCompleted=${includeCompleted}`;
-      return apiCall(url);
+    list: useCallback(async (options = {}) => {
+      const params = new URLSearchParams();
+      if (options.projectId) params.append('projectId', options.projectId);
+      if (options.includeCompleted) params.append('includeCompleted', 'true');
+      if (options.range) params.append('range', options.range);
+      if (options.days !== undefined) params.append('days', options.days);
+      if (options.includeOverdue !== undefined) params.append('includeOverdue', options.includeOverdue);
+      if (options.limit) params.append('limit', options.limit);
+      if (options.offset) params.append('offset', options.offset);
+      return apiCall(`/api/tasks?${params.toString()}`);
     }, [apiCall]),
     
     create: useCallback(async (taskData) => {
@@ -90,11 +106,13 @@ export function useApiClient() {
 
   // Notes methods
   const notes = {
-    list: useCallback(async (projectId = null, taskId = null) => {
-      let url = '/api/notes?';
-      if (projectId) url += `projectId=${projectId}&`;
-      if (taskId) url += `taskId=${taskId}&`;
-      return apiCall(url);
+    list: useCallback(async (options = {}) => {
+      const params = new URLSearchParams();
+      if (options.projectId) params.append('projectId', options.projectId);
+      if (options.taskId) params.append('taskId', options.taskId);
+      if (options.limit) params.append('limit', options.limit);
+      if (options.offset) params.append('offset', options.offset);
+      return apiCall(`/api/notes?${params.toString()}`);
     }, [apiCall]),
     
     create: useCallback(async (noteData) => {
