@@ -11,7 +11,7 @@ export async function GET(request) {
   try {
     // Rate limiting
     const clientId = getClientIdentifier(request);
-    const rateLimitResult = checkRateLimit(`tasks-get-${clientId}`, 30, 60000); // 30 requests per minute
+    const rateLimitResult = checkRateLimit(`tasks-get-${clientId}`, 120, 60000); // 120 requests per minute (2/sec)
     
     if (!rateLimitResult.allowed) {
       return NextResponse.json(
@@ -128,7 +128,7 @@ export async function POST(request) {
   try {
     // Rate limiting
     const clientId = getClientIdentifier(request);
-    const rateLimitResult = checkRateLimit(`tasks-post-${clientId}`, 10, 60000); // 10 creates per minute
+    const rateLimitResult = checkRateLimit(`tasks-post-${clientId}`, 30, 60000); // 30 creates per minute
     
     if (!rateLimitResult.allowed) {
       return NextResponse.json(

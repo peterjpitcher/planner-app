@@ -10,7 +10,7 @@ export async function POST(request) {
   try {
     // Rate limiting - higher limit for batch operations
     const clientId = getClientIdentifier(request);
-    const rateLimitResult = checkRateLimit(`notes-batch-${clientId}`, 10, 60000);
+    const rateLimitResult = checkRateLimit(`notes-batch-${clientId}`, 60, 60000); // 60 batch requests per minute
     
     if (!rateLimitResult.allowed) {
       return NextResponse.json(

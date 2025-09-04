@@ -1,6 +1,8 @@
 // API client for all data operations
 // This replaces direct Supabase calls for better security and reliability
 
+import { dedupedFetch, clearCache } from './requestCache';
+
 class APIClient {
   async fetchWithAuth(url, options = {}) {
     const response = await fetch(url, {
@@ -24,22 +26,33 @@ class APIClient {
     const params = new URLSearchParams();
     if (includeCompleted) params.append('includeCompleted', 'true');
     
-    const response = await this.fetchWithAuth(`/api/projects?${params}`);
-    return response.data || [];
+    const cacheKey = `projects-${includeCompleted}`;
+    return dedupedFetch(cacheKey, async () => {
+      const response = await this.fetchWithAuth(`/api/projects?${params}`);
+      return response.data || [];
+    });
   }
 
   async createProject(projectData) {
-    return this.fetchWithAuth('/api/projects', {
+    const result = await this.fetchWithAuth('/api/projects', {
       method: 'POST',
       body: JSON.stringify(projectData),
     });
+    // Clear project cache after creation
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result;
   }
 
   async updateProject(projectId, updates) {
-    return this.fetchWithAuth(`/api/projects/${projectId}`, {
+    const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
     });
+    // Clear project cache after update
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result;
   }
 
   async deleteProject(projectId) {
@@ -80,9 +93,13 @@ class APIClient {
 
   // Batch fetch tasks for multiple projects
   async getTasksBatch(projectIds) {
-    return this.fetchWithAuth('/api/tasks/batch', {
-      method: 'POST',
-      body: JSON.stringify({ projectIds }),
+    const cacheKey = `tasks-batch-${projectIds.sort().join(',')}`;
+    return dedupedFetch(cacheKey, async () => {
+      const response = await this.fetchWithAuth('/api/tasks/batch', {
+        method: 'POST',
+        body: JSON.stringify({ projectIds }),
+      });
+      return response.data || {};
     });
   }
 
@@ -104,9 +121,13 @@ class APIClient {
 
   // Batch fetch notes for multiple tasks
   async getNotesBatch(taskIds) {
-    return this.fetchWithAuth('/api/notes/batch', {
-      method: 'POST',
-      body: JSON.stringify({ taskIds }),
+    const cacheKey = `notes-batch-${taskIds.sort().join(',')}`;
+    return dedupedFetch(cacheKey, async () => {
+      const response = await this.fetchWithAuth('/api/notes/batch', {
+        method: 'POST',
+        body: JSON.stringify({ taskIds }),
+      });
+      return response.data || {};
     });
   }
 
