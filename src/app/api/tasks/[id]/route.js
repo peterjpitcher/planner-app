@@ -3,6 +3,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { createClient } from '@supabase/supabase-js';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateTask } from '@/lib/validators';
+import { getSupabaseServer } from '@/lib/supabaseServer';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 

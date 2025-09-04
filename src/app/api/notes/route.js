@@ -1,38 +1,9 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-
-// Create a Supabase client for server-side operations
-function getSupabaseServer(accessToken = null) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Missing Supabase environment variables');
-  }
-  
-  const options = {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    }
-  };
-  
-  // If we have a service key, use it (bypasses RLS)
-  // Otherwise, use anon key with user's access token
-  if (!process.env.SUPABASE_SERVICE_KEY && accessToken) {
-    options.global = {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    };
-  }
-  
-  return createClient(supabaseUrl, supabaseKey, options);
-}
 
 // GET /api/notes - Fetch notes for a project or task
 export async function GET(request) {

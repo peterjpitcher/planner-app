@@ -1,39 +1,10 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-
-// Create a Supabase client for server-side operations
-function getSupabaseServer(accessToken = null) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Missing Supabase environment variables');
-  }
-  
-  const options = {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    }
-  };
-  
-  // If we have a service key, use it (bypasses RLS)
-  // Otherwise, use anon key with user's access token
-  if (!process.env.SUPABASE_SERVICE_KEY && accessToken) {
-    options.global = {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    };
-  }
-  
-  return createClient(supabaseUrl, supabaseKey, options);
-}
 
 // GET /api/projects - Fetch user's projects
 export async function GET(request) {
@@ -61,24 +32,35 @@ export async function GET(request) {
     const supabase = getSupabaseServer(session.accessToken);
     const { searchParams } = new URL(request.url);
     const includeCompleted = searchParams.get('includeCompleted') === 'true';
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200);
+    const offset = parseInt(searchParams.get('offset') || '0');
     
     let query = supabase
       .from('projects')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
     
     if (!includeCompleted) {
       query = query.not('status', 'in', '("Completed","Cancelled")');
     }
     
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     
     if (error) {
       const errorMessage = handleSupabaseError(error, 'fetch');
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
     
-    return NextResponse.json({ data: data || [] });
+    return NextResponse.json({ 
+      data: data || [],
+      pagination: {
+        total: count || 0,
+        limit,
+        offset,
+        hasMore: (offset + limit) < (count || 0)
+      }
+    });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

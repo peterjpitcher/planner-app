@@ -1,27 +1,10 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-
-// Create a Supabase client with the service role key for server-side operations
-function getSupabaseServer() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Missing Supabase environment variables');
-  }
-  
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    }
-  });
-}
 
 // PATCH /api/projects/[id] - Update a project
 export async function PATCH(request, { params }) {
@@ -49,7 +32,7 @@ export async function PATCH(request, { params }) {
     const { id } = params;
     const body = await request.json();
     
-    const supabase = getSupabaseServer();
+    const supabase = getSupabaseServer(session.accessToken);
     
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase

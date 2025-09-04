@@ -75,11 +75,15 @@ export const authOptions = {
           }
 
           if (data.user && data.session) {
-            // Return user object with all necessary fields
+            // Return user object with all necessary fields, including refresh details
             return {
               id: data.user.id,
               email: data.user.email || credentials.email, // Fallback to input email
               accessToken: data.session.access_token,
+              refreshToken: data.session.refresh_token,
+              accessTokenExpires: data.session.expires_at
+                ? data.session.expires_at * 1000
+                : Date.now() + 55 * 60 * 1000, // fallback ~55m
               // You can add other properties from your user table here
               // e.g. name: data.user.user_metadata.full_name
             };
@@ -99,8 +103,8 @@ export const authOptions = {
   // 2. Use JSON-Web-Token sessions (no DB lookup per request)
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // keep session alive for 30 days
-    updateAge: 24 * 60 * 60, // extend JWT every 24 hours
+    maxAge: 90 * 24 * 60 * 60, // keep session alive for 90 days
+    updateAge: 12 * 60 * 60, // extend JWT every 12 hours
   },
 
   // 3. JWT settings
@@ -124,6 +128,8 @@ export const authOptions = {
         token.id = user.id;
         token.email = user.email;
         token.accessToken = user.accessToken;
+        token.refreshToken = user.refreshToken;
+        token.accessTokenExpires = user.accessTokenExpires;
       }
       
       // Handle session updates
@@ -131,6 +137,33 @@ export const authOptions = {
         token = { ...token, ...session };
       }
       
+      // Proactively refresh Supabase access token if expiring in < 1 minute
+      try {
+        const willExpireSoon =
+          token?.accessToken && token?.accessTokenExpires &&
+          Date.now() > (token.accessTokenExpires - 60 * 1000);
+
+        if (willExpireSoon && token.refreshToken) {
+          const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          });
+          const { data, error } = await supabase.auth.refreshSession({
+            refresh_token: token.refreshToken,
+          });
+          if (error) {
+            console.error('NextAuth: Failed to refresh Supabase session', error);
+          } else if (data?.session) {
+            token.accessToken = data.session.access_token;
+            token.refreshToken = data.session.refresh_token || token.refreshToken;
+            token.accessTokenExpires = data.session.expires_at
+              ? data.session.expires_at * 1000
+              : Date.now() + 55 * 60 * 1000;
+          }
+        }
+      } catch (err) {
+        console.error('NextAuth: Unexpected error attempting token refresh', err);
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -142,9 +175,9 @@ export const authOptions = {
           user: {
             id: token.id || token.sub, // Use sub as fallback
             email: token.email || '',
-            // name: null, // Add if you have name data
           },
-          accessToken: token.accessToken, // Include Supabase access token
+          accessToken: token.accessToken,
+          // Do not expose refreshToken to the client.
           expires: session?.expires || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         };
       }

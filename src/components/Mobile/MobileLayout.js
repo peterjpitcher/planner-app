@@ -93,7 +93,7 @@ const MobileLayout = ({ children, title = 'Planner App', onProjectAdded }) => {
       <main className="flex-grow container mx-auto px-2 py-3 sm:px-4">
         {children}
       </main>
-      <footer className="bg-white border-t border-gray-200 p-3 sticky bottom-0 z-50 shadow-t-md">
+      <footer className="bg-white border-t border-gray-200 p-3 pb-safe sticky bottom-0 z-50 shadow-t-md">
         <nav className="flex justify-around items-center">
           <Link 
             href="/m/dashboard" 
