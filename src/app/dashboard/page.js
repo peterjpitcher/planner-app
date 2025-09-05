@@ -7,7 +7,6 @@ import { apiClient } from '@/lib/apiClient';
 import ProjectList from '@/components/Projects/ProjectList';
 import AddProjectModal from '@/components/Projects/AddProjectModal';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
-import UpcomingTasksList from '@/components/Tasks/UpcomingTasksList';
 import { EyeIcon, EyeSlashIcon, PlusCircleIcon, ExclamationTriangleIcon, InboxIcon, ClockIcon, CalendarDaysIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
 import Link from 'next/link';
@@ -385,13 +384,9 @@ export default function DashboardPage() {
             </div>
         </div>
       </header>
-      {/* Upcoming Tasks List - Visible only on narrow screens (below md) */}
-      <div className="block md:hidden flex-grow">
-        <UpcomingTasksList className="h-full" />
-      </div>
-
-      {/* Main content area with two columns - Hidden on narrow screens (below md) */}
-      <div className="hidden md:block flex-grow w-full py-6 px-4">
+      
+      {/* Main content area with two columns */}
+      <div className="flex-grow w-full py-6 px-4">
         <div className="lg:flex lg:gap-6">
           {/* Left column: Filters and Project List */}
           <div className="lg:w-2/3 mb-6 lg:mb-0 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
