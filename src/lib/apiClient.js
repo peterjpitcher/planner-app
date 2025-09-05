@@ -99,7 +99,7 @@ class APIClient {
         method: 'POST',
         body: JSON.stringify({ projectIds }),
       });
-      return response.data || {};
+      return response || {};
     });
   }
 
@@ -127,7 +127,7 @@ class APIClient {
         method: 'POST',
         body: JSON.stringify({ taskIds }),
       });
-      return response.data || {};
+      return response || {};
     });
   }
 
