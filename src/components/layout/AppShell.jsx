@@ -66,7 +66,7 @@ export default function AppShell({
       </div>
 
       <div className="relative">
-        <header className={cn('sticky top-0 z-40 px-6 pt-6 lg:px-10', collapseBreakpointClass)}>
+        <header className={cn('px-6 pt-6 lg:px-10', collapseBreakpointClass)}>
           <div className="backdrop-card flex flex-col gap-6 rounded-2xl border border-[#0496c7]/25 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.35em] text-[#036586]/80">Planner</p>
