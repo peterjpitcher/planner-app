@@ -31,11 +31,11 @@ const filterMeta = {
 function ToggleRow({ label, helper, icon: Icon, enabled, onChange }) {
   return (
     <div className="flex items-center justify-between rounded-2xl border border-[#0496c7]/20 bg-white/85 px-4 py-3 transition shadow-sm shadow-[#0496c7]/10">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0496c7]/15 text-[#036586]">
           <Icon className="h-5 w-5" />
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-medium text-[#052a3b]">{label}</p>
           {helper && <p className="text-xs text-[#2f617a]/80">{helper}</p>}
         </div>
@@ -43,7 +43,7 @@ function ToggleRow({ label, helper, icon: Icon, enabled, onChange }) {
       <Switch
         checked={enabled}
         onChange={onChange}
-        className={`relative inline-flex h-7 w-14 items-center rounded-full border border-[#0496c7]/30 transition ${enabled ? 'bg-[#0496c7]' : 'bg-white'}`}
+        className={`relative inline-flex h-7 w-14 shrink-0 items-center rounded-full border border-[#0496c7]/30 transition ${enabled ? 'bg-[#0496c7]' : 'bg-white'}`}
       >
         <span
           className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition ${enabled ? 'translate-x-7' : 'translate-x-1'}`}
