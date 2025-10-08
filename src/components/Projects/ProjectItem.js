@@ -18,6 +18,7 @@ import AddNoteForm from '@/components/Notes/AddNoteForm';
 import ProjectCompletionModal from './ProjectCompletionModal';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { useSession } from 'next-auth/react';
+import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 
 const getPriorityClasses = (priority) => {
   switch (priority) {
@@ -148,11 +149,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const [currentPriority, setCurrentPriority] = useState(project ? project.priority : 'Medium');
   const [isEditingStakeholders, setIsEditingStakeholders] = useState(false);
   const [currentStakeholdersText, setCurrentStakeholdersText] = useState(project && project.stakeholders ? project.stakeholders.join(', ') : '');
-  const [quickTaskName, setQuickTaskName] = useState('');
-  const [quickTaskDueDate, setQuickTaskDueDate] = useState(() => getTodayISODate());
-  const [quickTaskPriority, setQuickTaskPriority] = useState('Medium');
-  const [quickAddError, setQuickAddError] = useState('');
-  const [isQuickAddLoading, setIsQuickAddLoading] = useState(false);
 
   const { setTargetProjectId } = useTargetProject();
 
@@ -175,10 +171,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
         setIsEditingDueDate(false);
         setIsEditingPriority(false);
         setIsEditingStakeholders(false);
-        setQuickTaskDueDate(getTodayISODate());
-        setQuickTaskPriority('Medium');
-        setQuickTaskName('');
-        setQuickAddError('');
     }
   }, [project]);
 
@@ -233,7 +225,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const dueDateDisplayStatus = getDueDateStatus(project.due_date, isEditingDueDate, currentDueDate);
   const projectStatusClasses = getStatusClasses(currentStatus);
   const projectStatusOptions = ['Open', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
-  const priorityOptions = ['High', 'Medium', 'Low'];
   const isProjectCompletedOrCancelled = currentStatus === 'Completed' || currentStatus === 'Cancelled';
 
   const updatedAgo = project.updated_at
@@ -633,37 +624,26 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
     setTargetProjectId(null);
   };
 
-  const handleQuickTaskSubmit = async (event) => {
-    event.preventDefault();
-    if (!project || !project.id) return;
-    const trimmedName = quickTaskName.trim();
-    if (!trimmedName) {
-      setQuickAddError('Add a short name to create the task.');
-      return;
+  const submitQuickTask = async ({ name, dueDate, priority }) => {
+    if (!project || !project.id) {
+      throw new Error('Project is not available.');
     }
     if (!currentUser?.id) {
-      setQuickAddError('Sign in to add tasks.');
-      return;
+      throw new Error('Sign in to add tasks.');
     }
-    setQuickAddError('');
-    setIsQuickAddLoading(true);
-    const dueDateToUse = quickTaskDueDate || getTodayISODate();
-    try {
-      const createdTask = await apiClient.createTask({
-        name: trimmedName,
-        description: null,
-        due_date: dueDateToUse,
-        priority: quickTaskPriority || 'Medium',
-        project_id: project.id,
-        user_id: currentUser.id,
-      });
-      setQuickTaskName('');
-      handleTaskAdded(createdTask);
-    } catch (error) {
-      setQuickAddError(error?.message || 'Could not add that task.');
-    } finally {
-      setIsQuickAddLoading(false);
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      throw new Error('Add a short name to create the task.');
     }
+    const createdTask = await apiClient.createTask({
+      name: trimmedName,
+      description: null,
+      due_date: dueDate || getTodayISODate(),
+      priority: priority || 'Medium',
+      project_id: project.id,
+      user_id: currentUser.id,
+    });
+    handleTaskAdded(createdTask);
   };
 
   return (
@@ -976,57 +956,21 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
 
       {showTasks && (
         <div className="mt-3">
-          <form onSubmit={handleQuickTaskSubmit} className="rounded-2xl border border-[#0496c7]/20 bg-white/90 p-3 shadow-inner shadow-[#0496c7]/10">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              <div className="flex-1">
-                <label htmlFor={`quick-task-${project.id}`} className="sr-only">Quick task name</label>
-                <input
-                  id={`quick-task-${project.id}`}
-                  type="text"
-                  placeholder="Add a task..."
-                  value={quickTaskName}
-                  onChange={(e) => {
-                    setQuickTaskName(e.target.value);
-                    if (quickAddError) setQuickAddError('');
-                  }}
-                  className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-3 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 placeholder:text-[#2f617a]/70 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30"
-                  disabled={isQuickAddLoading}
-                />
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  type="date"
-                  value={quickTaskDueDate}
-                  onChange={(e) => {
-                    setQuickTaskDueDate(e.target.value);
-                    if (quickAddError) setQuickAddError('');
-                  }}
-                  className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-3 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30 sm:w-40"
-                  disabled={isQuickAddLoading}
-                />
-                <select
-                  value={quickTaskPriority}
-                  onChange={(e) => setQuickTaskPriority(e.target.value)}
-                  className="rounded-xl border border-[#0496c7]/25 bg-white px-3 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30"
-                  disabled={isQuickAddLoading}
-                >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                </select>
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center rounded-xl bg-[#0496c7] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[#0496c7]/25 transition hover:bg-[#0382ac] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0496c7]/40 disabled:pointer-events-none disabled:opacity-60"
-                  disabled={isQuickAddLoading}
-                >
-                  {isQuickAddLoading ? 'Adding…' : 'Add Task'}
-                </button>
-              </div>
-            </div>
-            {quickAddError && (
-              <p className="mt-2 text-xs font-medium text-rose-500">{quickAddError}</p>
-            )}
-          </form>
+          <QuickTaskForm
+            onSubmit={submitQuickTask}
+            namePlaceholder="Add a task..."
+            buttonLabel="Add Task"
+            buttonIcon={PlusCircleIcon}
+            priorityType="select"
+            priorityOptions={[
+              { value: 'Low', label: 'Low' },
+              { value: 'Medium', label: 'Medium' },
+              { value: 'High', label: 'High' },
+            ]}
+            defaultPriority="Medium"
+            defaultDueDate={getTodayISODate()}
+            className="rounded-2xl border border-[#0496c7]/20 bg-white/90 p-3 shadow-inner shadow-[#0496c7]/10"
+          />
         </div>
       )}
 
