@@ -2,28 +2,72 @@
 @import '../styles/touch-targets.css';
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --brand-sky: #0496c7;
+  --background: #f2fbff;
+  --foreground: #052a3b;
+  --surface-base: rgba(4, 150, 199, 0.15);
+  --surface-overlay: rgba(255, 255, 255, 0.72);
+  --surface-border: rgba(4, 150, 199, 0.25);
+  --surface-card: rgba(255, 255, 255, 0.9);
+  --text-primary: #052a3b;
+  --text-secondary: #2f617a;
+  --accent: var(--brand-sky);
+  --accent-soft: rgba(4, 150, 199, 0.12);
+  --success: #0e9f6e;
+  --danger: #e24d4c;
+  --glass-blur: blur(22px);
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --shadow-soft: 0 25px 60px -30px rgba(4, 150, 199, 0.35);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #031c26;
+    --foreground: #e6f7ff;
+    --surface-base: rgba(4, 150, 199, 0.35);
+    --surface-overlay: rgba(6, 49, 66, 0.7);
+    --surface-card: rgba(11, 54, 74, 0.85);
+    --text-primary: #e6f7ff;
+    --text-secondary: #b8e6f6;
+    --surface-border: rgba(4, 150, 199, 0.3);
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  background: radial-gradient(circle at 20% 25%, rgba(4, 150, 199, 0.25), transparent 55%),
+              radial-gradient(circle at 78% 18%, rgba(4, 150, 199, 0.2), transparent 45%),
+              radial-gradient(circle at 50% 85%, rgba(79, 209, 197, 0.2), transparent 60%),
+              var(--background);
+  color: var(--text-primary);
+  font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  background-attachment: fixed;
+}
+
+.backdrop-card {
+  background: var(--surface-base);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: var(--glass-blur);
+}
+
+.glass-panel {
+  background: var(--surface-overlay);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: var(--glass-blur);
+}
+
+.card-surface {
+  background: var(--surface-card);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(4, 150, 199, 0.18);
+  box-shadow: var(--shadow-soft);
 }
 
 /* Safe area utilities for iOS devices */

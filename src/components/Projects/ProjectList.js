@@ -101,7 +101,7 @@ export default function ProjectList({ projects, tasksByProject, notesByTask, onP
     //     return null;
     //   })}
     // </div>
-    <div className="space-y-3"> {/* Removed outer space-y-4 and group mapping */}
+    <div className="space-y-5"> {/* Provides consistent breathing room between cards */}
       {projects.map(project => (
         <ProjectItem 
           key={project.id} 

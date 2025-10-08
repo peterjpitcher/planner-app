@@ -10,7 +10,7 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
-  if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', sortKey: Infinity, fullDate: '' };
+  if (!dateToConsider) return { text: 'No due date', classes: 'text-slate-400 text-xs', sortKey: Infinity, fullDate: '' };
   
   let date = startOfDay(parseISO(dateToConsider));
   if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -20,25 +20,25 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   const today = startOfDay(new Date());
   const daysDiff = differenceInDays(date, today);
   let text = `Due: ${format(date, 'EEEE, MMM do')}`;
-  let classes = 'text-gray-700';
+  let classes = 'text-slate-600';
   let sortKey = daysDiff;
   const fullDateText = format(date, 'EEEE, MMM do, yyyy');
 
   if (isToday(date)) {
     text = `Due Today`;
-    classes = 'text-red-700 font-bold';
+    classes = 'text-red-500 font-semibold';
     sortKey = 0;
   } else if (isTomorrow(date)) {
     text = `Due Tomorrow`;
-    classes = 'text-yellow-700 font-bold';
+    classes = 'text-amber-500 font-semibold';
     sortKey = 1;
   } else if (isPast(date) && !isToday(date)) {
     text = `Overdue: ${format(date, 'EEEE, MMM do')}`;
-    classes = 'text-red-700 font-bold';
+    classes = 'text-red-500 font-semibold';
     sortKey = -Infinity + daysDiff;
   } else if (daysDiff < 0) { // Other past dates (should be covered by isPast)
      text = `Due ${format(date, 'EEEE, MMM do')}`;
-     classes = 'text-gray-600 italic';
+     classes = 'text-slate-500 italic';
   } else if (daysDiff >= 0 && daysDiff <= 7) { // Changed from "Due in Xd (DayOfWeek)"
     text = `Due: ${format(date, 'EEEE, MMM do')}`; 
   }
@@ -49,13 +49,13 @@ const getStandaloneTaskPriorityStyling = (priority) => {
   // Returns icon, text color, and card background/border color
   switch (priority) {
     case 'High':
-      return { icon: <SolidFireIcon className="h-4 w-4 text-red-500" />, textClass: 'text-red-600 font-semibold', cardOuterClass: 'border-l-4 border-red-700 bg-red-200', badgeClass: 'bg-red-600 text-white' };
+      return { icon: <SolidFireIcon className="h-4 w-4 text-red-400" />, textClass: 'text-red-500 font-semibold', cardOuterClass: 'border-red-200/70 bg-white/85 shadow-[0_20px_45px_-28px_rgba(239,68,68,0.5)]', badgeClass: 'bg-red-500/90 text-white', glowClass: 'bg-red-400/40', ribbonClass: 'from-red-400/60 via-red-300/25 to-transparent' };
     case 'Medium':
-      return { icon: <SolidExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />, textClass: 'text-yellow-600 font-semibold', cardOuterClass: 'border-l-4 border-yellow-600 bg-yellow-100', badgeClass: 'bg-yellow-500 text-black' };
+      return { icon: <SolidExclamationTriangleIcon className="h-4 w-4 text-amber-400" />, textClass: 'text-amber-500 font-semibold', cardOuterClass: 'border-amber-200/60 bg-white/85 shadow-[0_20px_45px_-28px_rgba(245,158,11,0.4)]', badgeClass: 'bg-amber-400/90 text-slate-900', glowClass: 'bg-amber-400/35', ribbonClass: 'from-amber-400/50 via-amber-300/20 to-transparent' };
     case 'Low':
-      return { icon: <SolidCheckIcon className="h-4 w-4 text-green-500" />, textClass: 'text-green-600', cardOuterClass: 'border-l-4 border-green-700 bg-green-200', badgeClass: 'bg-green-600 text-white' };
+      return { icon: <SolidCheckIcon className="h-4 w-4 text-emerald-400" />, textClass: 'text-emerald-500', cardOuterClass: 'border-emerald-200/60 bg-white/85 shadow-[0_20px_45px_-28px_rgba(16,185,129,0.35)]', badgeClass: 'bg-emerald-500/85 text-white', glowClass: 'bg-emerald-300/35', ribbonClass: 'from-emerald-400/50 via-emerald-300/20 to-transparent' };
     default:
-      return { icon: <SolidClockIcon className="h-4 w-4 text-gray-400" />, textClass: 'text-gray-500', cardOuterClass: 'border-l-4 border-gray-400 bg-gray-100', badgeClass: 'bg-gray-500 text-white' };
+      return { icon: <SolidClockIcon className="h-4 w-4 text-[#2f617a]" />, textClass: 'text-[#2f617a]', cardOuterClass: 'border-slate-200/70 bg-white/85 shadow-[0_20px_45px_-30px_rgba(4,150,199,0.25)]', badgeClass: 'bg-[#0496c7]/15 text-[#036586]', glowClass: 'bg-[#0496c7]/18', ribbonClass: 'from-[#0496c7]/18 via-[#5bd2c1]/12 to-transparent' };
   }
 };
 
@@ -169,12 +169,12 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   };
 
   return (
-    <div className={`p-1.5 border-b border-gray-200 flex items-start gap-2 rounded-md mb-1 ${itemPriorityClass} ${task.is_completed ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'}`}>
+    <div className={`group relative mx-auto flex w-full max-w-[18.5rem] items-start gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_24px_50px_-32px_rgba(4,150,199,0.35)] transition-all sm:mx-0 sm:max-w-[24rem] ${itemPriorityClass} ${task.is_completed ? 'opacity-60 saturate-75' : 'hover:-translate-y-0.5 hover:shadow-[0_34px_60px_-30px_rgba(4,150,199,0.45)]'}`}>
       <input 
         type="checkbox" 
         checked={task.is_completed}
         onChange={handleToggleComplete}
-        className="mt-0.5 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0"
+        className="mt-0.5 h-4 w-4 text-indigo-600 border-slate-300/80 rounded focus:ring-indigo-500 flex-shrink-0"
       />
       <div className="flex-grow min-w-0">
         <div className="flex items-center justify-between">
@@ -190,7 +190,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
             />
           ) : (
             <p 
-              className={`text-sm font-medium text-gray-800 truncate flex-grow mr-1 ${task.is_completed ? 'line-through' : 'cursor-text hover:bg-gray-100'} break-words`}
+              className={`text-sm font-medium leading-snug text-slate-900 flex-grow mr-1 ${task.is_completed ? 'line-through' : 'cursor-text hover:bg-slate-100'} break-words`}
               onClick={() => !task.is_completed && setIsEditingName(true)}
               title={currentName}
             >
@@ -200,13 +200,13 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
           <div className="flex-shrink-0 flex items-center">
             {!task.is_completed && !isEditingName && !isEditingDueDate && !isEditingPriority && (
               <PencilIcon 
-                  className="h-4 w-4 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                  className="h-4 w-4 text-[#2f617a]/70 hover:text-[#0496c7] cursor-pointer"
                   onClick={() => setIsEditingName(true)}
                   title="Edit task"
               />
             )}
             {task.is_completed && (
-              <SolidCheckIcon className="h-5 w-5 text-green-500" title="Completed" />
+              <SolidCheckIcon className="h-5 w-5 text-emerald-500" title="Completed" />
             )}
           </div>
         </div>
@@ -223,7 +223,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
               />
           ) : (
               <span 
-                  className={`${dueDateInfo.classes} ${!task.is_completed ? 'cursor-text hover:bg-gray-100 rounded px-0.5 -mx-0.5' : ''} break-words`}
+                  className={`${dueDateInfo.classes} ${!task.is_completed ? 'cursor-text hover:bg-slate-100 rounded px-0.5 -mx-0.5' : ''} break-words`}
                   onClick={() => !task.is_completed && setIsEditingDueDate(true)}
                   title={dueDateInfo.fullDate || (task.due_date ? format(parseISO(task.due_date), 'EEEE, MMM do, yyyy') : 'No due date')}
               >
@@ -246,24 +246,25 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
             </select>
           ) : (
             <div 
-              className={`flex items-center cursor-pointer hover:bg-gray-100/50 p-0.5 rounded -ml-0.5 ${task.is_completed ? 'pointer-events-none' : ''}`}
+              className={`flex items-center cursor-pointer hover:bg-slate-100/60 p-0.5 rounded-full -ml-0.5 ${task.is_completed ? 'pointer-events-none' : ''}`}
               onClick={() => {if (!task.is_completed) setIsEditingPriority(true);}}
               title={`Priority: ${currentPriority || 'N/A'}`}
+              aria-label={`Priority ${currentPriority || 'none'}`}
             >
+              <span className="sr-only">{`Priority ${currentPriority || 'none'}`}</span>
               {priorityStyles.icon} 
-              <span className={`ml-0.5 text-xs ${priorityStyles.textClass} ${task.is_completed ? 'text-gray-500' : ''}`}>{currentPriority || 'No Priority'}</span>
             </div>
           )}
            {project && (
             <span 
-              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer truncate"
+              className="text-indigo-500 hover:text-indigo-600 hover:underline cursor-pointer truncate"
               title={`Go to project: ${project.name}`}
               onClick={handleProjectClick}
             >
               Proj: {project.name}
             </span>
           )}
-          <span className="text-gray-400 text-2xs whitespace-nowrap hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
+          <span className="text-[#2f617a]/70 text-2xs whitespace-nowrap hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
               {updatedAgo}
           </span>
         </div>
@@ -361,32 +362,38 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
 
   if (!hasTasksToShow) {
     return (
-      <div className="bg-white shadow rounded-lg h-full flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">No upcoming tasks.</p>
+      <div className="flex h-full items-center justify-center rounded-3xl border border-[#0496c7]/20 bg-white/85 p-6 text-sm text-[#2f617a] shadow-inner shadow-[#0496c7]/15">
+        No upcoming tasks.
       </div>
     );
   }
 
   return (
-    <div className="bg-white shadow rounded-lg h-full overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-800 p-3 border-b border-gray-200 sticky top-0 bg-white z-10">Upcoming Tasks</h3>
-      {groupOrder.map(groupKey => (
-        sortedAndGroupedTasks[groupKey] && sortedAndGroupedTasks[groupKey].length > 0 && (
-          <div key={groupKey} className="pt-2">
-            <h4 className="text-xs font-semibold uppercase text-gray-500 px-3 py-1 bg-gray-50 border-t border-b border-gray-200">{groupLabels[groupKey]}</h4>
-            <div className="divide-y divide-gray-100">
-              {sortedAndGroupedTasks[groupKey].map(task => (
-                <StandaloneTaskItem 
-                  key={task.id} 
-                  task={task} 
-                  project={projects.find(p => p.id === task.project_id)} 
-                  onTaskUpdated={onTaskUpdateNeeded} 
+    <div className="flex max-h-full flex-col items-center gap-6 overflow-y-auto pb-3 sm:items-stretch">
+      {groupOrder.map(groupKey => {
+        const tasks = sortedAndGroupedTasks[groupKey];
+        if (!tasks || tasks.length === 0) return null;
+        return (
+          <div key={groupKey} className="space-y-3">
+            <div className="flex items-center justify-between px-1 text-xs uppercase tracking-[0.18em] text-[#036586]/80">
+              <span>{groupLabels[groupKey]}</span>
+              <span className="rounded-full border border-[#0496c7]/20 px-2 py-0.5 text-[10px] font-semibold text-[#036586]">
+                {tasks.length}
+              </span>
+            </div>
+            <div className="flex flex-col items-center gap-4 sm:items-stretch sm:gap-4">
+              {tasks.map(task => (
+                <StandaloneTaskItem
+                  key={task.id}
+                  task={task}
+                  project={projects.find(p => p.id === task.project_id)}
+                  onTaskUpdated={onTaskUpdateNeeded}
                 />
               ))}
             </div>
           </div>
-        )
-      ))}
+        );
+      })}
     </div>
   );
 } 
