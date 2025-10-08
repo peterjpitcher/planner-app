@@ -59,7 +59,7 @@ const MobileAddTaskPage = () => {
     if (nameInputRef.current) {
         nameInputRef.current.focus();
     }
-  }, [user, status, projectId, router]);
+  }, [user, status, projectId, router, api.projects]);
 
   const resetForm = () => {
     setTaskName('');

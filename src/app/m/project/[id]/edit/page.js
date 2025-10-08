@@ -67,7 +67,7 @@ const MobileEditProjectPage = () => {
       };
       fetchProjectData();
     }
-  }, [user, status, projectId, router]);
+  }, [user, status, projectId, router, api.projects]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

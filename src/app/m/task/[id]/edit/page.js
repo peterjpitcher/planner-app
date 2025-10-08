@@ -64,7 +64,7 @@ const MobileEditTaskPage = () => {
       };
       fetchTaskData();
     }
-  }, [user, status, taskId, router]);
+  }, [user, status, taskId, router, api.tasks]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

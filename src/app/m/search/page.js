@@ -81,7 +81,7 @@ function SearchResults() {
     } finally {
       setIsLoading(false);
     }
-  }, [user, query]);
+  }, [user, query, api.projects, api.tasks]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {

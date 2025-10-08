@@ -136,7 +136,7 @@ const MobileTaskDetailPage = () => {
       setIsLoading(false);
       setIsLoadingNotes(false);
     }
-  }, [user, taskId]);
+  }, [user, taskId, api.tasks, api.projects, api.notes]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
