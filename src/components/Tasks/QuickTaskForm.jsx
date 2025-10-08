@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { PlusIcon } from '@heroicons/react/24/outline';
 
 const defaultSelectOptions = [
@@ -35,6 +35,7 @@ export default function QuickTaskForm({
   const [priority, setPriority] = useState(defaultPriority);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef(null);
 
   const pillOptions = useMemo(() => {
     if (priorityType !== 'pills') return [];
@@ -76,6 +77,11 @@ export default function QuickTaskForm({
       if (resetDateOnSubmit) {
         setDueDate(defaultDueDate || todayISO());
       }
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      });
     } catch (err) {
       setError(err?.message || 'Something went wrong while creating that task.');
     } finally {
@@ -90,18 +96,19 @@ export default function QuickTaskForm({
           Task name
         </label>
         <input
-          id="quick-task-name"
-          type="text"
-          placeholder={namePlaceholder}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            if (error) setError('');
-          }}
-          className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-4 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 placeholder:text-[#2f617a]/70 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30"
-          disabled={submitting}
-          autoFocus={autoFocus}
-        />
+        id="quick-task-name"
+        type="text"
+        placeholder={namePlaceholder}
+        value={name}
+        onChange={(event) => {
+          setName(event.target.value);
+          if (error) setError('');
+        }}
+        className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-4 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 placeholder:text-[#2f617a]/70 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30"
+        disabled={submitting}
+        autoFocus={autoFocus}
+        ref={inputRef}
+      />
       </div>
 
       <div className={`flex flex-col gap-2 ${priorityType === 'select' ? 'sm:flex-row sm:items-center sm:gap-3' : 'sm:flex-row sm:items-center sm:gap-3'}`}>
