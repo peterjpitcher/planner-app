@@ -16,6 +16,13 @@ const quickPriorities = [
   { value: 'Low', icon: SolidCheckIcon, tooltip: 'Low priority' },
 ];
 
+const todayISO = () => {
+  const today = new Date();
+  const month = `${today.getMonth() + 1}`.padStart(2, '0');
+  const day = `${today.getDate()}`.padStart(2, '0');
+  return `${today.getFullYear()}-${month}-${day}`;
+};
+
 export default function TasksPanel({
   isLoading,
   tasks,
@@ -25,7 +32,7 @@ export default function TasksPanel({
   onQuickAdd,
 }) {
   const [quickName, setQuickName] = useState('');
-  const [quickDueDate, setQuickDueDate] = useState('');
+  const [quickDueDate, setQuickDueDate] = useState(() => todayISO());
   const [quickPriority, setQuickPriority] = useState('Medium');
   const [quickError, setQuickError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,7 +60,7 @@ export default function TasksPanel({
           priority: quickPriority,
         });
         setQuickName('');
-        setQuickDueDate('');
+        setQuickDueDate(quickDueDate || todayISO());
         setQuickPriority('Medium');
       } catch (error) {
         setQuickError(error.message || 'Could not add that task. Please try again.');
