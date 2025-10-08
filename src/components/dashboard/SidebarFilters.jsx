@@ -157,8 +157,8 @@ export default function SidebarFilters({
             onChange={onToggleExpandTasks}
           />
           <ToggleRow
-            label={hideBillStakeholder ? 'Bill hidden from view' : 'Hide Bill tagged work'}
-            helper="Use this to focus on non-Bill initiatives."
+            label={hideBillStakeholder ? 'Showing only GMI tasks' : 'Show only GMI tasks'}
+            helper="Exclude any project that lists Bill as a stakeholder."
             icon={hideBillStakeholder ? EyeSlashIcon : EyeIcon}
             enabled={hideBillStakeholder}
             onChange={onToggleHideBill}

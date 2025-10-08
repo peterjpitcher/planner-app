@@ -65,6 +65,13 @@ const createDefaultDashboardFilters = () => ({
   noDueDate: false,
 });
 
+const BILL_NAME_REGEX = /\bbill\b/i;
+
+const mentionsBillStakeholder = (stakeholders) => {
+  if (!Array.isArray(stakeholders)) return false;
+  return stakeholders.some((stakeholder) => typeof stakeholder === 'string' && BILL_NAME_REGEX.test(stakeholder));
+};
+
 const DASHBOARD_FILTER_LABELS = {
   overdue: 'Overdue projects',
   noTasks: 'Needs tasks',
@@ -180,7 +187,7 @@ export default function DashboardPage() {
       tempProjects = tempProjects.filter(p => p.stakeholders && p.stakeholders.includes(selectedStakeholder));
     }
     if (hideBillStakeholder) {
-      tempProjects = tempProjects.filter(p => !p.stakeholders || !p.stakeholders.includes('Bill'));
+      tempProjects = tempProjects.filter(p => !mentionsBillStakeholder(p.stakeholders));
     }
     if (activeDashboardFilters.overdue) tempProjects = tempProjects.filter(p => projectAnalysis.overdue.includes(p.id));
     if (activeDashboardFilters.noTasks) tempProjects = tempProjects.filter(p => projectAnalysis.noTasks.includes(p.id));
@@ -388,7 +395,7 @@ export default function DashboardPage() {
       filters.push({ id: `stakeholder:${selectedStakeholder}`, label: `Stakeholder: ${selectedStakeholder}` });
     }
     if (hideBillStakeholder) {
-      filters.push({ id: 'hide-bill', label: 'Bill hidden' });
+      filters.push({ id: 'gmi-only', label: 'GMI tasks only' });
     }
     Object.entries(activeDashboardFilters).forEach(([key, value]) => {
       if (value) {

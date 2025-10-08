@@ -7,12 +7,11 @@ import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { 
   ChevronDownIcon, ChevronUpIcon, PlusCircleIcon, EyeIcon, EyeSlashIcon, 
-  ChatBubbleLeftEllipsisIcon, ClipboardDocumentIcon, EllipsisVerticalIcon,
-  PencilIcon, UserGroupIcon, ChevronRightIcon, CalendarDaysIcon
+  ChatBubbleLeftEllipsisIcon, ClipboardDocumentIcon,
+  PencilIcon, UserGroupIcon, ChevronRightIcon, CalendarDaysIcon, TrashIcon
 } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import TaskList from '@/components/Tasks/TaskList';
-import AddTaskModal from '@/components/Tasks/AddTaskModal';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
 import ProjectCompletionModal from './ProjectCompletionModal';
@@ -127,7 +126,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const [tasks, setTasks] = useState(propTasks || []);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
-  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [showProjectNotes, setShowProjectNotes] = useState(false);
   const [projectNotes, setProjectNotes] = useState([]);
@@ -137,7 +135,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [statusToConfirm, setStatusToConfirm] = useState(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(project ? project.name : '');
@@ -226,7 +223,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const projectStatusClasses = getStatusClasses(currentStatus);
   const projectStatusOptions = ['Open', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
   const isProjectCompletedOrCancelled = currentStatus === 'Completed' || currentStatus === 'Cancelled';
-
   const updatedAgo = project.updated_at
     ? formatDistanceToNowStrict(parseISO(project.updated_at), { addSuffix: true })
     : 'never';
@@ -315,7 +311,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
             handleError(err, 'handleDeleteProject', { showAlert: true });
         }
     }
-    setIsMenuOpen(false);
   };
 
   const handleProjectNoteAdded = (newNote) => {
@@ -658,7 +653,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
         className="relative cursor-pointer rounded-2xl bg-white/65 px-4 py-4 shadow-inner shadow-slate-200/40 transition-colors hover:bg-white/80" 
         onClick={() => { setShowTasks(!showTasks); setTargetProjectId(null); }}
         role="button" tabIndex={0} 
-        onKeyDown={(e) => {if ((e.key === 'Enter' || e.key === ' ') && !isMenuOpen && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingStakeholders) setShowTasks(!showTasks)}}
+        onKeyDown={(e) => {if ((e.key === 'Enter' || e.key === ' ') && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingStakeholders) setShowTasks(!showTasks)}}
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-y-2 gap-x-3">
           <div className="flex-grow min-w-0 flex items-center gap-2">
@@ -816,6 +811,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
                             <button
                               key={option.label}
                               type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 const newDate = option.getValue();
                                 setCurrentDueDate(newDate);
@@ -913,12 +909,12 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
               </button>
 
               <button
-                  onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen);}}
-                  className="icon-button rounded-full hover:bg-slate-200 text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
-                  aria-haspopup="true" aria-expanded={isMenuOpen}
-                  title="More actions"
+                onClick={(e) => { e.stopPropagation(); handleDeleteProject(); }}
+                className="icon-button rounded-full text-red-500 hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400 focus:ring-offset-1"
+                title="Delete project"
+                type="button"
               >
-                  <EllipsisVerticalIcon className="h-5 w-5"/>
+                <TrashIcon className="h-5 w-5" />
               </button>
           </div>
         </div>
@@ -977,12 +973,12 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
       {showTasks && (
           <div className="border-t border-gray-200 bg-gray-50/50">
             <div className="px-2.5 sm:px-3 py-1.5 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs font-semibold text-slate-600">
-                  Tasks ({openTasksCount} open, {completedTasksCount} completed)
-                </h4>
-                {tasks.length > 0 && completedTasksCount > 0 && (
-                    <button
+        <div className="flex items-center gap-2">
+            <h4 className="text-xs font-semibold text-slate-600">
+              Tasks ({openTasksCount} open, {completedTasksCount} completed)
+            </h4>
+            {tasks.length > 0 && completedTasksCount > 0 && (
+                <button
                         onClick={(e) => {e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks);}}
                         className="touch-target-sm text-xs text-indigo-600 hover:text-indigo-800 flex items-center"
                     >
@@ -1034,16 +1030,6 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
         </div>
       )}
       
-      {showAddTaskModal && (
-        <AddTaskModal
-          isOpen={showAddTaskModal}
-          projectId={project.id}
-          defaultPriority={project.priority}
-          onClose={() => setShowAddTaskModal(false)}
-          onTaskAdded={handleTaskAdded}
-        />
-      )}
-
       <ProjectCompletionModal
         isOpen={showCompletionModal}
         onClose={handleCloseCompletionModal}
@@ -1058,16 +1044,4 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
 
 ProjectItem.displayName = 'ProjectItem';
 
-export default React.memo(ProjectItem, (prevProps, nextProps) => {
-  // Only re-render if these specific props change
-  return (
-    prevProps.project.id === nextProps.project.id &&
-    prevProps.project.updated_at === nextProps.project.updated_at &&
-    prevProps.project.name === nextProps.project.name &&
-    prevProps.project.status === nextProps.project.status &&
-    prevProps.project.priority === nextProps.project.priority &&
-    prevProps.project.due_date === nextProps.project.due_date &&
-    prevProps.isExpanded === nextProps.isExpanded &&
-    prevProps.isTargetProject === nextProps.isTargetProject
-  );
-});
+export default React.memo(ProjectItem);

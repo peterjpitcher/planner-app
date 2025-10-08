@@ -41,7 +41,7 @@ class APIClient {
     // Clear project cache after creation
     clearCache('projects-true');
     clearCache('projects-false');
-    return result;
+    return result?.data ?? result;
   }
 
   async updateProject(projectId, updates) {
@@ -52,7 +52,7 @@ class APIClient {
     // Clear project cache after update
     clearCache('projects-true');
     clearCache('projects-false');
-    return result;
+    return result?.data ?? result;
   }
 
   async deleteProject(projectId) {
@@ -72,17 +72,19 @@ class APIClient {
   }
 
   async createTask(taskData) {
-    return this.fetchWithAuth('/api/tasks', {
+    const result = await this.fetchWithAuth('/api/tasks', {
       method: 'POST',
       body: JSON.stringify(taskData),
     });
+    return result?.data ?? result;
   }
 
   async updateTask(taskId, updates) {
-    return this.fetchWithAuth(`/api/tasks/${taskId}`, {
+    const result = await this.fetchWithAuth(`/api/tasks/${taskId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
     });
+    return result?.data ?? result;
   }
 
   async deleteTask(taskId) {
