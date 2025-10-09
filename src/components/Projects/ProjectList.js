@@ -7,7 +7,18 @@ import { useTargetProject } from '@/contexts/TargetProjectContext';
 // Define priority order for rendering groups
 // const PRIORITY_ORDER = ['High', 'Medium', 'Low', 'Other']; // No longer needed
 
-export default function ProjectList({ projects, tasksByProject, notesByTask, onProjectDataChange, onProjectDeleted, onProjectUpdated, areAllTasksExpanded }) {
+export default function ProjectList({
+  projects,
+  tasksByProject,
+  notesByTask,
+  onProjectDataChange,
+  onProjectDeleted,
+  onProjectUpdated,
+  areAllTasksExpanded,
+  isTaskDragActive,
+  dragSourceProjectId = null,
+  onTaskDragStateChange = () => {},
+}) {
   const { targetProjectId, setTargetProjectId } = useTargetProject();
   const projectRefs = useRef({});
   const actionedProjectIdRef = useRef(null); // Tracks the ID that caused the last scroll/highlight action
@@ -101,21 +112,48 @@ export default function ProjectList({ projects, tasksByProject, notesByTask, onP
     //     return null;
     //   })}
     // </div>
-    <div className="space-y-5"> {/* Provides consistent breathing room between cards */}
-      {projects.map(project => (
-        <ProjectItem 
-          key={project.id} 
-          ref={projectRefs.current[project.id]}
-          project={project} 
-          tasks={tasksByProject?.[project.id] || []}
-          notesByTask={notesByTask}
-          onProjectDataChange={onProjectDataChange} 
-          onProjectDeleted={onProjectDeleted} 
-          onProjectUpdated={onProjectUpdated}
-          areAllTasksExpanded={areAllTasksExpanded}
-          // isTargeted={project.id === targetProjectId} // We can pass this if ProjectItem handles its own highlight
-        />
-      ))}
+    <div className={isTaskDragActive ? 'space-y-3' : 'space-y-5'}>
+      {(() => {
+        const unassignedProject = projects.find(project => project?.name?.toLowerCase() === 'unassigned');
+        const otherProjects = projects.filter(project => project?.name?.toLowerCase() !== 'unassigned');
+        return (
+          <>
+            {unassignedProject && (
+              <ProjectItem
+                key={unassignedProject.id}
+                ref={projectRefs.current[unassignedProject.id]}
+                project={unassignedProject}
+                tasks={tasksByProject?.[unassignedProject.id] || []}
+                notesByTask={notesByTask}
+                onProjectDataChange={onProjectDataChange}
+                onProjectDeleted={onProjectDeleted}
+                onProjectUpdated={onProjectUpdated}
+                areAllTasksExpanded={areAllTasksExpanded}
+                isDropMode={isTaskDragActive}
+                dragSourceProjectId={dragSourceProjectId}
+                onTaskDragStateChange={onTaskDragStateChange}
+              />
+            )}
+            {otherProjects.map(project => (
+              <ProjectItem 
+                key={project.id} 
+                ref={projectRefs.current[project.id]}
+                project={project} 
+                tasks={tasksByProject?.[project.id] || []}
+                notesByTask={notesByTask}
+                onProjectDataChange={onProjectDataChange} 
+                onProjectDeleted={onProjectDeleted} 
+                onProjectUpdated={onProjectUpdated}
+                areAllTasksExpanded={areAllTasksExpanded}
+                isDropMode={isTaskDragActive}
+                dragSourceProjectId={dragSourceProjectId}
+                onTaskDragStateChange={onTaskDragStateChange}
+                // isTargeted={project.id === targetProjectId} // We can pass this if ProjectItem handles its own highlight
+              />
+            ))}
+          </>
+        );
+      })()}
     </div>
   );
 } 

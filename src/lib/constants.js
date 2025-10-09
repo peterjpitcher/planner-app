@@ -83,6 +83,11 @@ export const SUCCESS_MESSAGES = {
   COPIED: 'Copied to clipboard.'
 };
 
+// Drag & Drop
+export const DRAG_DATA_TYPES = {
+  TASK: 'application/x-task-drag'
+};
+
 // Validation Rules
 export const VALIDATION = {
   PROJECT_NAME_MIN: 1,

@@ -18,6 +18,7 @@ import ProjectCompletionModal from './ProjectCompletionModal';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { useSession } from 'next-auth/react';
 import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
+import { DRAG_DATA_TYPES } from '@/lib/constants';
 
 const getPriorityClasses = (priority) => {
   switch (priority) {
@@ -120,7 +121,20 @@ const getStatusClasses = (status) => {
   }
 };
 
-const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProjectDataChange, onProjectDeleted, areAllTasksExpanded }, ref) => {
+const ProjectItem = forwardRef((
+  {
+    project,
+    tasks: propTasks,
+    notesByTask,
+    onProjectDataChange,
+    onProjectDeleted,
+    areAllTasksExpanded,
+    isDropMode = false,
+    dragSourceProjectId = null,
+    onTaskDragStateChange = () => {},
+  },
+  ref
+) => {
   const { data: session } = useSession();
   const currentUser = session?.user;
   const [tasks, setTasks] = useState(propTasks || []);
@@ -135,6 +149,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [statusToConfirm, setStatusToConfirm] = useState(null);
+  const [isDragOverTarget, setIsDragOverTarget] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(project ? project.name : '');
@@ -148,6 +163,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const [currentStakeholdersText, setCurrentStakeholdersText] = useState(project && project.stakeholders ? project.stakeholders.join(', ') : '');
 
   const { setTargetProjectId } = useTargetProject();
+  const isUnassignedProject = project?.name?.toLowerCase() === 'unassigned';
 
   useEffect(() => {
     if (areAllTasksExpanded !== undefined) {
@@ -585,6 +601,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
   const completedTasksCount = tasks.length - openTasksCount;
 
   const needsAttentionStyle = openTasksCount === 0 && tasks.length > 0 && !isProjectCompletedOrCancelled ? 'ring-2 ring-red-400/70 ring-offset-2 ring-offset-white' : '';
+  const appliedNeedsAttentionStyle = isUnassignedProject ? '' : needsAttentionStyle;
 
   const startEditingName = (e) => {
     if (isProjectCompletedOrCancelled) return;
@@ -641,11 +658,172 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
     handleTaskAdded(createdTask);
   };
 
+  const canAcceptTaskDrag = (event) => {
+    const types = Array.from(event.dataTransfer?.types || []);
+    if (!types.length) return false;
+    return types.includes(DRAG_DATA_TYPES.TASK) || types.includes('application/json') || types.includes('text/plain');
+  };
+
+  const handleDragEnter = (event) => {
+    if (!project?.id || !canAcceptTaskDrag(event)) return;
+    event.preventDefault();
+    setIsDragOverTarget(true);
+  };
+
+  const handleDragOver = (event) => {
+    if (!project?.id || !canAcceptTaskDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragLeave = (event) => {
+    if (!project?.id) return;
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    setIsDragOverTarget(false);
+  };
+
+  const handleDrop = async (event) => {
+    if (!project?.id || !canAcceptTaskDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragOverTarget(false);
+
+    let rawData = '';
+    try {
+      rawData = event.dataTransfer.getData(DRAG_DATA_TYPES.TASK);
+    } catch (err) {
+      rawData = '';
+    }
+    if (!rawData) {
+      rawData = event.dataTransfer.getData('application/json') || event.dataTransfer.getData('text/plain');
+    }
+    if (!rawData) return;
+
+    let payload;
+    try {
+      payload = JSON.parse(rawData);
+    } catch (parseError) {
+      return;
+    }
+
+    const { taskId, previousProjectId } = payload || {};
+    if (!taskId || previousProjectId === project.id) {
+      return;
+    }
+
+    try {
+      const updatedTask = await apiClient.updateTask(taskId, { project_id: project.id });
+      if (onProjectDataChange && updatedTask) {
+        onProjectDataChange(project.id, updatedTask, 'task_updated', {
+          previousProjectId,
+          project,
+        });
+      }
+    } catch (err) {
+      handleError(err, 'taskReassignment');
+    } finally {
+      if (onTaskDragStateChange) {
+        onTaskDragStateChange(false, null);
+      }
+    }
+  };
+
+  const isSourceProject = dragSourceProjectId !== null && project?.id === dragSourceProjectId;
+  const shouldShowDropPreview = isDropMode && !isSourceProject;
+
+  const projectCardStyle = isUnassignedProject
+    ? 'border-[#0496c7]/25 bg-white/95 shadow-[0_24px_60px_-32px_rgba(4,150,199,0.35)]'
+    : priorityStyles.cardOuterClass;
+
+  const baseShadow = shouldShowDropPreview ? 'shadow-[0_20px_50px_-32px_rgba(4,150,199,0.4)]' : 'shadow-[0_28px_60px_-32px_rgba(4,150,199,0.35)]';
+  const hoverClass = shouldShowDropPreview || isUnassignedProject ? '' : 'transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_40px_70px_-28px_rgba(4,150,199,0.45)]';
+  const paddingClass = shouldShowDropPreview ? 'px-3 py-2' : 'px-2 py-3';
+  const containerClassName = `relative overflow-hidden rounded-3xl border bg-white/80 ${paddingClass} ${baseShadow} ${hoverClass} ${projectCardStyle} ${isProjectCompletedOrCancelled ? 'opacity-60 saturate-75' : ''} ${appliedNeedsAttentionStyle} ${isDragOverTarget ? 'ring-2 ring-indigo-300 ring-offset-2' : ''}`;
+  const totalTasksCount = tasks.length;
+  const dropStatusText = isDragOverTarget ? 'Release to assign' : 'Drop here to move task';
+
+  const containerProps = {
+    ref,
+    id: `project-item-${project.id}`,
+    className: containerClassName,
+    onDragEnter: handleDragEnter,
+    onDragOver: handleDragOver,
+    onDragLeave: handleDragLeave,
+    onDrop: handleDrop,
+    'data-project-id': project.id,
+  };
+
+  if (shouldShowDropPreview) {
+    return (
+      <div {...containerProps}>
+        <span className={`pointer-events-none absolute inset-x-3 top-2 h-[6px] rounded-full bg-gradient-to-r ${priorityStyles.ribbonClass}`} />
+        <div className={`pointer-events-none absolute -top-10 right-0 h-32 w-32 rounded-full ${priorityStyles.glowClass} blur-3xl`} />
+        <div className="relative z-10">
+          <div className="rounded-2xl bg-white/75 px-4 py-3 shadow-inner shadow-slate-200/40 transition-colors">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <ChevronRightIcon className="h-5 w-5 text-slate-400" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{currentName || project.name || 'Unnamed Project'}</p>
+                  <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDragOverTarget ? 'text-emerald-500' : 'text-[#036586]/70'}`}>
+                    {dropStatusText}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right text-[11px] leading-tight text-[#2f617a]/80">
+                <div>{openTasksCount} open</div>
+                <div>{totalTasksCount} total</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isUnassignedProject) {
+    return (
+      <div {...containerProps}>
+        <div className="rounded-3xl border border-[#0496c7]/20 bg-white/95 shadow-[0_24px_60px_-32px_rgba(4,150,199,0.35)]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[#0496c7]/15">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[#036586]">Unassigned Tasks</h3>
+            {tasks.length > 0 && completedTasksCount > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks); }}
+                className="touch-target-sm text-2xs font-semibold text-[#036586] hover:text-[#0496c7]"
+              >
+                {showCompletedTasks ? 'Hide completed' : 'Show completed'}
+              </button>
+            )}
+          </div>
+          <div className="px-4 py-3">
+            {isLoadingTasks ? (
+              <div className="flex items-center justify-center rounded-2xl border border-[#0496c7]/20 bg-white/85 py-4 text-xs text-[#036586] shadow-inner shadow-[#0496c7]/10">
+                Loading tasks…
+              </div>
+            ) : tasks.length > 0 ? (
+              <TaskList
+                tasks={tasks}
+                notesByTask={notesByTask}
+                isLoading={isLoadingTasks}
+                onTaskUpdated={handleTaskUpdated}
+                showCompletedTasks={showCompletedTasks}
+                isProjectCompleted={false}
+                onTaskDragStateChange={onTaskDragStateChange}
+              />
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#0496c7]/25 bg-[#0496c7]/5 px-3 py-4 text-sm text-[#036586]/80 text-center">
+                No unassigned tasks. Add one from the flight board.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div 
-      ref={ref}
-      id={`project-item-${project.id}`}
-      className={`relative overflow-hidden rounded-3xl border border-slate-200/65 bg-white/80 px-2 py-3 shadow-[0_28px_60px_-32px_rgba(4,150,199,0.35)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_40px_70px_-28px_rgba(4,150,199,0.45)] ${priorityStyles.cardOuterClass} ${isProjectCompletedOrCancelled ? 'opacity-60 saturate-75' : ''} ${needsAttentionStyle}`}>
+    <div {...containerProps}>
       <span className={`pointer-events-none absolute inset-x-3 top-2 h-[6px] rounded-full bg-gradient-to-r ${priorityStyles.ribbonClass}`} />
       <div className={`pointer-events-none absolute -top-10 right-0 h-32 w-32 rounded-full ${priorityStyles.glowClass} blur-3xl`} />
       <div className="relative z-10">
@@ -1001,6 +1179,7 @@ const ProjectItem = forwardRef(({ project, tasks: propTasks, notesByTask, onProj
                   onTaskUpdated={handleTaskUpdated}
                   showCompletedTasks={showCompletedTasks}
                   isProjectCompleted={isProjectCompletedOrCancelled}
+                  onTaskDragStateChange={onTaskDragStateChange}
                 />
               ) : (
                 <div className="rounded-2xl border border-dashed border-[#0496c7]/30 bg-[#0496c7]/5 px-3 py-2 text-xs text-[#036586]/80">

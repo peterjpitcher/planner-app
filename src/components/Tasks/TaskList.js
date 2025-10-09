@@ -2,7 +2,7 @@
 
 import TaskItem from './TaskItem';
 
-export default function TaskList({ tasks, notesByTask, onTaskUpdated, showCompletedTasks }) {
+export default function TaskList({ tasks, notesByTask, onTaskUpdated, showCompletedTasks, onTaskDragStateChange }) {
   if (!tasks) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-[#0496c7]/20 bg-white/85 py-3 text-xs text-[#036586] shadow-inner shadow-[#0496c7]/10">
@@ -31,7 +31,13 @@ export default function TaskList({ tasks, notesByTask, onTaskUpdated, showComple
   return (
     <ul className="space-y-2">
       {filteredTasks.map(task => (
-        <TaskItem key={task.id} task={task} notes={notesByTask?.[task.id] || []} onTaskUpdated={onTaskUpdated} />
+        <TaskItem
+          key={task.id}
+          task={task}
+          notes={notesByTask?.[task.id] || []}
+          onTaskUpdated={onTaskUpdated}
+          onTaskDragStateChange={onTaskDragStateChange}
+        />
       ))}
     </ul>
   );

@@ -3,9 +3,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
-import { PencilIcon, CheckCircleIcon as OutlineCheckCircleIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, Bars3Icon } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
+import { DRAG_DATA_TYPES } from '@/lib/constants';
 
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
@@ -68,13 +69,14 @@ const getPriorityValue = (priority) => {
     }
 };
 
-function StandaloneTaskItem({ task, project, onTaskUpdated }) {
+function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(task.name);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [currentDueDate, setCurrentDueDate] = useState(task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '');
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [currentPriority, setCurrentPriority] = useState(task.priority || '');
+  const [isDragging, setIsDragging] = useState(false);
   const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
@@ -168,8 +170,63 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
     }
   };
 
+  const handleDragStart = (event) => {
+    event.stopPropagation();
+    if (!task?.id) return;
+    const payload = {
+      taskId: task.id,
+      previousProjectId: task.project_id || null,
+    };
+    const serializedPayload = JSON.stringify(payload);
+    // Always provide a plain-text fallback so browsers without custom MIME support still work
+    event.dataTransfer.setData('text/plain', serializedPayload);
+    try {
+      event.dataTransfer.setData(DRAG_DATA_TYPES.TASK, serializedPayload);
+    } catch (dragError) {
+      // Some browsers (e.g., Safari) block custom MIME types; ignore if it happens
+    }
+    try {
+      event.dataTransfer.setData('application/json', serializedPayload);
+    } catch (jsonError) {
+      // Ignore inability to register extra type
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    setIsDragging(true);
+    if (onDragStateChange) {
+      onDragStateChange(true, task.project_id || null);
+    }
+  };
+
+  const handleDragEnd = (event) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    setIsDragging(false);
+    if (onDragStateChange) {
+      onDragStateChange(false, task.project_id || null);
+    }
+  };
+
   return (
-    <div className={`group relative mx-auto flex w-full max-w-[18.5rem] items-start gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_24px_50px_-32px_rgba(4,150,199,0.35)] transition-all sm:mx-0 sm:max-w-[24rem] ${itemPriorityClass} ${task.is_completed ? 'opacity-60 saturate-75' : 'hover:-translate-y-0.5 hover:shadow-[0_34px_60px_-30px_rgba(4,150,199,0.45)]'}`}>
+    <div
+      className={`group relative mx-auto flex w-full max-w-[18.5rem] items-start gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_24px_50px_-32px_rgba(4,150,199,0.35)] transition-all sm:mx-0 sm:max-w-[24rem] ${itemPriorityClass} ${task.is_completed ? 'opacity-60 saturate-75' : 'hover:-translate-y-0.5 hover:shadow-[0_34px_60px_-30px_rgba(4,150,199,0.45)]'} ${isDragging ? 'opacity-60 ring-2 ring-indigo-300' : ''}`}
+      data-task-id={task.id}
+    >
+      <div
+        className={`mt-0.5 flex h-5 w-5 select-none items-center justify-center rounded-full border border-transparent text-slate-300 transition hover:text-slate-500 ${task.is_completed ? 'opacity-30 cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-slate-200'}`}
+        draggable={!task.is_completed}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        role="button"
+        aria-label="Drag task to project"
+        onMouseDown={(event) => {
+          if (!task.is_completed) {
+            event.stopPropagation();
+          }
+        }}
+      >
+        <Bars3Icon className="h-3.5 w-3.5" />
+      </div>
       <input 
         type="checkbox" 
         checked={task.is_completed}
@@ -273,7 +330,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated }) {
   );
 }
 
-export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder }) {
+export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder, onTaskDragStateChange = () => {} }) {
   const [isLoading, setIsLoading] = useState(true);
   const { targetProjectId, setTargetProjectId, actionedProjectIdRef } = useTargetProject();
 
@@ -402,6 +459,7 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
                   task={task}
                   project={projects.find(p => p.id === task.project_id)}
                   onTaskUpdated={onTaskUpdateNeeded}
+                  onDragStateChange={onTaskDragStateChange}
                 />
               ))}
             </div>

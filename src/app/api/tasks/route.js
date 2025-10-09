@@ -5,6 +5,61 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateTask } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
+import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
+
+async function ensureUnassignedProject(supabase, userId) {
+  // Try to find an existing "Unassigned" project for this user
+  const { data: existingProject, error: fetchError } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('name', 'unassigned')
+    .maybeSingle();
+
+  if (fetchError) {
+    throw fetchError;
+  }
+
+  if (existingProject?.id) {
+    return existingProject.id;
+  }
+
+  // Create a new Unassigned project scoped to the user
+  const { data: createdProject, error: createError } = await supabase
+    .from('projects')
+    .insert({
+      user_id: userId,
+      name: 'Unassigned',
+      status: PROJECT_STATUS.OPEN,
+      priority: PRIORITY.MEDIUM,
+      stakeholders: [],
+      description: 'Auto-generated project for unassigned tasks.'
+    })
+    .select('id')
+    .single();
+
+  if (createError) {
+    // Handle potential race condition where another request created it first
+    if (createError.code === '23505') {
+      const { data: raceProject, error: raceFetchError } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', userId)
+        .ilike('name', 'unassigned')
+        .maybeSingle();
+
+      if (raceFetchError || !raceProject?.id) {
+        throw createError;
+      }
+
+      return raceProject.id;
+    }
+
+    throw createError;
+  }
+
+  return createdProject.id;
+}
 
 // GET /api/tasks - Fetch tasks with support for upcoming range
 export async function GET(request) {
@@ -147,9 +202,23 @@ export async function POST(request) {
     }
     
     const body = await request.json();
+    const supabase = getSupabaseServer(session.accessToken);
+
+    let resolvedProjectId = body?.project_id;
+
+    if (!resolvedProjectId) {
+      try {
+        resolvedProjectId = await ensureUnassignedProject(supabase, session.user.id);
+      } catch (resolveError) {
+        console.error('Failed to resolve unassigned project:', resolveError);
+        return NextResponse.json({ error: 'Unable to resolve target project' }, { status: 500 });
+      }
+    }
+
     const taskData = {
       ...body,
       user_id: session.user.id,
+      project_id: resolvedProjectId,
       is_completed: false
     };
     
@@ -161,8 +230,6 @@ export async function POST(request) {
         details: validation.errors 
       }, { status: 400 });
     }
-    
-    const supabase = getSupabaseServer(session.accessToken);
     
     // Verify project ownership
     const { data: project, error: projectError } = await supabase

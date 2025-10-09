@@ -58,6 +58,19 @@ const sortTasksByDateDescThenPriority = (a, b) => {
   return getPriorityValue(b.priority) - getPriorityValue(a.priority);
 };
 
+const sortTasksForProjectCard = (tasks) => {
+  const priorityOrder = { High: 0, Medium: 1, Low: 2 };
+  return [...tasks].sort((a, b) => {
+    if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+    const dateA = a.due_date ? new Date(a.due_date) : null;
+    const dateB = b.due_date ? new Date(b.due_date) : null;
+    if (dateA && dateB) return dateA - dateB;
+    if (dateA) return -1;
+    if (dateB) return 1;
+    return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+  });
+};
+
 const createDefaultDashboardFilters = () => ({
   overdue: false,
   noTasks: false,
@@ -91,6 +104,7 @@ export default function DashboardPage() {
   const [tasksByProject, setTasksByProject] = useState({});
   const [notesByTask, setNotesByTask] = useState({});
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [taskDragState, setTaskDragState] = useState({ active: false, sourceProjectId: null });
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
   const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true);
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
@@ -203,7 +217,13 @@ export default function DashboardPage() {
     }
     setProjects(prevProjects => {
       const updated = [newProject, ...prevProjects];
-      return updated.sort(sortProjectsByPriorityThenDateDesc);
+      return updated.sort((a, b) => {
+        const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+        const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+        if (aIsUnassigned && !bIsUnassigned) return -1;
+        if (!aIsUnassigned && bIsUnassigned) return 1;
+        return sortProjectsByPriorityThenDateDesc(a, b);
+      });
     });
     setShowAddProjectModal(false);
   }, [fetchData]);
@@ -214,55 +234,171 @@ export default function DashboardPage() {
 
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
-      const newTask = details?.task;
-      if (!newTask || !newTask.id) { 
+      const newTask = details?.task || changedData;
+      if (!newTask?.id || !newTask.project_id) { 
         fetchData(); 
         return;
       }
-      // Update both allUserTasks and tasksByProject
-      setAllUserTasks(prevTasks => [newTask, ...prevTasks].sort(sortTasksByDateDescThenPriority));
-      setTasksByProject(prev => ({
-        ...prev,
-        [newTask.project_id]: [newTask, ...(prev[newTask.project_id] || [])].sort((a, b) => {
-          if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-          const dateA = a.due_date ? new Date(a.due_date) : null;
-          const dateB = b.due_date ? new Date(b.due_date) : null;
-          if (dateA && dateB) return dateA - dateB;
-          if (dateA) return -1;
-          if (dateB) return 1;
-          const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
-          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
-        })
-      }));
-      setProjects(prevProjects => 
-        prevProjects.map(p => p.id === newTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)
-      );
+
+      const relatedProject = details?.project || newTask.projects;
+      const projectId = newTask.project_id;
+      const nowIso = new Date().toISOString();
+
+      setAllUserTasks(prevTasks => {
+        const withoutTask = prevTasks.filter(t => t.id !== newTask.id);
+        return [newTask, ...withoutTask].sort(sortTasksByDateDescThenPriority);
+      });
+
+      setTasksByProject(prev => {
+        const next = { ...prev };
+        const existingList = next[projectId] || [];
+        const filtered = existingList.filter(t => t.id !== newTask.id);
+        next[projectId] = sortTasksForProjectCard([newTask, ...filtered]);
+        return next;
+      });
+
+      let shouldRefetchProjects = false;
+      setProjects(prevProjects => {
+        const projectExists = prevProjects.some(p => p.id === projectId);
+        if (!projectExists) {
+          if (relatedProject?.id) {
+            const newProjectEntry = {
+              ...relatedProject,
+              updated_at: nowIso,
+              status: relatedProject.status || 'Open',
+              priority: relatedProject.priority || 'Medium',
+              stakeholders: relatedProject.stakeholders || [],
+            };
+            const updatedList = [newProjectEntry, ...prevProjects];
+            return updatedList.sort((a, b) => {
+              const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+              const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+              if (aIsUnassigned && !bIsUnassigned) return -1;
+              if (!aIsUnassigned && bIsUnassigned) return 1;
+              return sortProjectsByPriorityThenDateDesc(a, b);
+            });
+          }
+          shouldRefetchProjects = true;
+          return prevProjects;
+        }
+
+        const updatedProjects = prevProjects.map(p => p.id === projectId ? { ...p, updated_at: nowIso } : p);
+        return updatedProjects.sort((a, b) => {
+          const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+          const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+          if (aIsUnassigned && !bIsUnassigned) return -1;
+          if (!aIsUnassigned && bIsUnassigned) return 1;
+          return sortProjectsByPriorityThenDateDesc(a, b);
+        });
+      });
+
+      if (shouldRefetchProjects) {
+        fetchData();
+      }
     } else if (itemType === 'task_updated') {
       const updatedTask = changedData;
-      // Update both allUserTasks and tasksByProject
-      setAllUserTasks(prevTasks => prevTasks.map(t => t.id === updatedTask.id ? updatedTask : t).sort(sortTasksByDateDescThenPriority));
-      setTasksByProject(prev => ({
-        ...prev,
-        [updatedTask.project_id]: (prev[updatedTask.project_id] || []).map(t => t.id === updatedTask.id ? updatedTask : t).sort((a, b) => {
-          if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-          const dateA = a.due_date ? new Date(a.due_date) : null;
-          const dateB = b.due_date ? new Date(b.due_date) : null;
-          if (dateA && dateB) return dateA - dateB;
-          if (dateA) return -1;
-          if (dateB) return 1;
-          const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
-          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
-        })
-      }));
-      setProjects(prevProjects => 
-        prevProjects.map(p => p.id === updatedTask.project_id ? { ...p, updated_at: new Date().toISOString() } : p).sort(sortProjectsByPriorityThenDateDesc)
-      );
+      if (!updatedTask?.id || !updatedTask.project_id) {
+        fetchData();
+        return;
+      }
+
+      const relatedProject = details?.project || updatedTask.projects;
+      const previousProjectIdFromDetails = details?.previousProjectId;
+      const nowIso = new Date().toISOString();
+
+      setAllUserTasks(prevTasks => prevTasks
+        .map(t => t.id === updatedTask.id ? updatedTask : t)
+        .sort(sortTasksByDateDescThenPriority));
+
+      setTasksByProject(prev => {
+        const next = { ...prev };
+        let previousProjectId = previousProjectIdFromDetails;
+
+        if (!previousProjectId) {
+          previousProjectId = Object.keys(prev).find(projectId =>
+            (prev[projectId] || []).some(t => t.id === updatedTask.id)
+          );
+        }
+
+        if (previousProjectId && previousProjectId !== updatedTask.project_id) {
+          next[previousProjectId] = (next[previousProjectId] || []).filter(t => t.id !== updatedTask.id);
+        }
+
+        const existingList = next[updatedTask.project_id] || [];
+        const filtered = existingList.filter(t => t.id !== updatedTask.id);
+        next[updatedTask.project_id] = sortTasksForProjectCard([...filtered, updatedTask]);
+        return next;
+      });
+
+      let shouldRefetchProjects = false;
+      setProjects(prevProjects => {
+        let nextProjects = prevProjects;
+        const projectExists = prevProjects.some(p => p.id === updatedTask.project_id);
+
+        if (!projectExists) {
+          if (relatedProject?.id) {
+            const newProjectEntry = {
+              ...relatedProject,
+              updated_at: nowIso,
+              status: relatedProject.status || 'Open',
+              priority: relatedProject.priority || 'Medium',
+              stakeholders: relatedProject.stakeholders || [],
+            };
+            const updatedList = [newProjectEntry, ...prevProjects];
+            nextProjects = updatedList.sort((a, b) => {
+              const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+              const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+              if (aIsUnassigned && !bIsUnassigned) return -1;
+              if (!aIsUnassigned && bIsUnassigned) return 1;
+              return sortProjectsByPriorityThenDateDesc(a, b);
+            });
+          } else {
+            shouldRefetchProjects = true;
+            nextProjects = prevProjects;
+          }
+        } else {
+          nextProjects = prevProjects.map(p =>
+            p.id === updatedTask.project_id ? { ...p, updated_at: nowIso } : p
+          ).sort((a, b) => {
+            const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+            const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+            if (aIsUnassigned && !bIsUnassigned) return -1;
+            if (!aIsUnassigned && bIsUnassigned) return 1;
+            return sortProjectsByPriorityThenDateDesc(a, b);
+          });
+        }
+
+        if (previousProjectIdFromDetails && previousProjectIdFromDetails !== updatedTask.project_id) {
+          nextProjects = nextProjects.map(p =>
+            p.id === previousProjectIdFromDetails ? { ...p, updated_at: nowIso } : p
+          ).sort((a, b) => {
+            const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+            const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+            if (aIsUnassigned && !bIsUnassigned) return -1;
+            if (!aIsUnassigned && bIsUnassigned) return 1;
+            return sortProjectsByPriorityThenDateDesc(a, b);
+          });
+        }
+
+        return nextProjects;
+      });
+
+      if (shouldRefetchProjects) {
+        fetchData();
+      }
     } else if (itemType === 'project_status_changed' || itemType === 'project_details_changed') {
       const updatedProjectPartial = changedData;
       setProjects(prevProjects => 
-        prevProjects.map(p => p.id === itemId ? { ...p, ...updatedProjectPartial, updated_at: new Date().toISOString() } : p)
-        .filter(p => showCompletedProjects || (p.status !== 'Completed' && p.status !== 'Cancelled'))
-         .sort(sortProjectsByPriorityThenDateDesc)
+        prevProjects
+          .map(p => p.id === itemId ? { ...p, ...updatedProjectPartial, updated_at: new Date().toISOString() } : p)
+          .filter(p => showCompletedProjects || (p.status !== 'Completed' && p.status !== 'Cancelled'))
+          .sort((a, b) => {
+            const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+            const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+            if (aIsUnassigned && !bIsUnassigned) return -1;
+            if (!aIsUnassigned && bIsUnassigned) return 1;
+            return sortProjectsByPriorityThenDateDesc(a, b);
+          })
       );
     } else {
       fetchData(); 
@@ -270,7 +406,16 @@ export default function DashboardPage() {
   }, [showCompletedProjects, fetchData]);
 
   const handleProjectDeleted = useCallback((deletedProjectId) => {
-    setProjects(prevProjects => prevProjects.filter(p => p.id !== deletedProjectId));
+    setProjects(prevProjects => prevProjects
+      .filter(p => p.id !== deletedProjectId)
+      .sort((a, b) => {
+        const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+        const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+        if (aIsUnassigned && !bIsUnassigned) return -1;
+        if (!aIsUnassigned && bIsUnassigned) return 1;
+        return sortProjectsByPriorityThenDateDesc(a, b);
+      })
+    );
     setAllUserTasks(prevTasks => prevTasks.filter(t => t.project_id !== deletedProjectId));
   }, []);
 
@@ -311,10 +456,29 @@ export default function DashboardPage() {
     handleProjectDataChange(updatedTask.id, updatedTask, 'task_updated');
   }, [handleProjectDataChange]);
 
+  const handleTaskDragStateChange = useCallback((isDragging, sourceProjectId = null) => {
+    if (isDragging) {
+      setTaskDragState({ active: true, sourceProjectId: sourceProjectId || null });
+    } else {
+      setTaskDragState({ active: false, sourceProjectId: null });
+    }
+  }, []);
+
+  const isTaskDragActive = taskDragState.active;
+  const dragSourceProjectId = taskDragState.sourceProjectId;
+
   // Memoize project update handler
   const handleProjectUpdate = useCallback((updatedProject) => {
     setProjects(prevProjects => 
-      prevProjects.map(p => p.id === updatedProject.id ? updatedProject : p)
+      prevProjects
+        .map(p => p.id === updatedProject.id ? updatedProject : p)
+        .sort((a, b) => {
+          const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+          const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+          if (aIsUnassigned && !bIsUnassigned) return -1;
+          if (!aIsUnassigned && bIsUnassigned) return 1;
+          return sortProjectsByPriorityThenDateDesc(a, b);
+        })
     );
   }, []);
   const handleQuickTaskAdd = useCallback(async ({ name, dueDate, priority }) => {
@@ -329,7 +493,10 @@ export default function DashboardPage() {
       priority: priority || 'Medium',
     };
     const createdTask = await apiClient.createTask(newTaskPayload);
-    handleProjectDataChange(createdTask.id, createdTask, 'task_added', { task: createdTask });
+    handleProjectDataChange(createdTask.id, createdTask, 'task_added', { 
+      task: createdTask, 
+      project: createdTask.projects 
+    });
     return createdTask;
   }, [userId, handleProjectDataChange]);
 
@@ -488,6 +655,7 @@ export default function DashboardPage() {
             onTaskUpdate={handleTaskUpdate}
             hideBillStakeholder={hideBillStakeholder}
             onQuickAdd={handleQuickTaskAdd}
+            onTaskDragStateChange={handleTaskDragStateChange}
           />
         }
       >
@@ -556,6 +724,9 @@ export default function DashboardPage() {
                 onProjectDeleted={handleProjectDeleted}
                 onProjectUpdated={handleProjectUpdate}
                 areAllTasksExpanded={areAllTasksExpanded}
+                isTaskDragActive={isTaskDragActive}
+                dragSourceProjectId={dragSourceProjectId}
+                onTaskDragStateChange={handleTaskDragStateChange}
               />
             ) : hasActiveFilters ? (
               <EmptyFilteredResults />

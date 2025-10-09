@@ -25,6 +25,7 @@ export default function TasksPanel({
   onTaskUpdate,
   hideBillStakeholder,
   onQuickAdd,
+  onTaskDragStateChange,
 }) {
   const handleQuickSubmit = useCallback(async ({ name, dueDate, priority }) => {
     if (!onQuickAdd) return;
@@ -60,6 +61,7 @@ export default function TasksPanel({
             projects={projects}
             onTaskUpdateNeeded={onTaskUpdate}
             hideBillStakeholder={hideBillStakeholder}
+            onTaskDragStateChange={onTaskDragStateChange}
           />
         )}
       </div>

@@ -5,10 +5,11 @@ import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, form
 import { apiClient } from '@/lib/apiClient';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
-import { ChatBubbleLeftEllipsisIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
+import { DRAG_DATA_TYPES } from '@/lib/constants';
 
 // Helper to get priority styling
 const getTaskPriorityClasses = (priority) => {
@@ -62,7 +63,7 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   return { text, classes, fullDate: fullDateText };
 };
 
-function TaskItem({ task, notes: propNotes, onTaskUpdated }) {
+function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange }) {
   // All useState hooks
   const [isCompleted, setIsCompleted] = useState(task ? task.is_completed : false);
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
@@ -78,6 +79,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated }) {
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [currentPriority, setCurrentPriority] = useState(task ? task.priority || '' : '');
   const noteInputRef = useRef(null); // Ref for the note input
+  const [isDragging, setIsDragging] = useState(false);
 
   // All useEffect and useCallback hooks
   useEffect(() => {
@@ -281,11 +283,67 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated }) {
   const completedItemVisualClasses = isCompleted ? "opacity-60 hover:opacity-80" : "";
   const editableTextClasses = (isEditState) => `cursor-text hover:bg-gray-100 rounded-sm ${isCompleted && !isEditState ? 'line-through text-gray-500' : 'text-gray-800'}`;
 
+  const handleDragStart = (event) => {
+    if (!task?.id) return;
+    if (isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    const payload = {
+      taskId: task.id,
+      previousProjectId: task.project_id || null,
+    };
+    const serializedPayload = JSON.stringify(payload);
+    event.dataTransfer.setData('text/plain', serializedPayload);
+    try {
+      event.dataTransfer.setData(DRAG_DATA_TYPES.TASK, serializedPayload);
+    } catch (dragError) {
+      // Ignore browsers that block custom MIME types
+    }
+    try {
+      event.dataTransfer.setData('application/json', serializedPayload);
+    } catch {
+      // Optional MIME type
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    setIsDragging(true);
+    if (onTaskDragStateChange) {
+      onTaskDragStateChange(true, task.project_id || null);
+    }
+  };
+
+  const handleDragEnd = (event) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    setIsDragging(false);
+    if (onTaskDragStateChange) {
+      onTaskDragStateChange(false, task.project_id || null);
+    }
+  };
+
   return (
     <div 
-      className={`py-0.5 px-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} transition-opacity duration-150 relative group`}
+      className={`py-0.5 px-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} ${isDragging ? 'ring-2 ring-indigo-300 ring-offset-1' : ''} transition-opacity duration-150 relative group`}
+      data-task-id={task.id}
     >
       <div className="flex items-center gap-2">
+        <div
+          className={`flex h-5 w-5 select-none items-center justify-center rounded-full border border-transparent text-gray-300 transition hover:text-gray-500 ${isCompleted ? 'opacity-40 cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-gray-200'}`}
+          draggable={!isCompleted}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onMouseDown={(event) => {
+            if (!isCompleted) {
+              event.stopPropagation();
+            }
+          }}
+          role="button"
+          aria-label="Drag task to another project"
+        >
+          <Bars3Icon className="h-3.5 w-3.5" />
+        </div>
         <input
           type="checkbox"
           checked={isCompleted}
