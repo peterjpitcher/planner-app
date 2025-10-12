@@ -29,8 +29,7 @@ This is a Next.js 15.3.2 application using the App Router pattern for a project 
 ### Project Structure
 - `/src/app/` - Next.js App Router pages and API routes
   - `/api/auth/[...nextauth]/` - NextAuth.js authentication endpoint
-  - `/dashboard/` - Main desktop dashboard (two-column layout)
-  - `/m/` - Mobile-specific routes with dedicated UI
+  - `/dashboard/` - Main dashboard (responsive layout)
   - `/completed-report/` - Reporting interface for completed items
   - `/login/` - Authentication page
 - `/src/components/` - React components organized by feature
@@ -38,7 +37,6 @@ This is a Next.js 15.3.2 application using the App Router pattern for a project 
   - `/Projects/` - Project management components
   - `/Tasks/` - Task management components
   - `/Notes/` - Note-taking components
-  - `/Mobile/` - Mobile-specific components
 - `/src/contexts/` - React contexts (TargetProjectContext for project selection)
 - `/src/lib/` - Utilities and clients
   - `supabaseClient.js` - Supabase database client
@@ -63,11 +61,10 @@ This is a Next.js 15.3.2 application using the App Router pattern for a project 
    - Expandable/collapsible UI
    - Creation timestamps displayed
 
-4. **Mobile Interface**: 
-   - Dedicated routes under `/m/` with optimized components
-   - Swipe actions for task management
-   - Floating action button for adding projects
-   - Touch-friendly navigation
+4. **Responsive Dashboard**:
+   - Unified `/dashboard` experience adapts from mobile to desktop
+   - Sidebar filters and task panel stack naturally on small screens
+   - Touch-friendly controls maintained across viewports
 
 5. **Reporting & Filtering**:
    - Completed items report with date range filtering

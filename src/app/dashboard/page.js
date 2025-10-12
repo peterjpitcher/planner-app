@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { apiClient } from '@/lib/apiClient';
 import ProjectList from '@/components/Projects/ProjectList';
-import AddProjectModal from '@/components/Projects/AddProjectModal';
 import AppShell from '@/components/layout/AppShell';
 import SidebarFilters from '@/components/dashboard/SidebarFilters';
 import MetricsBar from '@/components/dashboard/MetricsBar';
@@ -13,7 +12,7 @@ import TasksPanel from '@/components/dashboard/TasksPanel';
 import { ProjectListSkeleton } from '@/components/ui/LoadingStates';
 import { EmptyProjects, EmptyFilteredResults } from '@/components/ui/EmptyStates';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
-import { PlusCircleIcon, CalendarDaysIcon, RocketLaunchIcon, FireIcon, SparklesIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import { RocketLaunchIcon, FireIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 // Utility functions that don't need to be recreated
 const getPriorityValue = (priority) => {
@@ -107,7 +106,6 @@ export default function DashboardPage() {
   const [taskDragState, setTaskDragState] = useState({ active: false, sourceProjectId: null });
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
   const [areAllTasksExpanded, setAreAllTasksExpanded] = useState(true);
-  const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [selectedStakeholder, setSelectedStakeholder] = useState('All Stakeholders');
   const [activeDashboardFilters, setActiveDashboardFilters] = useState(() => createDefaultDashboardFilters());
   const [hideBillStakeholder, setHideBillStakeholder] = useState(false);
@@ -130,10 +128,16 @@ export default function DashboardPage() {
         
         // Flatten tasks for allUserTasks
         const allTasks = [];
+        const now = new Date();
         Object.values(batchedTasks || {}).forEach(tasks => {
           allTasks.push(...tasks);
         });
-        const sortedTasks = allTasks.sort(sortTasksByDateDescThenPriority);
+        const tasksDueTodayOrEarlier = allTasks.filter(task => {
+          if (!task?.due_date) return false;
+          const dueDate = parseISO(task.due_date);
+          return differenceInCalendarDays(dueDate, now) <= 0;
+        });
+        const sortedTasks = tasksDueTodayOrEarlier.sort(sortTasksByDateDescThenPriority);
         setAllUserTasks(sortedTasks);
         
         // Batch fetch notes for all tasks
@@ -209,28 +213,6 @@ export default function DashboardPage() {
     if (activeDashboardFilters.noDueDate) tempProjects = tempProjects.filter(p => projectAnalysis.noDueDate.includes(p.id));
     return tempProjects;
   }, [projects, selectedStakeholder, activeDashboardFilters, projectAnalysis, hideBillStakeholder]);
-
-  const handleProjectAdded = useCallback((newProject) => {
-    if (!newProject || !newProject.id) {
-      fetchData(); 
-      return;
-    }
-    setProjects(prevProjects => {
-      const updated = [newProject, ...prevProjects];
-      return updated.sort((a, b) => {
-        const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
-        const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
-        if (aIsUnassigned && !bIsUnassigned) return -1;
-        if (!aIsUnassigned && bIsUnassigned) return 1;
-        return sortProjectsByPriorityThenDateDesc(a, b);
-      });
-    });
-    setShowAddProjectModal(false);
-  }, [fetchData]);
-  
-  const handleGenericDataRefreshNeeded = useCallback(() => {
-    fetchData();
-  }, [fetchData]);
 
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
@@ -437,8 +419,6 @@ export default function DashboardPage() {
   }, []);
 
   // Memoize button click handlers
-  const handleShowAddProjectModal = useCallback(() => setShowAddProjectModal(true), []);
-  const handleHideAddProjectModal = useCallback(() => setShowAddProjectModal(false), []);
   const handleToggleCompletedProjects = useCallback(() => setShowCompletedProjects(prev => !prev), []);
   const handleToggleHideBill = useCallback(() => setHideBillStakeholder(prev => !prev), []);
   const handleResetFilters = useCallback(() => {
@@ -447,8 +427,11 @@ export default function DashboardPage() {
     setHideBillStakeholder(false);
   }, []);
   const handleSignOut = useCallback(async () => {
-    const currentUrl = window.location.origin;
-    await signOut({ callbackUrl: `${currentUrl}/login` });
+    try {
+      await signOut({ callbackUrl: '/login' });
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   }, []);
 
   // Memoize task update handler
@@ -577,30 +560,6 @@ export default function DashboardPage() {
     }
     return 'Welcome back. Everything is synced to live data; scan metrics below to spot emerging bottlenecks.';
   }, [hasActiveFilters]);
-  const shellActions = useMemo(() => ([
-    {
-      key: 'report',
-      label: 'Completed Report',
-      href: '/completed-report',
-      icon: CalendarDaysIcon,
-      variant: 'secondary',
-    },
-    {
-      key: 'new-project',
-      label: 'New Project',
-      onClick: handleShowAddProjectModal,
-      icon: PlusCircleIcon,
-      variant: 'primary',
-    },
-    {
-      key: 'sign-out',
-      label: 'Sign Out',
-      onClick: handleSignOut,
-      icon: ArrowRightOnRectangleIcon,
-      variant: 'destructive',
-    },
-  ]), [handleShowAddProjectModal, handleSignOut]);
-  
   // Conditional return must be AFTER all hook definitions
   if (loading) {
     return (
@@ -630,7 +589,6 @@ export default function DashboardPage() {
         user={user}
         title="Planner Command Center"
         subtitle={workspaceSubtitle}
-        actions={shellActions}
         sidebar={
           <SidebarFilters
             uniqueStakeholders={uniqueStakeholders}
@@ -659,91 +617,95 @@ export default function DashboardPage() {
           />
         }
       >
-        <MetricsBar metrics={metrics} />
+        <div className="hidden md:flex md:flex-col md:gap-8">
+          <MetricsBar metrics={metrics} />
 
-        {appliedFilters.length > 0 && (
-          <div className="glass-panel flex flex-wrap items-center gap-3 rounded-3xl border border-[#0496c7]/25 px-5 py-4 text-sm text-[#052a3b]">
-            <span className="text-xs uppercase tracking-[0.2em] text-[#036586]/80">Active filters</span>
-            <div className="flex flex-wrap items-center gap-2">
-              {appliedFilters.map(filter => (
-                <span
-                  key={filter.id}
-                  className="rounded-full bg-[#0496c7]/15 px-3 py-1 text-xs font-semibold text-[#036586] shadow-inner shadow-[#0496c7]/25"
-                >
-                  {filter.label}
-                </span>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="ml-auto inline-flex items-center rounded-full border border-[#0496c7]/30 bg-white px-4 py-1.5 text-xs font-medium text-[#036586] transition hover:border-[#0496c7]/50 hover:bg-[#0496c7]/10"
-            >
-              Clear all
-            </button>
-          </div>
-        )}
-
-        <section className="card-surface mt-8 overflow-hidden border border-[#0496c7]/20 bg-white/90 text-[#052a3b] shadow-[0_28px_60px_-32px_rgba(4,150,199,0.35)]">
-          <div className="border-b border-[#0496c7]/20 bg-white px-6 py-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-[#036586]/80">Projects</p>
-                <h2 className="mt-2 text-2xl font-semibold text-[#052a3b]">{projectSectionTitle}</h2>
-                <p className="mt-2 text-sm text-[#2f617a]">
-                  {hasActiveFilters
-                    ? `Showing ${baseFilteredProjects.length} project${baseFilteredProjects.length === 1 ? '' : 's'} that match your current filters.`
-                    : `Monitoring ${baseFilteredProjects.length} project${baseFilteredProjects.length === 1 ? '' : 's'} in flight.`}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="rounded-full border border-[#0496c7]/30 bg-[#0496c7]/12 px-4 py-2 text-xs font-semibold tracking-wide text-[#036586]">
-                  {baseFilteredProjects.length} showing
-                </div>
-                {hasActiveFilters && (
-                  <button
-                    type="button"
-                    onClick={handleResetFilters}
-                    className="inline-flex items-center rounded-full border border-[#0496c7]/25 px-4 py-2 text-xs font-medium text-[#036586] transition hover:border-[#0496c7]/45 hover:text-[#0496c7]"
+          {appliedFilters.length > 0 && (
+            <div className="glass-panel flex flex-wrap items-center gap-3 rounded-3xl border border-[#0496c7]/25 px-5 py-4 text-sm text-[#052a3b]">
+              <span className="text-xs uppercase tracking-[0.2em] text-[#036586]/80">Active filters</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {appliedFilters.map(filter => (
+                  <span
+                    key={filter.id}
+                    className="rounded-full bg-[#0496c7]/15 px-3 py-1 text-xs font-semibold text-[#036586] shadow-inner shadow-[#0496c7]/25"
                   >
-                    Reset filters
-                  </button>
-                )}
+                    {filter.label}
+                  </span>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="ml-auto inline-flex items-center rounded-full border border-[#0496c7]/30 bg-white px-4 py-1.5 text-xs font-medium text-[#036586] transition hover:border-[#0496c7]/50 hover:bg-[#0496c7]/10"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
+          <section className="card-surface overflow-hidden border border-[#0496c7]/20 bg-white/90 text-[#052a3b] shadow-[0_28px_60px_-32px_rgba(4,150,199,0.35)]">
+            <div className="border-b border-[#0496c7]/20 bg-white px-6 py-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-[#036586]/80">Projects</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-[#052a3b]">{projectSectionTitle}</h2>
+                  <p className="mt-2 text-sm text-[#2f617a]">
+                    {hasActiveFilters
+                      ? `Showing ${baseFilteredProjects.length} project${baseFilteredProjects.length === 1 ? '' : 's'} that match your current filters.`
+                      : `Monitoring ${baseFilteredProjects.length} project${baseFilteredProjects.length === 1 ? '' : 's'} in flight.`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="rounded-full border border-[#0496c7]/30 bg-[#0496c7]/12 px-4 py-2 text-xs font-semibold tracking-wide text-[#036586]">
+                    {baseFilteredProjects.length} showing
+                  </div>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="inline-flex items-center rounded-full border border-[#0496c7]/25 px-4 py-2 text-xs font-medium text-[#036586] transition hover:border-[#0496c7]/45 hover:text-[#0496c7]"
+                    >
+                      Reset filters
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="bg-white px-2 py-6 sm:px-4 md:px-6">
-            {isLoadingData ? (
-              <ProjectListSkeleton />
-            ) : baseFilteredProjects.length > 0 ? (
-              <ProjectList
-                projects={baseFilteredProjects}
-                tasksByProject={tasksByProject}
-                notesByTask={notesByTask}
-                onProjectDataChange={handleProjectDataChange}
-                onProjectDeleted={handleProjectDeleted}
-                onProjectUpdated={handleProjectUpdate}
-                areAllTasksExpanded={areAllTasksExpanded}
-                isTaskDragActive={isTaskDragActive}
-                dragSourceProjectId={dragSourceProjectId}
-                onTaskDragStateChange={handleTaskDragStateChange}
-              />
-            ) : hasActiveFilters ? (
-              <EmptyFilteredResults />
-            ) : (
-              <EmptyProjects />
-            )}
-          </div>
-        </section>
+            <div className="bg-white px-2 py-6 sm:px-4 md:px-6">
+              {isLoadingData ? (
+                <ProjectListSkeleton />
+              ) : baseFilteredProjects.length > 0 ? (
+                <ProjectList
+                  projects={baseFilteredProjects}
+                  tasksByProject={tasksByProject}
+                  notesByTask={notesByTask}
+                  onProjectDataChange={handleProjectDataChange}
+                  onProjectDeleted={handleProjectDeleted}
+                  onProjectUpdated={handleProjectUpdate}
+                  areAllTasksExpanded={areAllTasksExpanded}
+                  isTaskDragActive={isTaskDragActive}
+                  dragSourceProjectId={dragSourceProjectId}
+                  onTaskDragStateChange={handleTaskDragStateChange}
+                />
+              ) : hasActiveFilters ? (
+                <EmptyFilteredResults />
+              ) : (
+                <EmptyProjects />
+              )}
+            </div>
+          </section>
+        </div>
       </AppShell>
 
-      {showAddProjectModal && (
-        <AddProjectModal
-          isOpen={showAddProjectModal}
-          onClose={handleHideAddProjectModal}
-          onProjectAdded={handleProjectAdded}
-        />
-      )}
+      <div className="px-4 pb-10 sm:px-6 lg:px-10">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="w-full rounded-xl border border-[#0496c7]/25 bg-white/90 px-4 py-3 text-sm font-semibold text-[#036586] shadow-[0_12px_30px_-20px_rgba(4,150,199,0.4)] transition hover:border-[#0496c7]/40 hover:bg-[#0496c7]/12 hover:text-[#0496c7]"
+        >
+          Sign Out
+        </button>
+      </div>
     </>
   );
 } 

@@ -96,19 +96,19 @@ export default function QuickTaskForm({
           Task name
         </label>
         <input
-        id="quick-task-name"
-        type="text"
-        placeholder={namePlaceholder}
-        value={name}
-        onChange={(event) => {
-          setName(event.target.value);
-          if (error) setError('');
-        }}
-        className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-4 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 placeholder:text-[#2f617a]/70 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30"
-        disabled={submitting}
-        autoFocus={autoFocus}
-        ref={inputRef}
-      />
+          id="quick-task-name"
+          type="text"
+          placeholder={namePlaceholder}
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+            if (error) setError('');
+          }}
+          className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-4 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 placeholder:text-[#2f617a]/70 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30"
+          disabled={submitting}
+          autoFocus={autoFocus}
+          ref={inputRef}
+        />
       </div>
 
       <div className={`flex flex-col gap-2 ${priorityType === 'select' ? 'sm:flex-row sm:items-center sm:gap-3' : 'sm:flex-row sm:items-center sm:gap-3'}`}>
@@ -123,7 +123,7 @@ export default function QuickTaskForm({
             setDueDate(event.target.value);
             if (error) setError('');
           }}
-          className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-3 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30 sm:w-auto sm:min-w-[160px]"
+          className="w-full rounded-xl border border-[#0496c7]/25 bg-white px-3 py-2 text-sm text-[#052a3b] shadow-inner shadow-[#0496c7]/10 focus:border-[#0496c7] focus:outline-none focus:ring-2 focus:ring-[#0496c7]/30 max-w-full sm:w-auto sm:min-w-[160px]"
           disabled={submitting}
         />
 
@@ -144,7 +144,7 @@ export default function QuickTaskForm({
 
         <button
           type="submit"
-          className="inline-flex items-center justify-center rounded-xl bg-[#0496c7] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[#0496c7]/25 transition hover:bg-[#0382ac] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0496c7]/40 disabled:pointer-events-none disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center rounded-xl bg-[#0496c7] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[#0496c7]/25 transition hover:bg-[#0382ac] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0496c7]/40 disabled:pointer-events-none disabled:opacity-60 sm:w-auto"
           disabled={submitting}
         >
           {ButtonIcon && <ButtonIcon className="mr-1.5 h-4 w-4" />}

@@ -209,11 +209,11 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
 
   return (
     <div
-      className={`group relative mx-auto flex w-full max-w-[18.5rem] items-start gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_24px_50px_-32px_rgba(4,150,199,0.35)] transition-all sm:mx-0 sm:max-w-[24rem] ${itemPriorityClass} ${task.is_completed ? 'opacity-60 saturate-75' : 'hover:-translate-y-0.5 hover:shadow-[0_34px_60px_-30px_rgba(4,150,199,0.45)]'} ${isDragging ? 'opacity-60 ring-2 ring-indigo-300' : ''}`}
+      className={`group relative mx-auto flex w-full max-w-[18.5rem] items-start gap-2 rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-3 shadow-[0_24px_50px_-32px_rgba(4,150,199,0.35)] transition-all sm:mx-0 sm:max-w-[24rem] sm:gap-3 sm:px-4 ${itemPriorityClass} ${task.is_completed ? 'opacity-60 saturate-75' : 'hover:-translate-y-0.5 hover:shadow-[0_34px_60px_-30px_rgba(4,150,199,0.45)]'} ${isDragging ? 'opacity-60 ring-2 ring-indigo-300' : ''}`}
       data-task-id={task.id}
     >
       <div
-        className={`mt-0.5 flex h-5 w-5 select-none items-center justify-center rounded-full border border-transparent text-slate-300 transition hover:text-slate-500 ${task.is_completed ? 'opacity-30 cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-slate-200'}`}
+        className={`mt-0.5 hidden h-5 w-5 select-none items-center justify-center rounded-full border border-transparent text-slate-300 transition hover:text-slate-500 ${task.is_completed ? 'opacity-30 cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-slate-200'} sm:flex`}
         draggable={!task.is_completed}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
@@ -231,7 +231,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
         type="checkbox" 
         checked={task.is_completed}
         onChange={handleToggleComplete}
-        className="mt-0.5 h-4 w-4 text-indigo-600 border-slate-300/80 rounded focus:ring-indigo-500 flex-shrink-0"
+        className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-slate-300/80 text-indigo-600 focus:ring-indigo-500 sm:h-5 sm:w-5"
       />
       <div className="flex-grow min-w-0">
         <div className="flex items-center justify-between">

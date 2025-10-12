@@ -1,5 +1,7 @@
 # Mobile-Specific Issues Report
 
+> **Note (2025-04-09):** The `/m/...` routes evaluated in this report have been retired; this analysis remains for posterity.
+
 ## Mobile Route Analysis (/m/)
 
 ### Positive Aspects

@@ -2,6 +2,8 @@
 
 ## 1. Overview
 
+> **Note (2025-04-09):** The mobile routes referenced below have since been removed during the responsive dashboard consolidation. This record remains for historical context.
+
 A persistent ESLint error, `react/no-unescaped-entities`, is preventing successful builds. This error occurs in two specific files related to mobile dynamic routes:
 
 - `src/app/m/project/[id]/page.js`

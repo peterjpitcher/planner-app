@@ -3,6 +3,8 @@
 ## Overview
 This document summarizes all the improvements implemented based on the comprehensive application review. All critical and high-priority issues have been addressed.
 
+> **Note (2025-04-09):** Legacy `/m/...` mobile components referenced below were removed as part of the responsive dashboard consolidation.
+
 ## 1. Security Improvements ✅
 
 ### Row Level Security (RLS)

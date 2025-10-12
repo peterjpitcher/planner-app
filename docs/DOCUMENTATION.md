@@ -2,6 +2,8 @@
 
 This document tracks the decisions made and the reasoning behind them during the development of the Simple Productivity Tool.
 
+> **Note (2025-04-09):** The dedicated mobile routes under `/m/...` have been retired in favor of a single responsive `/dashboard` experience. Historical references to those routes below describe the legacy implementation.
+
 ## Session 1: Initial Requirements Gathering and PRD
 
 **Date:** $(date +%Y-%m-%d) <!-- Replace with actual date -->

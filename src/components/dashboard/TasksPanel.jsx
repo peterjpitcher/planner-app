@@ -33,7 +33,7 @@ export default function TasksPanel({
   }, [onQuickAdd]);
 
   return (
-    <div className="flex w-full flex-col gap-4 sm:max-w-[28rem] sm:self-center lg:max-w-none">
+    <div id="tasks-panel" className="flex w-full flex-col gap-4 sm:max-w-[28rem] sm:self-center lg:max-w-none">
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/85">Tasks</p>
         <h2 className="mt-2 text-xl font-semibold text-[#052a3b]">Flight board</h2>
