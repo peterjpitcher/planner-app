@@ -328,76 +328,79 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       className={`py-0.5 px-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} ${isDragging ? 'ring-2 ring-indigo-300 ring-offset-1' : ''} transition-opacity duration-150 relative group`}
       data-task-id={task.id}
     >
-      <div className="flex items-center gap-2">
-        <div
-          className={`flex h-5 w-5 select-none items-center justify-center rounded-full border border-transparent text-gray-300 transition hover:text-gray-500 ${isCompleted ? 'opacity-40 cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-gray-200'}`}
-          draggable={!isCompleted}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onMouseDown={(event) => {
-            if (!isCompleted) {
-              event.stopPropagation();
-            }
-          }}
-          role="button"
-          aria-label="Drag task to another project"
-        >
-          <Bars3Icon className="h-3.5 w-3.5" />
-        </div>
-        <input
-          type="checkbox"
-          checked={isCompleted}
-          onChange={handleToggleComplete}
-          disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
-          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0 cursor-pointer"
-          style={{ minWidth: '16px', minHeight: '16px' }}
-        />
-        <div className="flex-grow min-w-0 flex items-center gap-2">
-          <div className="flex items-center gap-x-1.5 flex-grow">
-            {isEditingTaskName ? (
-              <input
-                type="text"
-                value={currentTaskName}
-                onChange={handleTaskNameChange}
-                onBlur={handleTaskNameUpdate}
-                onKeyDown={handleTaskNameInputKeyDown}
-                className="text-sm font-medium text-gray-900 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 flex-grow min-w-[50px] break-words"
-                ref={taskNameInputRef}
-              />
-            ) : (
-              <span 
-                onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
-                className={`text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''} flex-shrink-0`}
-                title={currentTaskName}
-              >
-                {currentTaskName || 'Untitled Task'}
-              </span>
-            )}
-
-            {!isEditingTaskName && (
-              isEditingTaskDescription ? (
-                <textarea
-                  value={currentTaskDescription}
-                  onChange={handleTaskDescriptionChange}
-                  onBlur={handleTaskDescriptionUpdate}
-                  onKeyDown={handleTaskDescriptionKeyDown}
-                  className="text-xs text-gray-600 border-b border-indigo-500 focus:outline-none focus:ring-0 py-0.5 w-full min-h-[2em] resize-none break-words"
-                  rows="1"
-                  autoFocus
+      <div className="flex flex-wrap items-start gap-x-2 gap-y-3 sm:items-center">
+        <div className="flex items-start gap-2 flex-1 min-w-0">
+          <div
+            className={`flex h-5 w-5 select-none items-center justify-center rounded-full border border-transparent text-gray-300 transition hover:text-gray-500 ${isCompleted ? 'opacity-40 cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-gray-200'}`}
+            draggable={!isCompleted}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onMouseDown={(event) => {
+              if (!isCompleted) {
+                event.stopPropagation();
+              }
+            }}
+            role="button"
+            aria-label="Drag task to another project"
+          >
+            <Bars3Icon className="h-3.5 w-3.5" />
+          </div>
+          <input
+            type="checkbox"
+            checked={isCompleted}
+            onChange={handleToggleComplete}
+            disabled={isUpdatingTask || isEditingTaskName || isEditingTaskDescription || isEditingDueDate || isEditingPriority}
+            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0 cursor-pointer mt-0.5"
+            style={{ minWidth: '16px', minHeight: '16px' }}
+          />
+          <div className="flex min-w-0 flex-1">
+            <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-1.5">
+              {isEditingTaskName ? (
+                <input
+                  type="text"
+                  value={currentTaskName}
+                  onChange={handleTaskNameChange}
+                  onBlur={handleTaskNameUpdate}
+                  onKeyDown={handleTaskNameInputKeyDown}
+                  className="w-full flex-1 min-w-[50px] break-words border-b border-indigo-500 py-0.5 text-sm font-medium text-gray-900 focus:outline-none focus:ring-0 sm:min-w-[120px]"
+                  ref={taskNameInputRef}
                 />
               ) : (
                 <span 
-                  onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
-                  className={`text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''}`}
-                  title={currentTaskDescription}
+                  onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
+                  className={`block w-full text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''}`}
+                  title={currentTaskName}
                 >
-                  {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
+                  {currentTaskName || 'Untitled Task'}
                 </span>
-              )
-            )}
+              )}
+
+              {!isEditingTaskName && (
+                isEditingTaskDescription ? (
+                  <textarea
+                    value={currentTaskDescription}
+                    onChange={handleTaskDescriptionChange}
+                    onBlur={handleTaskDescriptionUpdate}
+                    onKeyDown={handleTaskDescriptionKeyDown}
+                    className="w-full min-h-[2em] resize-none break-words border-b border-indigo-500 py-0.5 text-xs text-gray-600 focus:outline-none focus:ring-0"
+                    rows="1"
+                    autoFocus
+                  />
+                ) : (
+                  <span 
+                    onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
+                    className={`block text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''}`}
+                    title={currentTaskDescription}
+                  >
+                    {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
+                  </span>
+                )
+              )}
+            </div>
           </div>
         </div>
-        <div className="flex-shrink-0">
+
+        <div className="flex w-full items-center gap-2 text-xs flex-wrap sm:w-auto sm:flex-nowrap sm:justify-end">
           {!isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && !isEditingPriority && (
             <button
               className="icon-button text-gray-400 hover:text-indigo-600 cursor-pointer"
@@ -409,16 +412,14 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
               <PencilIcon className="h-4 w-4" />
             </button>
           )}
-        </div>
 
-        <div className="flex items-center space-x-2 text-xs flex-shrink-0">
           {isEditingPriority ? (
             <select 
               value={currentPriority}
               onChange={(e) => setCurrentPriority(e.target.value)} 
               onBlur={handlePriorityUpdate} 
               onKeyDown={(e) => e.key === 'Enter' && handlePriorityUpdate() || e.key === 'Escape' && (setCurrentPriority(task.priority || ''), setIsEditingPriority(false))}
-              className="text-xs p-0.5 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 h-6"
+              className="h-6 rounded-md border border-gray-300 p-0.5 text-xs focus:border-indigo-500 focus:ring-indigo-500"
               autoFocus
             >
               <option value="">No Priority</option>
@@ -428,7 +429,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
             </select>
           ) : (
             <div 
-              className={`flex items-center cursor-pointer hover:bg-gray-100/50 p-0.5 rounded -ml-0.5 ${isCompleted ? 'pointer-events-none' : ''}`}
+              className={`flex items-center rounded p-0.5 ${isCompleted ? 'pointer-events-none' : 'cursor-pointer hover:bg-gray-100/50'}`}
               onClick={() => {if (!isCompleted) setIsEditingPriority(true);}}
               title={`Priority: ${currentPriority || 'N/A'}`}
             >
@@ -445,7 +446,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
                 onChange={handleDueDateChange}
                 onBlur={() => handleDueDateUpdate()}
                 onKeyDown={handleDueDateInputKeyDown}
-                className="text-xs border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 px-1.5 w-[130px]"
+                className="w-[130px] rounded-md border border-gray-300 px-1.5 py-1 text-xs focus:border-indigo-500 focus:ring-indigo-500"
                 autoFocus
               />
             </div>
@@ -461,7 +462,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
           
           <button 
             onClick={() => setShowNotes(!showNotes)} 
-            className="icon-button relative text-gray-400 hover:text-indigo-600 flex items-center"
+            className="icon-button relative flex items-center text-gray-400 hover:text-indigo-600"
             aria-expanded={showNotes}
             aria-controls={`notes-section-${task.id}`}
             disabled={isLoadingNotes}
@@ -473,7 +474,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
               </span>
             )}
           </button>
-          <span className="text-gray-400 text-2xs hidden sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
+          <span className="hidden text-2xs text-gray-400 sm:inline-block" title={`Last updated: ${task.updated_at ? format(parseISO(task.updated_at), 'Pp') : 'N/A'}`}>
             {updatedAgo}
           </span>
         </div>

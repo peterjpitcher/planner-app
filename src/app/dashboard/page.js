@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { apiClient } from '@/lib/apiClient';
 import ProjectList from '@/components/Projects/ProjectList';
+import AddProjectModal from '@/components/Projects/AddProjectModal';
 import AppShell from '@/components/layout/AppShell';
 import SidebarFilters from '@/components/dashboard/SidebarFilters';
 import MetricsBar from '@/components/dashboard/MetricsBar';
@@ -12,7 +13,7 @@ import TasksPanel from '@/components/dashboard/TasksPanel';
 import { ProjectListSkeleton } from '@/components/ui/LoadingStates';
 import { EmptyProjects, EmptyFilteredResults } from '@/components/ui/EmptyStates';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
-import { RocketLaunchIcon, FireIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { RocketLaunchIcon, FireIcon, SparklesIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 
 // Utility functions that don't need to be recreated
 const getPriorityValue = (priority) => {
@@ -109,6 +110,7 @@ export default function DashboardPage() {
   const [selectedStakeholder, setSelectedStakeholder] = useState('All Stakeholders');
   const [activeDashboardFilters, setActiveDashboardFilters] = useState(() => createDefaultDashboardFilters());
   const [hideBillStakeholder, setHideBillStakeholder] = useState(false);
+  const [isAddProjectModalOpen, setIsAddProjectModalOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -483,6 +485,42 @@ export default function DashboardPage() {
     return createdTask;
   }, [userId, handleProjectDataChange]);
 
+  const handleProjectAdded = useCallback((newProject) => {
+    if (!newProject?.id) {
+      fetchData();
+      return;
+    }
+
+    const normalizedProject = {
+      ...newProject,
+      stakeholders: Array.isArray(newProject.stakeholders) ? newProject.stakeholders : [],
+      priority: newProject.priority || 'Medium',
+      status: newProject.status || 'Open',
+      updated_at: newProject.updated_at || new Date().toISOString(),
+    };
+
+    setProjects(prevProjects => {
+      const withoutDuplicate = prevProjects.filter(p => p.id !== normalizedProject.id);
+      const updatedList = [...withoutDuplicate, normalizedProject]
+        .filter(p => showCompletedProjects || (p.status !== 'Completed' && p.status !== 'Cancelled'))
+        .sort((a, b) => {
+          const aIsUnassigned = a.name?.toLowerCase() === 'unassigned';
+          const bIsUnassigned = b.name?.toLowerCase() === 'unassigned';
+          if (aIsUnassigned && !bIsUnassigned) return -1;
+          if (!aIsUnassigned && bIsUnassigned) return 1;
+          return sortProjectsByPriorityThenDateDesc(a, b);
+        });
+      return updatedList;
+    });
+
+    setTasksByProject(prev => ({
+      ...prev,
+      [normalizedProject.id]: prev?.[normalizedProject.id] || [],
+    }));
+
+    fetchData();
+  }, [fetchData, showCompletedProjects]);
+
   // Memoize active filter check
   const hasActiveFilters = useMemo(() => {
     return selectedStakeholder !== 'All Stakeholders' || 
@@ -585,10 +623,23 @@ export default function DashboardPage() {
 
   return (
     <>
+      <AddProjectModal
+        isOpen={isAddProjectModalOpen}
+        onClose={() => setIsAddProjectModalOpen(false)}
+        onProjectAdded={handleProjectAdded}
+      />
       <AppShell
         user={user}
         title="Planner Command Center"
         subtitle={workspaceSubtitle}
+        actions={[
+          {
+            key: 'new-project',
+            label: 'New Project',
+            icon: PlusCircleIcon,
+            onClick: () => setIsAddProjectModalOpen(true),
+          },
+        ]}
         sidebar={
           <SidebarFilters
             uniqueStakeholders={uniqueStakeholders}
@@ -690,7 +741,7 @@ export default function DashboardPage() {
               ) : hasActiveFilters ? (
                 <EmptyFilteredResults />
               ) : (
-                <EmptyProjects />
+                <EmptyProjects onCreateProject={() => setIsAddProjectModalOpen(true)} />
               )}
             </div>
           </section>
