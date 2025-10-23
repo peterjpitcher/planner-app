@@ -8,12 +8,13 @@ import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { 
   ChevronDownIcon, ChevronUpIcon, PlusCircleIcon, EyeIcon, EyeSlashIcon, 
   ChatBubbleLeftEllipsisIcon, ClipboardDocumentIcon,
-  PencilIcon, UserGroupIcon, ChevronRightIcon, CalendarDaysIcon, TrashIcon
+  PencilIcon, PencilSquareIcon, UserGroupIcon, ChevronRightIcon, CalendarDaysIcon, TrashIcon
 } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import TaskList from '@/components/Tasks/TaskList';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
+import ProjectNoteWorkspaceModal from '@/components/Notes/ProjectNoteWorkspaceModal';
 import ProjectCompletionModal from './ProjectCompletionModal';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { useSession } from 'next-auth/react';
@@ -144,6 +145,7 @@ const ProjectItem = forwardRef((
   const [showProjectNotes, setShowProjectNotes] = useState(false);
   const [projectNotes, setProjectNotes] = useState([]);
   const [isLoadingProjectNotes, setIsLoadingProjectNotes] = useState(false);
+  const [isNoteWorkspaceOpen, setIsNoteWorkspaceOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('Copy');
   const [currentStatus, setCurrentStatus] = useState(project ? project.status || 'Open' : 'Open');
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
@@ -212,9 +214,9 @@ const ProjectItem = forwardRef((
     setIsLoadingProjectNotes(true);
     try {
       const data = await apiClient.getNotes(project.id);
-      // Sort notes by created_at ascending
+      // Sort notes by created_at descending so newest appear first
       const sortedNotes = (data || []).sort((a, b) => 
-        new Date(a.created_at) - new Date(b.created_at)
+        new Date(b.created_at) - new Date(a.created_at)
       );
       setProjectNotes(sortedNotes);
     } catch (err) {
@@ -228,6 +230,12 @@ const ProjectItem = forwardRef((
   useEffect(() => {
     if (showProjectNotes && project && project.id) fetchProjectNotes();
   }, [showProjectNotes, project, fetchProjectNotes]);
+
+  useEffect(() => {
+    if (isNoteWorkspaceOpen && project && project.id) {
+      fetchProjectNotes();
+    }
+  }, [isNoteWorkspaceOpen, project, fetchProjectNotes]);
 
   // Don't fetch notes on initial mount - only when notes section is opened
   // This prevents excessive API calls when dashboard loads
@@ -331,7 +339,6 @@ const ProjectItem = forwardRef((
 
   const handleProjectNoteAdded = (newNote) => {
     setProjectNotes(prevNotes => [newNote, ...prevNotes]);
-    setShowProjectNotes(false); // Collapse notes after adding
     if (onProjectDataChange) onProjectDataChange(project.id, { updated_at: new Date().toISOString() }, 'project_details_changed');
   };
 
@@ -438,20 +445,16 @@ const ProjectItem = forwardRef((
 
   const handleChangeProjectStatus = async (newStatus) => {
     setShowStatusDropdown(false);
-    if (newStatus === 'Completed') {
-      const openTasks = tasks.filter(task => !task.is_completed);
-      if (openTasks.length > 0) {
-        setStatusToConfirm(newStatus);
-        setShowCompletionModal(true);
-        return;
-      }
+    if (newStatus === 'Completed' && openTasksCount > 0) {
+      setStatusToConfirm(newStatus);
+      setShowCompletionModal(true);
+      return;
     }
     await updateProjectStatusInDb(newStatus);
   };
 
   const handleConfirmCompleteTasksAndProject = async () => {
     setShowCompletionModal(false);
-    const openTasks = tasks.filter(task => !task.is_completed);
     if (openTasks.length > 0) {
       try {
         await Promise.all(
@@ -597,7 +600,8 @@ const ProjectItem = forwardRef((
   const commonInputClasses = "text-xs p-1 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed";
   const disabledInputClasses = "bg-slate-100 cursor-not-allowed";
 
-  const openTasksCount = tasks.filter(task => !task.is_completed).length;
+  const openTasks = tasks.filter(task => !task.is_completed);
+  const openTasksCount = openTasks.length;
   const completedTasksCount = tasks.length - openTasksCount;
 
   const needsAttentionStyle = openTasksCount === 0 && tasks.length > 0 && !isProjectCompletedOrCancelled ? 'ring-2 ring-red-400/70 ring-offset-2 ring-offset-white' : '';
@@ -1079,6 +1083,16 @@ const ProjectItem = forwardRef((
               </button>
 
               <button
+                onClick={(e) => { e.stopPropagation(); setIsNoteWorkspaceOpen(true); }}
+                className="icon-button rounded-full text-slate-400 hover:bg-slate-200 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:text-slate-300"
+                title="Open notes workspace"
+                type="button"
+                disabled={isProjectCompletedOrCancelled}
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+              </button>
+
+              <button
                 onClick={(e) => { e.stopPropagation(); handleCopyProjectData(); }}
                 className="icon-button rounded-full text-slate-400 hover:bg-slate-200 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-offset-1"
                 title={`Copy project data (${copyStatus})`}
@@ -1193,9 +1207,20 @@ const ProjectItem = forwardRef((
       {/* Project Notes Section */}
       {showProjectNotes && (
         <div id={`project-notes-section-${project.id}`} className="border-t border-gray-200 px-3 sm:px-4 py-1.5">
-          <h4 className="text-xs font-semibold text-slate-600 mb-1.5">Project Notes</h4>
+          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h4 className="text-xs font-semibold text-slate-600">Project Notes</h4>
+            <button
+              type="button"
+              onClick={() => setIsNoteWorkspaceOpen(true)}
+              className="inline-flex items-center justify-center rounded-lg border border-[#0496c7]/30 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[#036586] shadow-sm transition hover:border-[#0496c7] hover:bg-[#0496c7]/10 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400 disabled:hover:bg-transparent"
+              disabled={isProjectCompletedOrCancelled}
+            >
+              Open Notes Workspace
+            </button>
+          </div>
           <AddNoteForm
             parentId={project.id}
+            parentType="project"
             onNoteAdded={handleProjectNoteAdded}
             disabled={isProjectCompletedOrCancelled}
           />
@@ -1214,7 +1239,18 @@ const ProjectItem = forwardRef((
         onClose={handleCloseCompletionModal}
         onConfirmCompleteTasks={handleConfirmCompleteTasksAndProject}
         projectName={currentName}
-        openTasksCount={tasks.filter(task => !task.is_completed).length}
+        openTasksCount={openTasksCount}
+      />
+      <ProjectNoteWorkspaceModal
+        isOpen={isNoteWorkspaceOpen}
+        onClose={() => setIsNoteWorkspaceOpen(false)}
+        project={project}
+        notes={projectNotes}
+        onNoteSaved={(note) => handleProjectNoteAdded(note)}
+        onTaskSubmit={submitQuickTask}
+        isLoadingNotes={isLoadingProjectNotes}
+        noteCreationDisabled={isProjectCompletedOrCancelled}
+        openTasks={openTasks}
       />
     </div>
     </div>

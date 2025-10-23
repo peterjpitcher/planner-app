@@ -92,6 +92,96 @@ const DASHBOARD_FILTER_LABELS = {
   noDueDate: 'Missing due dates',
 };
 
+const DASHBOARD_FILTER_TYPES = {
+  PROJECT: 'project',
+  TASK: 'task',
+};
+
+const hasAnyActiveFocusFilter = (filters = {}) => Boolean(
+  filters.overdue ||
+  filters.noTasks ||
+  filters.untouched ||
+  filters.noDueDate
+);
+
+function filterDashboardItems({
+  type,
+  projects = [],
+  tasks = [],
+  selectedStakeholder = 'All Stakeholders',
+  hideBillStakeholder = false,
+  activeDashboardFilters = {},
+  projectAnalysis = {},
+}) {
+  const normalizedType = type === DASHBOARD_FILTER_TYPES.TASK
+    ? DASHBOARD_FILTER_TYPES.TASK
+    : DASHBOARD_FILTER_TYPES.PROJECT;
+
+  const { overdue = [], noTasks = [], untouched = [], noDueDate = [] } = projectAnalysis || {};
+
+  const applyProjectFilters = (inputProjects) => {
+    let filtered = [...inputProjects];
+
+    if (selectedStakeholder !== 'All Stakeholders') {
+      filtered = filtered.filter(
+        (project) => Array.isArray(project.stakeholders) && project.stakeholders.includes(selectedStakeholder)
+      );
+    }
+
+    if (hideBillStakeholder) {
+      filtered = filtered.filter((project) => !mentionsBillStakeholder(project.stakeholders));
+    }
+
+    if (activeDashboardFilters.overdue) {
+      const overdueIds = new Set(overdue);
+      filtered = filtered.filter((project) => overdueIds.has(project.id));
+    }
+
+    if (activeDashboardFilters.noTasks) {
+      const noTasksIds = new Set(noTasks);
+      filtered = filtered.filter((project) => noTasksIds.has(project.id));
+    }
+
+    if (activeDashboardFilters.untouched) {
+      const untouchedIds = new Set(untouched);
+      filtered = filtered.filter((project) => untouchedIds.has(project.id));
+    }
+
+    if (activeDashboardFilters.noDueDate) {
+      const missingDueDateIds = new Set(noDueDate);
+      filtered = filtered.filter((project) => missingDueDateIds.has(project.id));
+    }
+
+    return filtered;
+  };
+
+  if (normalizedType === DASHBOARD_FILTER_TYPES.TASK) {
+    const baseFiltersActive =
+      selectedStakeholder !== 'All Stakeholders' ||
+      hideBillStakeholder ||
+      hasAnyActiveFocusFilter(activeDashboardFilters);
+
+    if (!baseFiltersActive) {
+      return tasks;
+    }
+
+    const filteredProjects = applyProjectFilters(projects);
+    const allowedProjectIds = new Set(filteredProjects.map((project) => project.id));
+    const focusFiltersActive = hasAnyActiveFocusFilter(activeDashboardFilters);
+
+    return tasks.filter((task) => {
+      if (!task?.project_id) {
+        if (selectedStakeholder !== 'All Stakeholders') return false;
+        if (focusFiltersActive) return false;
+        return true;
+      }
+      return allowedProjectIds.has(task.project_id);
+    });
+  }
+
+  return applyProjectFilters(projects);
+}
+
 export default function DashboardPage() {
   // All hooks must be called at the top level, before any conditional returns.
   const { data: session, status } = useSession();
@@ -201,20 +291,24 @@ export default function DashboardPage() {
     return { overdue, noTasks, untouched, noDueDate };
   }, [projects, allUserTasks, twoWeeksAgo]);
 
-  const baseFilteredProjects = useMemo(() => {
-    let tempProjects = [...projects];
-    if (selectedStakeholder !== 'All Stakeholders') {
-      tempProjects = tempProjects.filter(p => p.stakeholders && p.stakeholders.includes(selectedStakeholder));
-    }
-    if (hideBillStakeholder) {
-      tempProjects = tempProjects.filter(p => !mentionsBillStakeholder(p.stakeholders));
-    }
-    if (activeDashboardFilters.overdue) tempProjects = tempProjects.filter(p => projectAnalysis.overdue.includes(p.id));
-    if (activeDashboardFilters.noTasks) tempProjects = tempProjects.filter(p => projectAnalysis.noTasks.includes(p.id));
-    if (activeDashboardFilters.untouched) tempProjects = tempProjects.filter(p => projectAnalysis.untouched.includes(p.id));
-    if (activeDashboardFilters.noDueDate) tempProjects = tempProjects.filter(p => projectAnalysis.noDueDate.includes(p.id));
-    return tempProjects;
-  }, [projects, selectedStakeholder, activeDashboardFilters, projectAnalysis, hideBillStakeholder]);
+  const baseFilteredProjects = useMemo(() => filterDashboardItems({
+    type: DASHBOARD_FILTER_TYPES.PROJECT,
+    projects,
+    selectedStakeholder,
+    hideBillStakeholder,
+    activeDashboardFilters,
+    projectAnalysis,
+  }), [projects, selectedStakeholder, hideBillStakeholder, activeDashboardFilters, projectAnalysis]);
+
+  const filteredTasksForDashboard = useMemo(() => filterDashboardItems({
+    type: DASHBOARD_FILTER_TYPES.TASK,
+    projects,
+    tasks: allUserTasks,
+    selectedStakeholder,
+    hideBillStakeholder,
+    activeDashboardFilters,
+    projectAnalysis,
+  }), [projects, allUserTasks, selectedStakeholder, hideBillStakeholder, activeDashboardFilters, projectAnalysis]);
 
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
@@ -659,8 +753,8 @@ export default function DashboardPage() {
         sideContent={
           <TasksPanel
             isLoading={isLoadingData}
-            tasks={allUserTasks}
-            projects={projects}
+            tasks={filteredTasksForDashboard}
+            projects={baseFilteredProjects}
             onTaskUpdate={handleTaskUpdate}
             hideBillStakeholder={hideBillStakeholder}
             onQuickAdd={handleQuickTaskAdd}
