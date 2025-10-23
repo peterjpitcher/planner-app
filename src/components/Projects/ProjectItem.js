@@ -326,6 +326,23 @@ const ProjectItem = forwardRef((
     }
   };
 
+  const completeOpenTaskFromWorkspace = async (taskId) => {
+    if (!taskId) return;
+    try {
+      const updatedTask = await apiClient.updateTask(taskId, { 
+        is_completed: true,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      if (updatedTask) {
+        handleTaskUpdated(updatedTask);
+      }
+    } catch (err) {
+      handleError(err, 'completeOpenTaskFromWorkspace', { showAlert: true });
+      throw err;
+    }
+  };
+
   const handleDeleteProject = async () => {
     if (project && window.confirm('Are you sure you want to delete project "' + project.name + '" and all its tasks? This action cannot be undone.')) {
         try {
@@ -1248,6 +1265,7 @@ const ProjectItem = forwardRef((
         notes={projectNotes}
         onNoteSaved={(note) => handleProjectNoteAdded(note)}
         onTaskSubmit={submitQuickTask}
+        onTaskComplete={completeOpenTaskFromWorkspace}
         isLoadingNotes={isLoadingProjectNotes}
         noteCreationDisabled={isProjectCompletedOrCancelled}
         openTasks={openTasks}

@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/apiClient';
 import NoteList from './NoteList';
 import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { format } from 'date-fns';
+import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 /**
  * Modal workspace for capturing detailed project notes and quick tasks.
@@ -18,6 +19,7 @@ export default function ProjectNoteWorkspaceModal({
   notes,
   onNoteSaved,
   onTaskSubmit,
+  onTaskComplete,
   isLoadingNotes = false,
   noteCreationDisabled = false,
   openTasks = [],
@@ -26,12 +28,16 @@ export default function ProjectNoteWorkspaceModal({
   const [noteError, setNoteError] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [completingTaskId, setCompletingTaskId] = useState(null);
+  const [taskError, setTaskError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setNoteContent('');
       setNoteError('');
       setSaveSuccess(false);
+      setTaskError('');
+      setCompletingTaskId(null);
     }
   }, [isOpen]);
 
@@ -94,10 +100,25 @@ export default function ProjectNoteWorkspaceModal({
     if (!onTaskSubmit) return;
     try {
       await onTaskSubmit(taskPayload);
+      setTaskError('');
     } catch (error) {
+      setTaskError(error?.message || 'Could not add that task.');
       throw error;
     }
   }, [onTaskSubmit]);
+
+  const handleTaskComplete = useCallback(async (taskId) => {
+    if (!onTaskComplete) return;
+    setTaskError('');
+    setCompletingTaskId(taskId);
+    try {
+      await onTaskComplete(taskId);
+    } catch (error) {
+      setTaskError(error?.message || 'Could not complete that task.');
+    } finally {
+      setCompletingTaskId(null);
+    }
+  }, [onTaskComplete]);
 
   const formatDueDateLabel = useCallback((dueDate) => {
     if (!dueDate) return 'No due date';
@@ -111,9 +132,23 @@ export default function ProjectNoteWorkspaceModal({
     return `Due ${format(parsed, 'EEE, MMM d')}`;
   }, []);
 
+  const handleAttemptClose = useCallback(() => {
+    if (noteCreationDisabled) {
+      onClose?.();
+      return;
+    }
+
+    if (noteContent.trim().length > 0) {
+      setNoteError('Save or clear your note before closing.');
+      return;
+    }
+    setNoteError('');
+    onClose?.();
+  }, [noteContent, onClose, noteCreationDisabled]);
+
   return (
     <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-[80]" onClose={onClose}>
+      <Dialog as="div" className="relative z-[80]" onClose={handleAttemptClose}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-200"
@@ -140,13 +175,23 @@ export default function ProjectNoteWorkspaceModal({
               <Dialog.Panel className="relative w-full max-w-[calc(100vw-1.5rem)] min-h-[calc(100vh-1.5rem)] overflow-hidden rounded-3xl bg-white shadow-2xl transition-all md:max-w-[calc(100vw-3rem)]">
                 <div className="flex h-full flex-col lg:flex-row">
                   <div className="flex flex-1 flex-col overflow-hidden border-b border-slate-200 bg-slate-50/70 px-5 py-6 md:px-8 lg:border-b-0 lg:border-r">
-                    <div>
-                      <Dialog.Title className="text-xl font-semibold text-slate-900">
-                        {projectName}
-                      </Dialog.Title>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Capture detailed notes and action items while you stay focused in the meeting.
-                      </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Dialog.Title className="text-xl font-semibold text-slate-900">
+                          {projectName}
+                        </Dialog.Title>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Capture detailed notes and action items while you stay focused in the meeting.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAttemptClose}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-slate-200 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0496c7]/40"
+                        aria-label="Close workspace"
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
                     </div>
                     <div className="mt-6 flex flex-1 flex-col overflow-hidden">
                       <div className="flex flex-col">
@@ -194,16 +239,16 @@ export default function ProjectNoteWorkspaceModal({
                           >
                             {noteCreationDisabled ? 'Notes Locked' : isSavingNote ? 'Saving…' : 'Save & Close'}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => onClose?.()}
-                            className="ml-auto inline-flex items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm font-medium text-slate-400 transition hover:text-slate-600"
-                            disabled={isSavingNote}
-                          >
-                            Close
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAttemptClose}
+                          className="ml-auto inline-flex items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm font-medium text-slate-400 transition hover:text-slate-600"
+                          disabled={isSavingNote}
+                        >
+                          Close
+                        </button>
                       </div>
+                    </div>
                       <div className="mt-6 flex-1 overflow-y-auto">
                         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Recent Notes
@@ -226,18 +271,36 @@ export default function ProjectNoteWorkspaceModal({
                       <p className="mt-1 text-xs text-slate-500">
                         Stay on top of what still needs attention.
                       </p>
+                      {taskError && (
+                        <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+                          {taskError}
+                        </p>
+                      )}
                       <div className="mt-4 max-h-[50vh] space-y-3 overflow-y-auto pr-1">
                         {openTasks && openTasks.length > 0 ? (
                           openTasks.map((task) => (
                             <div key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-sm font-semibold text-slate-800">{task.name}</p>
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                <span>{formatDueDateLabel(task.due_date)}</span>
-                                {task.priority && (
-                                  <span className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-[#036586]">
-                                    {task.priority}
-                                  </span>
-                                )}
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-800">{task.name}</p>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                    <span>{formatDueDateLabel(task.due_date)}</span>
+                                    {task.priority && (
+                                      <span className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-[#036586]">
+                                        {task.priority}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTaskComplete(task.id)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={completingTaskId === task.id}
+                                >
+                                  <CheckCircleIcon className="h-4 w-4" />
+                                  {completingTaskId === task.id ? 'Completing…' : 'Mark Done'}
+                                </button>
                               </div>
                             </div>
                           ))
