@@ -173,25 +173,23 @@ export default function ProjectNoteWorkspaceModal({
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
               <Dialog.Panel className="relative w-full max-w-[calc(100vw-1.5rem)] min-h-[calc(100vh-1.5rem)] overflow-hidden rounded-3xl bg-white shadow-2xl transition-all md:max-w-[calc(100vw-3rem)]">
+                <button
+                  type="button"
+                  onClick={handleAttemptClose}
+                  className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0496c7]/40"
+                  aria-label="Close workspace"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
                 <div className="flex h-full flex-col lg:flex-row">
                   <div className="flex flex-1 flex-col overflow-hidden border-b border-slate-200 bg-slate-50/70 px-5 py-6 md:px-8 lg:border-b-0 lg:border-r">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <Dialog.Title className="text-xl font-semibold text-slate-900">
-                          {projectName}
-                        </Dialog.Title>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Capture detailed notes and action items while you stay focused in the meeting.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAttemptClose}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-slate-200 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0496c7]/40"
-                        aria-label="Close workspace"
-                      >
-                        <XMarkIcon className="h-5 w-5" />
-                      </button>
+                    <div>
+                      <Dialog.Title className="text-xl font-semibold text-slate-900">
+                        {projectName}
+                      </Dialog.Title>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Capture detailed notes and action items while you stay focused in the meeting.
+                      </p>
                     </div>
                     <div className="mt-6 flex flex-1 flex-col overflow-hidden">
                       <div className="flex flex-col">
