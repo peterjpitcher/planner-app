@@ -7,7 +7,7 @@ import { apiClient } from '@/lib/apiClient';
 import NoteList from './NoteList';
 import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { format } from 'date-fns';
-import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 
 /**
  * Modal workspace for capturing detailed project notes and quick tasks.
@@ -108,7 +108,7 @@ export default function ProjectNoteWorkspaceModal({
   }, [onTaskSubmit]);
 
   const handleTaskComplete = useCallback(async (taskId) => {
-    if (!onTaskComplete) return;
+    if (!onTaskComplete || !taskId || completingTaskId) return;
     setTaskError('');
     setCompletingTaskId(taskId);
     try {
@@ -118,7 +118,7 @@ export default function ProjectNoteWorkspaceModal({
     } finally {
       setCompletingTaskId(null);
     }
-  }, [onTaskComplete]);
+  }, [onTaskComplete, completingTaskId]);
 
   const formatDueDateLabel = useCallback((dueDate) => {
     if (!dueDate) return 'No due date';
@@ -280,8 +280,16 @@ export default function ProjectNoteWorkspaceModal({
                         {openTasks && openTasks.length > 0 ? (
                           openTasks.map((task) => (
                             <div key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={completingTaskId === task.id}
+                                  onChange={() => handleTaskComplete(task.id)}
+                                  disabled={completingTaskId === task.id}
+                                  className="mt-1 h-4 w-4 flex-shrink-0 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                  aria-label={`Mark "${task.name}" complete`}
+                                />
+                                <div className="flex-1">
                                   <p className="text-sm font-semibold text-slate-800">{task.name}</p>
                                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                     <span>{formatDueDateLabel(task.due_date)}</span>
@@ -291,16 +299,12 @@ export default function ProjectNoteWorkspaceModal({
                                       </span>
                                     )}
                                   </div>
+                                  {completingTaskId === task.id && (
+                                    <p className="mt-1 text-[0.65rem] font-medium uppercase tracking-wide text-emerald-600">
+                                      Completing…
+                                    </p>
+                                  )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleTaskComplete(task.id)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-                                  disabled={completingTaskId === task.id}
-                                >
-                                  <CheckCircleIcon className="h-4 w-4" />
-                                  {completingTaskId === task.id ? 'Completing…' : 'Mark Done'}
-                                </button>
                               </div>
                             </div>
                           ))
