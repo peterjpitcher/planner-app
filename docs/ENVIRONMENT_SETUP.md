@@ -31,6 +31,32 @@ This document outlines all required environment variables for the Planner applic
 - **Where to Find**: Supabase Dashboard > Settings > API > anon/public key
 - **Note**: This is safe to expose in client-side code
 
+### 3. Microsoft Outlook Sync Variables
+
+#### MICROSOFT_CLIENT_ID
+- **Description**: Azure application (Entra ID) client ID for Microsoft Graph access
+- **Where to Find**: Azure Portal > App registrations > Your app > Overview
+
+#### MICROSOFT_CLIENT_SECRET
+- **Description**: Client secret used to authenticate token requests
+- **Where to Find**: Azure Portal > App registrations > Your app > Certificates & secrets
+
+#### MICROSOFT_TENANT_ID *(optional)*
+- **Description**: Tenant to authorize against. Use `common` for both work and personal accounts
+- **Default**: `common`
+
+#### OUTLOOK_WEBHOOK_URL
+- **Description**: Public HTTPS endpoint that Microsoft Graph sends change notifications to
+- **Value**: Should point to `/api/integrations/outlook/webhook` on your deployment (e.g. `https://planner.orangejelly.co.uk/api/integrations/outlook/webhook`)
+
+#### OUTLOOK_SYNC_JOB_SECRET *(recommended)*
+- **Description**: Shared secret required by scheduled jobs to process sync queues and renew webhooks
+- **Usage**: Set the same value on any cron job invoking `/api/integrations/outlook/sync` or `/api/integrations/outlook/subscriptions`
+
+#### OUTLOOK_SUBSCRIPTION_DURATION_MIN *(optional)*
+- **Description**: Minutes before Microsoft webhook subscriptions expire; defaults to `60`
+- **Range**: Microsoft allows up to 4230 minutes (~70.5 hours)
+
 ## Setting Environment Variables
 
 ### For Local Development
@@ -45,6 +71,14 @@ NEXTAUTH_SECRET=your-generated-secret-here
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+
+# Outlook Sync
+MICROSOFT_CLIENT_ID=your-microsoft-client-id
+MICROSOFT_CLIENT_SECRET=your-microsoft-client-secret
+MICROSOFT_TENANT_ID=common
+OUTLOOK_WEBHOOK_URL=http://localhost:3000/api/integrations/outlook/webhook
+OUTLOOK_SYNC_JOB_SECRET=choose-a-strong-secret
+OUTLOOK_SUBSCRIPTION_DURATION_MIN=60
 ```
 
 ### For Vercel Production
@@ -77,6 +111,8 @@ This endpoint will show:
 - Which variables are set/missing
 - Any configuration warnings
 - Recommendations for fixes
+
+For Outlook sync you can also check `GET /api/integrations/outlook/status` once signed in. It should return `connected: false` before linking your Microsoft account.
 
 ## Common Issues
 

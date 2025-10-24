@@ -1,65 +1,10 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getSupabaseServer } from '@/lib/supabaseServer';
-import { handleSupabaseError } from '@/lib/errorHandler';
-import { validateTask } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
-
-async function ensureUnassignedProject(supabase, userId) {
-  // Try to find an existing "Unassigned" project for this user
-  const { data: existingProject, error: fetchError } = await supabase
-    .from('projects')
-    .select('id')
-    .eq('user_id', userId)
-    .ilike('name', 'unassigned')
-    .maybeSingle();
-
-  if (fetchError) {
-    throw fetchError;
-  }
-
-  if (existingProject?.id) {
-    return existingProject.id;
-  }
-
-  // Create a new Unassigned project scoped to the user
-  const { data: createdProject, error: createError } = await supabase
-    .from('projects')
-    .insert({
-      user_id: userId,
-      name: 'Unassigned',
-      status: PROJECT_STATUS.OPEN,
-      priority: PRIORITY.MEDIUM,
-      stakeholders: [],
-      description: 'Auto-generated project for unassigned tasks.'
-    })
-    .select('id')
-    .single();
-
-  if (createError) {
-    // Handle potential race condition where another request created it first
-    if (createError.code === '23505') {
-      const { data: raceProject, error: raceFetchError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('user_id', userId)
-        .ilike('name', 'unassigned')
-        .maybeSingle();
-
-      if (raceFetchError || !raceProject?.id) {
-        throw createError;
-      }
-
-      return raceProject.id;
-    }
-
-    throw createError;
-  }
-
-  return createdProject.id;
-}
+import { createTask, updateTask, deleteTask } from '@/services/taskService';
+import { handleSupabaseError } from '@/lib/errorHandler';
 
 // GET /api/tasks - Fetch tasks with support for upcoming range
 export async function GET(request) {
@@ -203,67 +148,20 @@ export async function POST(request) {
     
     const body = await request.json();
     const supabase = getSupabaseServer(session.accessToken);
+    const { data, error } = await createTask({
+      supabase,
+      userId: session.user.id,
+      payload: body
+    });
 
-    let resolvedProjectId = body?.project_id;
-
-    if (!resolvedProjectId) {
-      try {
-        resolvedProjectId = await ensureUnassignedProject(supabase, session.user.id);
-      } catch (resolveError) {
-        console.error('Failed to resolve unassigned project:', resolveError);
-        return NextResponse.json({ error: 'Unable to resolve target project' }, { status: 500 });
-      }
-    }
-
-    const taskData = {
-      ...body,
-      user_id: session.user.id,
-      project_id: resolvedProjectId,
-      is_completed: false
-    };
-    
-    // Validate task data
-    const validation = validateTask(taskData);
-    if (!validation.isValid) {
-      return NextResponse.json({ 
-        error: 'Validation failed', 
-        details: validation.errors 
-      }, { status: 400 });
-    }
-    
-    // Verify project ownership
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('user_id')
-      .eq('id', taskData.project_id)
-      .single();
-    
-    if (projectError || !project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-    }
-    
-    if (project.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    
-    // Create task
-    const { data, error } = await supabase
-      .from('tasks')
-      .insert(taskData)
-      .select('*, projects(id, name)')
-      .single();
-    
     if (error) {
-      const errorMessage = handleSupabaseError(error, 'create');
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      const response = { error: error.message || 'Unable to create task' };
+      if (error.details) {
+        response.details = error.details;
+      }
+      return NextResponse.json(response, { status: error.status || 500 });
     }
-    
-    // Update project's updated_at timestamp
-    await supabase
-      .from('projects')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', taskData.project_id);
-    
+
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -287,48 +185,18 @@ export async function PATCH(request) {
     }
     
     const supabase = getSupabaseServer(session.accessToken);
-    
-    // Verify ownership
-    const { data: existingTask, error: fetchError } = await supabase
-      .from('tasks')
-      .select('user_id, project_id')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError || !existingTask) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
-    }
-    
-    if (existingTask.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    
-    // Handle completion status changes
-    if ('is_completed' in updates) {
-      updates.completed_at = updates.is_completed ? new Date().toISOString() : null;
-    }
-    
-    // Update task
-    const { data, error } = await supabase
-      .from('tasks')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    
+
+    const { data, error } = await updateTask({
+      supabase,
+      userId: session.user.id,
+      taskId: id,
+      updates
+    });
+
     if (error) {
-      const errorMessage = handleSupabaseError(error, 'update');
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      return NextResponse.json({ error: error.message || 'Unable to update task' }, { status: error.status || 500 });
     }
-    
-    // Update parent project's updated_at timestamp
-    if (existingTask.project_id) {
-      await supabase
-        .from('projects')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', existingTask.project_id);
-    }
-    
+
     return NextResponse.json({ data });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -352,42 +220,18 @@ export async function DELETE(request) {
     }
     
     const supabase = getSupabaseServer(session.accessToken);
-    
-    // Verify ownership
-    const { data: existingTask, error: fetchError } = await supabase
-      .from('tasks')
-      .select('user_id, project_id')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError || !existingTask) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
-    }
-    
-    if (existingTask.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    
-    // Delete task
-    const { error } = await supabase
-      .from('tasks')
-      .delete()
-      .eq('id', id);
-    
+
+    const { data, error } = await deleteTask({
+      supabase,
+      userId: session.user.id,
+      taskId: id
+    });
+
     if (error) {
-      const errorMessage = handleSupabaseError(error, 'delete');
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      return NextResponse.json({ error: error.message || 'Unable to delete task' }, { status: error.status || 500 });
     }
-    
-    // Update parent project's updated_at timestamp
-    if (existingTask.project_id) {
-      await supabase
-        .from('projects')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', existingTask.project_id);
-    }
-    
-    return NextResponse.json({ success: true });
+
+    return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

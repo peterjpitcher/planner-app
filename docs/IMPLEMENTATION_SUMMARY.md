@@ -76,7 +76,15 @@ Applied to all list components to prevent unnecessary re-renders:
 ### Sign Out Redirect Fix
 - Fixed port issue by using `window.location.origin`
 
-## 5. Files Modified
+## 5. Outlook Sync Integration ✅
+
+- Added secure OAuth flow for Microsoft accounts (custom API endpoints)
+- Created Supabase tables for Outlook connections, sync state, and job queue
+- Implemented background job processor with webhook + cron endpoints
+- Added dashboard card for connect/disconnect status and manual sync triggers
+- Queued task mutations automatically for Graph syncing via `taskService`
+
+## 6. Files Modified
 
 ### Core Files Updated:
 1. `/src/app/globals.css` - Added touch target styles
@@ -100,6 +108,11 @@ Applied to all list components to prevent unnecessary re-renders:
 8. `/src/app/api/projects/route.js`
 9. `/src/app/api/tasks/route.js`
 10. `/src/hooks/useApiClient.js`
+11. `/src/services/taskService.js`
+12. `/src/services/outlookSyncService.js`
+13. `/src/services/taskSyncQueue.js`
+14. `/src/app/api/integrations/outlook/*`
+15. `/supabase/migrations/20250910_outlook_sync_schema.sql`
 
 ## 6. Immediate Actions Required
 

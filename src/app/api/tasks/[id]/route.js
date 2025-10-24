@@ -1,10 +1,9 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getSupabaseServer } from '@/lib/supabaseServer';
-import { handleSupabaseError } from '@/lib/errorHandler';
-import { validateTask } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
+import { updateTask, deleteTask } from '@/services/taskService';
 
 // PATCH /api/tasks/[id] - Update a task
 export async function PATCH(request, { params }) {
@@ -33,38 +32,20 @@ export async function PATCH(request, { params }) {
     const body = await request.json();
     
     const supabase = getSupabaseServer(session.accessToken);
-    
-    // Verify ownership
-    const { data: existingTask, error: fetchError } = await supabase
-      .from('tasks')
-      .select('user_id')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError || !existingTask) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
-    }
-    
-    if (existingTask.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    
-    // Update task
-    const { data, error } = await supabase
-      .from('tasks')
-      .update({
-        ...body,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-    
+
+    const { data, error } = await updateTask({
+      supabase,
+      userId: session.user.id,
+      taskId: id,
+      updates: body
+    });
+
     if (error) {
-      const errorMessage = handleSupabaseError(error, 'update');
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+      const status = error.status || 500;
+      const payload = error.details ? { error: error.message, details: error.details } : { error: error.message || 'Unable to update task' };
+      return NextResponse.json(payload, { status });
     }
-    
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('PATCH /api/tasks/[id] error:', error);
@@ -97,34 +78,18 @@ export async function DELETE(request, { params }) {
     
     const { id } = params;
     const supabase = getSupabaseServer(session.accessToken);
-    
-    // Verify ownership
-    const { data: existingTask, error: fetchError } = await supabase
-      .from('tasks')
-      .select('user_id')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError || !existingTask) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
-    }
-    
-    if (existingTask.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    
-    // Delete task
-    const { error } = await supabase
-      .from('tasks')
-      .delete()
-      .eq('id', id);
-    
+
+    const { data, error } = await deleteTask({
+      supabase,
+      userId: session.user.id,
+      taskId: id
+    });
+
     if (error) {
-      const errorMessage = handleSupabaseError(error, 'delete');
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+      return NextResponse.json({ error: error.message || 'Unable to delete task' }, { status: error.status || 500 });
     }
-    
-    return NextResponse.json({ success: true });
+
+    return NextResponse.json(data);
   } catch (error) {
     console.error('DELETE /api/tasks/[id] error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

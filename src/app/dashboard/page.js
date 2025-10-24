@@ -10,6 +10,7 @@ import AppShell from '@/components/layout/AppShell';
 import SidebarFilters from '@/components/dashboard/SidebarFilters';
 import MetricsBar from '@/components/dashboard/MetricsBar';
 import TasksPanel from '@/components/dashboard/TasksPanel';
+import OutlookSyncCard from '@/components/dashboard/OutlookSyncCard';
 import { ProjectListSkeleton } from '@/components/ui/LoadingStates';
 import { EmptyProjects, EmptyFilteredResults } from '@/components/ui/EmptyStates';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
@@ -751,15 +752,18 @@ export default function DashboardPage() {
           />
         }
         sideContent={
-          <TasksPanel
-            isLoading={isLoadingData}
-            tasks={filteredTasksForDashboard}
-            projects={baseFilteredProjects}
-            onTaskUpdate={handleTaskUpdate}
-            hideBillStakeholder={hideBillStakeholder}
-            onQuickAdd={handleQuickTaskAdd}
-            onTaskDragStateChange={handleTaskDragStateChange}
-          />
+          <div className="flex flex-col gap-6">
+            <OutlookSyncCard />
+            <TasksPanel
+              isLoading={isLoadingData}
+              tasks={filteredTasksForDashboard}
+              projects={baseFilteredProjects}
+              onTaskUpdate={handleTaskUpdate}
+              hideBillStakeholder={hideBillStakeholder}
+              onQuickAdd={handleQuickTaskAdd}
+              onTaskDragStateChange={handleTaskDragStateChange}
+            />
+          </div>
         }
       >
         <div className="hidden md:flex md:flex-col md:gap-8">
