@@ -187,11 +187,10 @@ export async function GET(request) {
   } catch (error) {
     console.error('Outlook callback error:', error);
 
-    const response = NextResponse.redirect(
-      errorDescription
-        ? `${redirectTarget}${encodeURIComponent(errorDescription)}`
-        : `${redirectTarget}callback_error`
-    );
+    const reason = errorDescription || error?.message || 'callback_error';
+    const redirectUrl = `${redirectTarget}callback_error&reason=${encodeURIComponent(reason)}`;
+
+    const response = NextResponse.redirect(redirectUrl);
 
     response.cookies.set(STATE_COOKIE_NAME, '', {
       maxAge: 0,
