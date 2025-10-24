@@ -32,12 +32,15 @@ ALTER TABLE public.project_outlook_lists ENABLE ROW LEVEL SECURITY;
 CREATE INDEX IF NOT EXISTS idx_project_outlook_lists_user ON public.project_outlook_lists(user_id);
 CREATE INDEX IF NOT EXISTS idx_project_outlook_lists_graph ON public.project_outlook_lists(graph_list_id);
 
+DROP POLICY IF EXISTS "Users manage their project list links" ON public.project_outlook_lists;
 CREATE POLICY "Users manage their project list links" ON public.project_outlook_lists
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role full access to project list links" ON public.project_outlook_lists;
 CREATE POLICY "Service role full access to project list links" ON public.project_outlook_lists
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP TRIGGER IF EXISTS handle_project_outlook_lists_updated_at ON public.project_outlook_lists;
 CREATE TRIGGER handle_project_outlook_lists_updated_at
   BEFORE UPDATE ON public.project_outlook_lists
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

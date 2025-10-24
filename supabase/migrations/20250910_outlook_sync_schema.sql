@@ -77,34 +77,43 @@ CREATE INDEX IF NOT EXISTS idx_task_sync_jobs_user
 
 -- RLS policies
 
+DROP POLICY IF EXISTS "Users manage their own connections" ON public.outlook_connections;
 CREATE POLICY "Users manage their own connections" ON public.outlook_connections
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role full access to connections" ON public.outlook_connections;
 CREATE POLICY "Service role full access to connections" ON public.outlook_connections
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users manage their own sync state" ON public.task_sync_state;
 CREATE POLICY "Users manage their own sync state" ON public.task_sync_state
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role full access to sync state" ON public.task_sync_state;
 CREATE POLICY "Service role full access to sync state" ON public.task_sync_state
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users manage their own sync jobs" ON public.task_sync_jobs;
 CREATE POLICY "Users manage their own sync jobs" ON public.task_sync_jobs
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role full access to sync jobs" ON public.task_sync_jobs;
 CREATE POLICY "Service role full access to sync jobs" ON public.task_sync_jobs
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- Updated_at triggers
 
+DROP TRIGGER IF EXISTS handle_outlook_connections_updated_at ON public.outlook_connections;
 CREATE TRIGGER handle_outlook_connections_updated_at
   BEFORE UPDATE ON public.outlook_connections
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS handle_task_sync_state_updated_at ON public.task_sync_state;
 CREATE TRIGGER handle_task_sync_state_updated_at
   BEFORE UPDATE ON public.task_sync_state
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS handle_task_sync_jobs_updated_at ON public.task_sync_jobs;
 CREATE TRIGGER handle_task_sync_jobs_updated_at
   BEFORE UPDATE ON public.task_sync_jobs
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
