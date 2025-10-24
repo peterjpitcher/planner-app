@@ -11,13 +11,13 @@ function isAuthorizedCron(request) {
     return true;
   }
 
-  const headerSecret = request.headers.get('x-outlook-sync-secret');
-  if (headerSecret && headerSecret === secret) {
+  const bearer = request.headers.get('authorization');
+  if (bearer === `Bearer ${secret}`) {
     return true;
   }
 
-  const vercelCronHeader = request.headers.get('x-vercel-cron');
-  return Boolean(vercelCronHeader);
+  const legacySecret = request.headers.get('x-outlook-sync-secret');
+  return legacySecret === secret;
 }
 
 async function handleSyncQueue(request) {

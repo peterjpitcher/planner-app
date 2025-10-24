@@ -141,7 +141,7 @@ export async function getOrCreatePlannerList(accessToken, displayName = 'Planner
   });
 }
 
-export async function getPlannerListDelta(accessToken, listId, deltaToken) {
+export async function getTodoTaskDelta(accessToken, listId, deltaToken) {
   if (deltaToken) {
     return graphRequest({ accessToken, resource: deltaToken, method: 'GET' });
   }
@@ -159,7 +159,7 @@ export async function getPlannerTasks(accessToken, listId) {
   });
 }
 
-export async function createPlannerTask(accessToken, listId, payload) {
+export async function createTodoTask(accessToken, listId, payload) {
   return graphRequest({
     accessToken,
     resource: `/me/todo/lists/${listId}/tasks`,
@@ -168,7 +168,7 @@ export async function createPlannerTask(accessToken, listId, payload) {
   });
 }
 
-export async function updatePlannerTask(accessToken, listId, taskId, payload, etag) {
+export async function updateTodoTask(accessToken, listId, taskId, payload, etag) {
   return graphRequest({
     accessToken,
     resource: `/me/todo/lists/${listId}/tasks/${taskId}`,
@@ -178,7 +178,7 @@ export async function updatePlannerTask(accessToken, listId, taskId, payload, et
   });
 }
 
-export async function deletePlannerTask(accessToken, listId, taskId, etag) {
+export async function deleteTodoTask(accessToken, listId, taskId, etag) {
   return graphRequest({
     accessToken,
     resource: `/me/todo/lists/${listId}/tasks/${taskId}`,
@@ -207,7 +207,7 @@ export async function listTodoLists(accessToken) {
   return graphRequest({ accessToken, resource: '/me/todo/lists' });
 }
 
-export async function createTodoSubscription(accessToken, listId, notificationUrl, expirationMinutes = 60) {
+export async function createTodoSubscription(accessToken, listId, notificationUrl, expirationMinutes = 60, clientState) {
   const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
 
   return graphRequest({
@@ -218,12 +218,13 @@ export async function createTodoSubscription(accessToken, listId, notificationUr
       changeType: 'updated',
       notificationUrl,
       resource: `/me/todo/lists/${listId}/tasks`,
-      expirationDateTime: expiresAt
+      expirationDateTime: expiresAt,
+      ...(clientState ? { clientState } : {})
     }
   });
 }
 
-export async function renewSubscription(accessToken, subscriptionId, expirationMinutes = 60) {
+export async function renewTodoSubscription(accessToken, subscriptionId, expirationMinutes = 60) {
   const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
 
   return graphRequest({
@@ -243,3 +244,10 @@ export async function deleteSubscription(accessToken, subscriptionId) {
     method: 'DELETE'
   });
 }
+
+// Backwards compatibility aliases
+export const createPlannerTask = createTodoTask;
+export const updatePlannerTask = updateTodoTask;
+export const deletePlannerTask = deleteTodoTask;
+export const getPlannerListDelta = getTodoTaskDelta;
+export const renewSubscription = renewTodoSubscription;

@@ -14,11 +14,10 @@ import {
 
 import {
   refreshAccessToken,
-  createPlannerTask,
-  updatePlannerTask,
-  deletePlannerTask,
-  getPlannerListDelta,
-  renewSubscription,
+  createTodoTask,
+  updateTodoTask,
+  deleteTodoTask,
+  getTodoTaskDelta,
   createTodoList,
   getTodoList,
   listTodoLists
@@ -45,7 +44,7 @@ function buildListDisplayName(projectName) {
 async function getProjectListMapping({ supabase, projectId }) {
   const { data, error } = await supabase
     .from('project_outlook_lists')
-    .select('*')
+    .select('id, user_id, project_id, graph_list_id, graph_etag, is_active, subscription_id, subscription_expires_at, delta_token')
     .eq('project_id', projectId)
     .maybeSingle();
 
@@ -59,7 +58,7 @@ async function getProjectListMapping({ supabase, projectId }) {
 async function getProjectListMappingByListId({ supabase, userId, listId }) {
   const { data, error } = await supabase
     .from('project_outlook_lists')
-    .select('*')
+    .select('id, user_id, project_id, graph_list_id, graph_etag, is_active, subscription_id, subscription_expires_at, delta_token')
     .eq('user_id', userId)
     .eq('graph_list_id', listId)
     .maybeSingle();
@@ -71,13 +70,14 @@ async function getProjectListMappingByListId({ supabase, userId, listId }) {
   return data || null;
 }
 
-async function upsertProjectListMapping({ supabase, userId, projectId, listId, etag, isActive = true }) {
+async function upsertProjectListMapping({ supabase, userId, projectId, listId, etag, isActive = true, extra = {} }) {
   const payload = {
     user_id: userId,
     project_id: projectId,
     graph_list_id: listId,
     graph_etag: etag || null,
-    is_active: isActive
+    is_active: isActive,
+    ...extra
   };
 
   const { data, error } = await supabase
@@ -184,11 +184,11 @@ function mapGraphTaskToLocal(graphTask) {
   };
 }
 
-async function getConnection(userId) {
+export async function getConnection(userId) {
   const supabase = getSupabaseServiceRole();
   const { data: connection, error } = await supabase
     .from('outlook_connections')
-    .select('user_id, planner_list_id, access_token, access_token_expires_at, refresh_token_secret, delta_token, subscription_id, subscription_expiration')
+    .select('user_id, planner_list_id, access_token, access_token_expires_at, refresh_token_secret')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -238,7 +238,14 @@ async function getConnection(userId) {
 
 async function ensureProjectList({ supabase, connection, userId, projectId }) {
   const existingMapping = await getProjectListMapping({ supabase, projectId });
-  if (existingMapping?.graph_list_id && existingMapping.is_active !== false) {
+  if (existingMapping?.graph_list_id) {
+    if (existingMapping.is_active === false) {
+      await supabase
+        .from('project_outlook_lists')
+        .update({ is_active: true })
+        .eq('id', existingMapping.id);
+      return { ...existingMapping, is_active: true };
+    }
     return existingMapping;
   }
 
@@ -369,7 +376,7 @@ async function handleCreateJob(job, connection) {
     projectId
   });
 
-  const graphTask = await createPlannerTask(
+  const graphTask = await createTodoTask(
     connection.accessToken,
     projectMapping.graph_list_id,
     buildGraphTaskPayload(task)
@@ -428,14 +435,14 @@ async function handleUpdateJob(job, connection) {
   // Handle task moves between projects (lists)
   if (existingListId && existingListId !== projectMapping.graph_list_id) {
     try {
-      await deletePlannerTask(connection.accessToken, existingListId, syncState.graph_task_id);
+      await deleteTodoTask(connection.accessToken, existingListId, syncState.graph_task_id);
     } catch (deleteError) {
       if (deleteError.status !== 404) {
         throw deleteError;
       }
     }
 
-    const graphTask = await createPlannerTask(
+    const graphTask = await createTodoTask(
       connection.accessToken,
       projectMapping.graph_list_id,
       buildGraphTaskPayload(task)
@@ -454,9 +461,9 @@ async function handleUpdateJob(job, connection) {
     return;
   }
 
-  const listIdForUpdate = existingListId || projectMapping.graph_list_id || connection.planner_list_id;
+  const listIdForUpdate = existingListId || projectMapping.graph_list_id;
 
-  const graphTask = await updatePlannerTask(
+  const graphTask = await updateTodoTask(
     connection.accessToken,
     listIdForUpdate,
     syncState.graph_task_id,
@@ -492,10 +499,14 @@ async function handleDeleteJob(job, connection) {
     .eq('graph_task_id', graphTaskId)
     .maybeSingle();
 
-  const listIdToUse = jobListId || syncState?.graph_list_id || connection.planner_list_id;
+  const listIdToUse = jobListId || syncState?.graph_list_id;
+
+  if (!listIdToUse) {
+    return;
+  }
 
   try {
-    await deletePlannerTask(connection.accessToken, listIdToUse, graphTaskId, graphEtag || undefined);
+    await deleteTodoTask(connection.accessToken, listIdToUse, graphTaskId, graphEtag || undefined);
   } catch (error) {
     if (error.status !== 404) {
       throw error;
@@ -508,10 +519,10 @@ async function handleDeleteJob(job, connection) {
     .eq('graph_task_id', graphTaskId);
 }
 
-async function handleRemoteCreateOrUpdate({ userId, graphTask, connection }) {
+async function handleRemoteCreateOrUpdate({ userId, graphTask, connection, listIdHint = null }) {
   const serviceSupabase = getSupabaseServiceRole();
 
-  const listIdFromGraph = graphTask.parentListId || graphTask.parentFolderId || null;
+  const listIdFromGraph = graphTask.parentListId || graphTask.parentFolderId || listIdHint || null;
 
   const { data: existingSync } = await serviceSupabase
     .from('task_sync_state')
@@ -566,7 +577,7 @@ async function handleRemoteCreateOrUpdate({ userId, graphTask, connection }) {
       userId,
       graphTaskId: graphTask.id,
       graphEtag: graphTask['@odata.etag'] || null,
-      graphListId: listIdFromGraph || projectMapping?.graph_list_id || connection.planner_list_id,
+      graphListId: listIdFromGraph || projectMapping?.graph_list_id || listIdHint,
       direction: 'remote'
     });
 
@@ -605,7 +616,7 @@ async function handleRemoteCreateOrUpdate({ userId, graphTask, connection }) {
     userId,
     graphTaskId: graphTask.id,
     graphEtag: graphTask['@odata.etag'] || null,
-    graphListId: listIdFromGraph || projectMapping?.graph_list_id || existingSync.graph_list_id || connection.planner_list_id,
+    graphListId: listIdFromGraph || projectMapping?.graph_list_id || existingSync.graph_list_id || listIdHint,
     direction: 'remote'
   });
 }
@@ -689,90 +700,42 @@ export async function syncRemoteChangesForUser(userId, connectionOverride = null
     throw new Error('No Outlook connection available');
   }
 
-  const response = await getPlannerListDelta(connection.accessToken, connection.planner_list_id, connection.delta_token ? connection.delta_token : undefined);
-
-  if (Array.isArray(response?.value)) {
-    for (const item of response.value) {
-      if (item['@removed']) {
-        await handleRemoteDelete({ userId, graphTaskId: item.id });
-      } else {
-        await handleRemoteCreateOrUpdate({ userId, graphTask: item, connection });
-      }
-    }
-  }
-
-  const newDeltaToken = response['@odata.deltaLink'] || response['@odata.nextLink'];
-
-  if (newDeltaToken && newDeltaToken !== connection.delta_token) {
-    const supabase = getSupabaseServiceRole();
-    const { error } = await supabase
-      .from('outlook_connections')
-      .update({ delta_token: newDeltaToken })
-      .eq('user_id', userId);
-
-    if (error) {
-      throw error;
-    }
-  }
-
-  return {
-    processed: response?.value?.length || 0
-  };
-}
-
-export async function renewOutlookSubscriptions(thresholdMinutes = 30) {
   const supabase = getSupabaseServiceRole();
-  const threshold = Date.now() + thresholdMinutes * 60 * 1000;
-
-  const { data: connections, error } = await supabase
-    .from('outlook_connections')
-    .select('user_id, subscription_id, subscription_expiration')
-    .not('subscription_id', 'is', null);
+  const { data: lists, error } = await supabase
+    .from('project_outlook_lists')
+    .select('id, graph_list_id, delta_token')
+    .eq('user_id', userId)
+    .eq('is_active', true);
 
   if (error) {
     throw error;
   }
 
-  const results = [];
+  let processed = 0;
 
-  for (const connection of connections || []) {
-    const expirationTime = connection.subscription_expiration
-      ? new Date(connection.subscription_expiration).getTime()
-      : 0;
+  for (const list of lists || []) {
+    const response = await getTodoTaskDelta(connection.accessToken, list.graph_list_id, list.delta_token || undefined);
+    const items = Array.isArray(response?.value) ? response.value : [];
 
-    if (!connection.subscription_id) {
-      continue;
+    for (const item of items) {
+      const listHint = list.graph_list_id;
+      if (item['@removed']) {
+        await handleRemoteDelete({ userId, graphTaskId: item.id, listIdHint: listHint });
+      } else {
+        await handleRemoteCreateOrUpdate({ userId, graphTask: item, connection, listIdHint: listHint });
+      }
     }
 
-    if (expirationTime && expirationTime > threshold) {
-      continue;
-    }
+    processed += items.length;
 
-    const resolvedConnection = await getConnection(connection.user_id);
-    if (!resolvedConnection) {
-      continue;
-    }
-
-    try {
-      const durationCandidate = parseInt(process.env.OUTLOOK_SUBSCRIPTION_DURATION_MIN || '60', 10);
-      const durationMinutes = Number.isNaN(durationCandidate) ? 60 : durationCandidate;
-      await renewSubscription(
-        resolvedConnection.accessToken,
-        connection.subscription_id,
-        durationMinutes
-      );
-
+    const newDeltaToken = response?.['@odata.deltaLink'] || response?.['@odata.nextLink'];
+    if (newDeltaToken && newDeltaToken !== list.delta_token) {
       await supabase
-        .from('outlook_connections')
-        .update({ subscription_expiration: new Date(Date.now() + durationMinutes * 60 * 1000).toISOString() })
-        .eq('user_id', connection.user_id);
-
-      results.push({ userId: connection.user_id, status: 'renewed' });
-    } catch (renewError) {
-      console.error('Failed to renew subscription', renewError);
-      results.push({ userId: connection.user_id, status: 'failed', error: renewError.message });
+        .from('project_outlook_lists')
+        .update({ delta_token: newDeltaToken })
+        .eq('id', list.id);
     }
   }
 
-  return results;
+  return { processed };
 }

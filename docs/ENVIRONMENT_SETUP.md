@@ -57,6 +57,14 @@ This document outlines all required environment variables for the Planner applic
 - **Description**: Minutes before Microsoft webhook subscriptions expire; defaults to `60`
 - **Range**: Microsoft allows up to 4230 minutes (~70.5 hours)
 
+#### OUTLOOK_CLIENT_STATE *(recommended)*
+- **Description**: Random string used to validate Microsoft webhook notifications
+- **Usage**: Must match the `clientState` sent when creating subscriptions and the value Microsoft returns in each notification
+
+#### OUTLOOK_RENEW_BEFORE_MIN *(optional)*
+- **Description**: Renew subscriptions when fewer than this many minutes remain (default `360`)
+- **Recommendation**: Keep comfortably less than the maximum lifetime to avoid expiry gaps
+
 ## Setting Environment Variables
 
 ### For Local Development
@@ -79,6 +87,8 @@ MICROSOFT_TENANT_ID=common
 OUTLOOK_WEBHOOK_URL=http://localhost:3000/api/integrations/outlook/webhook
 OUTLOOK_SYNC_JOB_SECRET=choose-a-strong-secret
 OUTLOOK_SUBSCRIPTION_DURATION_MIN=60
+OUTLOOK_CLIENT_STATE=generate-a-random-string
+OUTLOOK_RENEW_BEFORE_MIN=360
 ```
 
 ### For Vercel Production

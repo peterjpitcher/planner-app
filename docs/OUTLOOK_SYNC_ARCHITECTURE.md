@@ -17,10 +17,10 @@
 
 | Table | Purpose |
 | ----- | ------- |
-| `outlook_connections` | One row per user, stores Graph list ID, access token, refresh token secret (Supabase Vault), delta tokens, webhook metadata. |
+| `outlook_connections` | One row per user, stores refresh token secret, default To Do list, and connection metadata. |
 | `task_sync_state` | Maps each Planner task to the Microsoft task (`graph_task_id`, `graph_etag`, `graph_list_id`). |
 | `task_sync_jobs` | Persistent queue for background sync work. |
-| `project_outlook_lists` | Added in `20250911_outlook_project_lists.sql`; records Microsoft list IDs per Planner project. |
+| `project_outlook_lists` | Maps Planner projects to Microsoft To Do lists (`graph_list_id`) and stores `delta_token`, `subscription_id`, `subscription_expires_at`. |
 
 Every table has RLS policies (`auth.uid() = user_id`), updated_at triggers via `public.update_updated_at_column`, and appropriate indexes.
 
@@ -35,6 +35,7 @@ src/app/api/integrations/outlook/status/route.js      // Returns connection meta
 src/app/api/integrations/outlook/disconnect/route.js  // Removes connection + secrets + sync state
 src/app/api/integrations/outlook/sync/route.js        // Cron worker + "sync now" endpoint
 src/app/api/integrations/outlook/webhook/route.js     // Graph change notifications
+src/app/api/integrations/outlook/subscriptions/route.js // Creates/renews todoTask subscriptions per list
 ```
 
 ### Services
@@ -47,7 +48,7 @@ src/services/outlookSyncService.js    // Background worker creating/updating lis
 
 ### Graph Helpers
 
-`src/lib/microsoftGraphClient.js` wraps token exchange, Graph To Do APIs (`createPlannerTask`, `createTodoList`, `listTodoLists`, `renewSubscription`, etc.).
+`src/lib/microsoftGraphClient.js` wraps token exchange and To Do APIs (`createTodoTask`, `createTodoList`, `listTodoLists`, `renewTodoSubscription`, etc.).
 
 ### UI
 
@@ -55,8 +56,8 @@ src/services/outlookSyncService.js    // Background worker creating/updating lis
 
 ### Middleware & Cron
 
-- `src/middleware.js` excludes `/api/integrations/outlook/webhook` and `/api/integrations/outlook/sync` from auth redirects so cron/webhooks can reach them unauthenticated.
-- `vercel.json` configures Vercel cron jobs:
+- `src/middleware.js` excludes `/api/integrations/outlook/webhook`, `/api/integrations/outlook/sync`, and `/api/integrations/outlook/subscriptions` from auth redirects so Microsoft Graph and Vercel Cron can call them.
+- `vercel.json` configures Vercel cron jobs (set an `Authorization: Bearer <OUTLOOK_SYNC_JOB_SECRET>` header for each job in the Vercel dashboard):
 
 ```json
 {
@@ -67,7 +68,7 @@ src/services/outlookSyncService.js    // Background worker creating/updating lis
 }
 ```
 
-Environment variables (set in Vercel): `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, `OUTLOOK_WEBHOOK_URL`, `OUTLOOK_SYNC_JOB_SECRET`, `OUTLOOK_SUBSCRIPTION_DURATION_MIN`, `SUPABASE_SERVICE_KEY`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `NEXT_PUBLIC_SUPABASE_*`.
+Environment variables (set in Vercel): `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, `OUTLOOK_WEBHOOK_URL`, `OUTLOOK_SYNC_JOB_SECRET`, `OUTLOOK_SUBSCRIPTION_DURATION_MIN`, `OUTLOOK_CLIENT_STATE`, `OUTLOOK_RENEW_BEFORE_MIN`, `SUPABASE_SERVICE_KEY`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `NEXT_PUBLIC_SUPABASE_*`.
 
 ## Per-Project Outlook Lists
 
@@ -81,7 +82,7 @@ const projectMapping = await ensureProjectList({
   projectId: task.project_id
 });
 
-await createPlannerTask(connection.accessToken, projectMapping.graph_list_id, buildGraphTaskPayload(task));
+await createTodoTask(connection.accessToken, projectMapping.graph_list_id, buildGraphTaskPayload(task));
 ```
 
 If a change is detected in a list with no mapping, `ensureProjectForList()` creates a new Planner project and records the association.

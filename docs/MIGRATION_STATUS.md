@@ -28,6 +28,7 @@
 - **Environment validation script** (`check-env.js`)
 - **Migration runner scripts** created for future use
 - **Outlook list mapping schema** (`20250911_outlook_project_lists.sql`) to track per-project Microsoft To Do lists and task list IDs
+- **Outlook subscription metadata** (`20250913_outlook_list_subscription_metadata.sql`) adds per-list subscription + delta storage
 
 ## ⚠️ Pending Manual Migration
 
@@ -85,9 +86,10 @@ All tables are accessible and functioning normally.
 
 1. **Run the migration** in Supabase Dashboard using `apply-migration.sql`
 2. **Run the Outlook schema migration** `20250911_outlook_project_lists.sql` to enable per-project list syncing
-3. **Test the application** to ensure everything continues working
-4. **Monitor performance** - you should see improved query speeds
-5. **Deploy to production** with confidence
+3. **Run the Outlook subscription metadata migration** `20250913_outlook_list_subscription_metadata.sql`
+4. **Test the application** to ensure everything continues working
+5. **Monitor performance** - you should see improved query speeds
+6. **Deploy to production** with confidence
 
 ## Files Created
 
