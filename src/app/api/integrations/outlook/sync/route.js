@@ -12,10 +12,15 @@ function isAuthorizedCron(request) {
   }
 
   const headerSecret = request.headers.get('x-outlook-sync-secret');
-  return headerSecret === secret;
+  if (headerSecret && headerSecret === secret) {
+    return true;
+  }
+
+  const vercelCronHeader = request.headers.get('x-vercel-cron');
+  return Boolean(vercelCronHeader);
 }
 
-export async function POST(request) {
+async function handleSyncQueue(request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -28,6 +33,14 @@ export async function POST(request) {
   } catch (error) {
     return NextResponse.json({ error: error.message || 'Failed to process sync jobs' }, { status: 500 });
   }
+}
+
+export async function POST(request) {
+  return handleSyncQueue(request);
+}
+
+export async function GET(request) {
+  return handleSyncQueue(request);
 }
 
 export async function PUT() {

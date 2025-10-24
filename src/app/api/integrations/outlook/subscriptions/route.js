@@ -8,10 +8,15 @@ function isAuthorized(request) {
     return true;
   }
 
-  return request.headers.get('x-outlook-sync-secret') === secret;
+  const headerSecret = request.headers.get('x-outlook-sync-secret');
+  if (headerSecret && headerSecret === secret) {
+    return true;
+  }
+
+  return Boolean(request.headers.get('x-vercel-cron'));
 }
 
-export async function POST(request) {
+async function handleRenewal(request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -24,4 +29,12 @@ export async function POST(request) {
   } catch (error) {
     return NextResponse.json({ error: error.message || 'Failed to renew subscriptions' }, { status: 500 });
   }
+}
+
+export async function POST(request) {
+  return handleRenewal(request);
+}
+
+export async function GET(request) {
+  return handleRenewal(request);
 }
