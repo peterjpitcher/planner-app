@@ -27,6 +27,7 @@
 ### Developer Tools
 - **Environment validation script** (`check-env.js`)
 - **Migration runner scripts** created for future use
+- **Outlook list mapping schema** (`20250911_outlook_project_lists.sql`) to track per-project Microsoft To Do lists and task list IDs
 
 ## ⚠️ Pending Manual Migration
 
@@ -83,9 +84,10 @@ All tables are accessible and functioning normally.
 ## Next Steps
 
 1. **Run the migration** in Supabase Dashboard using `apply-migration.sql`
-2. **Test the application** to ensure everything continues working
-3. **Monitor performance** - you should see improved query speeds
-4. **Deploy to production** with confidence
+2. **Run the Outlook schema migration** `20250911_outlook_project_lists.sql` to enable per-project list syncing
+3. **Test the application** to ensure everything continues working
+4. **Monitor performance** - you should see improved query speeds
+5. **Deploy to production** with confidence
 
 ## Files Created
 

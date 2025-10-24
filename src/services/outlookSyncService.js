@@ -18,15 +18,80 @@ import {
   updatePlannerTask,
   deletePlannerTask,
   getPlannerListDelta,
-  renewSubscription
+  renewSubscription,
+  createTodoList,
+  getTodoList,
+  listTodoLists
 } from '@/lib/microsoftGraphClient';
 
 import { retrieveSecret, updateSecret } from '@/lib/supabaseVault';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
+import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
 
 const GRAPH_TIME_ZONE = 'UTC';
 
 const STATUS_COMPLETED = 'completed';
+
+const DEFAULT_PROJECT_DESCRIPTION_PREFIX = 'Created from Microsoft To Do list:';
+
+function buildListDisplayName(projectName) {
+  if (!projectName) {
+    return 'Planner Project';
+  }
+  const trimmed = projectName.trim();
+  return trimmed.length > 120 ? trimmed.slice(0, 117).concat('...') : trimmed;
+}
+
+async function getProjectListMapping({ supabase, projectId }) {
+  const { data, error } = await supabase
+    .from('project_outlook_lists')
+    .select('*')
+    .eq('project_id', projectId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+async function getProjectListMappingByListId({ supabase, userId, listId }) {
+  const { data, error } = await supabase
+    .from('project_outlook_lists')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('graph_list_id', listId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+async function upsertProjectListMapping({ supabase, userId, projectId, listId, etag, isActive = true }) {
+  const payload = {
+    user_id: userId,
+    project_id: projectId,
+    graph_list_id: listId,
+    graph_etag: etag || null,
+    is_active: isActive
+  };
+
+  const { data, error } = await supabase
+    .from('project_outlook_lists')
+    .upsert(payload, { onConflict: 'project_id' })
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
 
 function mapPriorityToImportance(priority) {
   switch (priority) {
@@ -171,12 +236,95 @@ async function getConnection(userId) {
   };
 }
 
-async function upsertSyncState({ supabase, taskId, userId, graphTaskId, graphEtag, direction }) {
+async function ensureProjectList({ supabase, connection, userId, projectId }) {
+  const existingMapping = await getProjectListMapping({ supabase, projectId });
+  if (existingMapping?.graph_list_id && existingMapping.is_active !== false) {
+    return existingMapping;
+  }
+
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('name')
+    .eq('id', projectId)
+    .maybeSingle();
+
+  if (projectError || !project) {
+    throw projectError || new Error('Project not found');
+  }
+
+  const displayName = buildListDisplayName(project.name || 'Planner Project');
+  let list = null;
+
+  try {
+    list = await createTodoList(connection.accessToken, displayName);
+  } catch (error) {
+    if (error.status === 409 || error.status === 400) {
+      const existingLists = await listTodoLists(connection.accessToken);
+      list = existingLists?.value?.find((l) => l.displayName?.toLowerCase() === displayName.toLowerCase()) || null;
+    }
+
+    if (!list) {
+      throw error;
+    }
+  }
+
+  const mapping = await upsertProjectListMapping({
+    supabase,
+    userId,
+    projectId,
+    listId: list.id,
+    etag: list['@odata.etag'] || null,
+    isActive: true
+  });
+
+  return mapping;
+}
+
+async function ensureProjectForList({ supabase, connection, userId, listId }) {
+  const existingMapping = await getProjectListMappingByListId({ supabase, userId, listId });
+  if (existingMapping?.project_id) {
+    return existingMapping;
+  }
+
+  const list = await getTodoList(connection.accessToken, listId);
+  const displayName = buildListDisplayName(list?.displayName || 'Outlook Project');
+
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .insert({
+      user_id: userId,
+      name: displayName,
+      priority: PRIORITY.MEDIUM,
+      status: PROJECT_STATUS.OPEN,
+      stakeholders: [],
+      description: `${DEFAULT_PROJECT_DESCRIPTION_PREFIX} ${displayName}`
+    })
+    .select()
+    .single();
+
+  if (projectError) {
+    throw projectError;
+  }
+
+  const mapping = await upsertProjectListMapping({
+    supabase,
+    userId,
+    projectId: project.id,
+    listId,
+    etag: list?.['@odata.etag'] || null,
+    isActive: true
+  });
+
+  return mapping;
+}
+
+async function upsertSyncState({ supabase, taskId, userId, graphTaskId, graphEtag, graphListId, direction }) {
   const payload = {
     task_id: taskId,
     user_id: userId,
     graph_task_id: graphTaskId,
     graph_etag: graphEtag || null,
+    graph_list_id: graphListId || null,
     last_synced_at: new Date().toISOString(),
     last_sync_direction: direction
   };
@@ -202,7 +350,30 @@ async function handleCreateJob(job, connection) {
     throw new Error('Task not found for create sync');
   }
 
-  const graphTask = await createPlannerTask(connection.accessToken, connection.planner_list_id, buildGraphTaskPayload(task));
+  let projectId = task.project_id;
+  if (!projectId) {
+    projectId = await ensureUnassignedProject(supabase, task.user_id);
+    if (projectId !== task.project_id) {
+      await supabase
+        .from('tasks')
+        .update({ project_id: projectId })
+        .eq('id', task.id);
+      task.project_id = projectId;
+    }
+  }
+
+  const projectMapping = await ensureProjectList({
+    supabase,
+    connection,
+    userId: task.user_id,
+    projectId
+  });
+
+  const graphTask = await createPlannerTask(
+    connection.accessToken,
+    projectMapping.graph_list_id,
+    buildGraphTaskPayload(task)
+  );
 
   await upsertSyncState({
     supabase,
@@ -210,12 +381,14 @@ async function handleCreateJob(job, connection) {
     userId: task.user_id,
     graphTaskId: graphTask.id,
     graphEtag: graphTask['@odata.etag'] || null,
+    graphListId: projectMapping.graph_list_id,
     direction: 'local'
   });
 }
 
 async function handleUpdateJob(job, connection) {
   const supabase = getSupabaseServiceRole();
+  const jobPayload = job.payload || {};
 
   const { data: task, error } = await supabase
     .from('tasks')
@@ -229,7 +402,7 @@ async function handleUpdateJob(job, connection) {
 
   const { data: syncState, error: syncError } = await supabase
     .from('task_sync_state')
-    .select('graph_task_id, graph_etag')
+    .select('graph_task_id, graph_etag, graph_list_id')
     .eq('task_id', task.id)
     .maybeSingle();
 
@@ -237,14 +410,55 @@ async function handleUpdateJob(job, connection) {
     throw syncError;
   }
 
+  const targetProjectId = jobPayload.projectId || task.project_id;
+  const projectMapping = await ensureProjectList({
+    supabase,
+    connection,
+    userId: task.user_id,
+    projectId: targetProjectId
+  });
+
   if (!syncState?.graph_task_id) {
-    await handleCreateJob(job, connection);
+    await handleCreateJob({ ...job, payload: { ...jobPayload, projectId: targetProjectId } }, connection);
     return;
   }
 
+  const existingListId = syncState.graph_list_id;
+
+  // Handle task moves between projects (lists)
+  if (existingListId && existingListId !== projectMapping.graph_list_id) {
+    try {
+      await deletePlannerTask(connection.accessToken, existingListId, syncState.graph_task_id);
+    } catch (deleteError) {
+      if (deleteError.status !== 404) {
+        throw deleteError;
+      }
+    }
+
+    const graphTask = await createPlannerTask(
+      connection.accessToken,
+      projectMapping.graph_list_id,
+      buildGraphTaskPayload(task)
+    );
+
+    await upsertSyncState({
+      supabase,
+      taskId: task.id,
+      userId: task.user_id,
+      graphTaskId: graphTask.id,
+      graphEtag: graphTask?.['@odata.etag'] || null,
+      graphListId: projectMapping.graph_list_id,
+      direction: 'local'
+    });
+
+    return;
+  }
+
+  const listIdForUpdate = existingListId || projectMapping.graph_list_id || connection.planner_list_id;
+
   const graphTask = await updatePlannerTask(
     connection.accessToken,
-    connection.planner_list_id,
+    listIdForUpdate,
     syncState.graph_task_id,
     buildGraphTaskPayload(task),
     syncState.graph_etag
@@ -256,21 +470,32 @@ async function handleUpdateJob(job, connection) {
     userId: task.user_id,
     graphTaskId: syncState.graph_task_id,
     graphEtag: graphTask?.['@odata.etag'] || syncState.graph_etag || null,
+    graphListId: listIdForUpdate,
     direction: 'local'
   });
 }
 
 async function handleDeleteJob(job, connection) {
   const supabase = getSupabaseServiceRole();
-  const graphTaskId = job.payload?.graphTaskId;
-  const graphEtag = job.payload?.graphEtag;
+  const jobPayload = job.payload || {};
+  const graphTaskId = jobPayload.graphTaskId;
+  const graphEtag = jobPayload.graphEtag;
+  const jobListId = jobPayload.graphListId;
 
   if (!graphTaskId) {
     return; // Nothing to delete on Graph side
   }
 
+  const { data: syncState } = await supabase
+    .from('task_sync_state')
+    .select('graph_list_id, task_id, user_id')
+    .eq('graph_task_id', graphTaskId)
+    .maybeSingle();
+
+  const listIdToUse = jobListId || syncState?.graph_list_id || connection.planner_list_id;
+
   try {
-    await deletePlannerTask(connection.accessToken, connection.planner_list_id, graphTaskId, graphEtag || undefined);
+    await deletePlannerTask(connection.accessToken, listIdToUse, graphTaskId, graphEtag || undefined);
   } catch (error) {
     if (error.status !== 404) {
       throw error;
@@ -286,16 +511,36 @@ async function handleDeleteJob(job, connection) {
 async function handleRemoteCreateOrUpdate({ userId, graphTask, connection }) {
   const serviceSupabase = getSupabaseServiceRole();
 
+  const listIdFromGraph = graphTask.parentListId || graphTask.parentFolderId || null;
+
   const { data: existingSync } = await serviceSupabase
     .from('task_sync_state')
-    .select('task_id')
+    .select('task_id, graph_list_id')
     .eq('graph_task_id', graphTask.id)
     .maybeSingle();
 
   const mappedTask = mapGraphTaskToLocal(graphTask);
 
+  let projectMapping = null;
+  if (listIdFromGraph) {
+    const existingMapping = await getProjectListMappingByListId({
+      supabase: serviceSupabase,
+      userId,
+      listId: listIdFromGraph
+    });
+
+    projectMapping = existingMapping ?? await ensureProjectForList({
+      supabase: serviceSupabase,
+      connection,
+      userId,
+      listId: listIdFromGraph
+    });
+  }
+
   if (!existingSync?.task_id) {
-    const projectId = await ensureUnassignedProject(serviceSupabase, userId);
+    const projectId = projectMapping?.project_id
+      || await ensureUnassignedProject(serviceSupabase, userId);
+
     const { data: createdTask } = await createTask({
       supabase: serviceSupabase,
       userId,
@@ -321,25 +566,32 @@ async function handleRemoteCreateOrUpdate({ userId, graphTask, connection }) {
       userId,
       graphTaskId: graphTask.id,
       graphEtag: graphTask['@odata.etag'] || null,
+      graphListId: listIdFromGraph || projectMapping?.graph_list_id || connection.planner_list_id,
       direction: 'remote'
     });
 
     return;
   }
 
+  const updates = {
+    name: mappedTask.name,
+    description: mappedTask.description,
+    due_date: mappedTask.due_date,
+    priority: mappedTask.priority,
+    is_completed: mappedTask.is_completed,
+    completed_at: mappedTask.completed_at,
+    updated_at: mappedTask.updated_at
+  };
+
+  if (projectMapping?.project_id) {
+    updates.project_id = projectMapping.project_id;
+  }
+
   await updateTask({
     supabase: serviceSupabase,
     userId,
     taskId: existingSync.task_id,
-    updates: {
-      name: mappedTask.name,
-      description: mappedTask.description,
-      due_date: mappedTask.due_date,
-      priority: mappedTask.priority,
-      is_completed: mappedTask.is_completed,
-      completed_at: mappedTask.completed_at,
-      updated_at: mappedTask.updated_at
-    },
+    updates,
     options: {
       skipSyncJob: true,
       skipTimestamp: true,
@@ -353,6 +605,7 @@ async function handleRemoteCreateOrUpdate({ userId, graphTask, connection }) {
     userId,
     graphTaskId: graphTask.id,
     graphEtag: graphTask['@odata.etag'] || null,
+    graphListId: listIdFromGraph || projectMapping?.graph_list_id || existingSync.graph_list_id || connection.planner_list_id,
     direction: 'remote'
   });
 }

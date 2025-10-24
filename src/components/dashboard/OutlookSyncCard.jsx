@@ -116,7 +116,7 @@ export default function OutlookSyncCard() {
           <p className="text-xs uppercase tracking-[0.28em] text-[#036586]/75">Outlook Sync</p>
           <h3 className="mt-2 text-xl font-semibold text-[#052a3b]">Microsoft To Do</h3>
           <p className="mt-1 text-sm text-[#2f617a]">
-            Keep Planner tasks in sync with your Outlook Planner list.
+            Planner projects are mirrored as individual Outlook lists so you can work natively in either app.
           </p>
         </div>
         {statusBadge}
@@ -147,6 +147,11 @@ export default function OutlookSyncCard() {
             <dd className="mt-1 font-semibold text-[#052a3b]">{formatDateTime(status.subscriptionExpiresAt)}</dd>
           </div>
         </dl>
+      )}
+      {status.connected && (
+        <p className="rounded-xl border border-[#0496c7]/10 bg-[#0496c7]/8 px-4 py-3 text-xs text-[#036586]">
+          Each Planner project now has its own Outlook list. Create or move tasks between lists in Microsoft To Do and they&apos;ll sync back here automatically.
+        </p>
       )}
 
       <div className="flex flex-wrap items-center gap-3">

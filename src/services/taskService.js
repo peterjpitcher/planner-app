@@ -105,7 +105,10 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
     await enqueueTaskSyncJob({
       userId,
       taskId: data.id,
-      action: 'create'
+      action: 'create',
+      metadata: {
+        projectId: data.project_id
+      }
     });
   }
 
@@ -139,7 +142,7 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
 
   const { data: syncState } = await supabase
     .from('task_sync_state')
-    .select('graph_task_id, graph_etag')
+    .select('graph_task_id, graph_etag, graph_list_id')
     .eq('task_id', taskId)
     .maybeSingle();
 
@@ -169,7 +172,9 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
       action: 'update',
       metadata: {
         graphTaskId: syncState?.graph_task_id || null,
-        graphEtag: syncState?.graph_etag || null
+        graphEtag: syncState?.graph_etag || null,
+        projectId: data.project_id,
+        previousProjectId: existingTask.project_id
       }
     });
   }
@@ -194,7 +199,7 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
 
   const { data: syncState } = await supabase
     .from('task_sync_state')
-    .select('graph_task_id, graph_etag')
+    .select('graph_task_id, graph_etag, graph_list_id')
     .eq('task_id', taskId)
     .maybeSingle();
 
@@ -222,7 +227,9 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
       action: 'delete',
       metadata: {
         graphTaskId: syncState?.graph_task_id || null,
-        graphEtag: syncState?.graph_etag || null
+        graphEtag: syncState?.graph_etag || null,
+        projectId: existingTask.project_id,
+        graphListId: syncState?.graph_list_id || null
       }
     });
   }

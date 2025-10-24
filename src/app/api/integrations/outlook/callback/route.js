@@ -7,7 +7,9 @@ import {
   exchangeCodeForToken,
   fetchMicrosoftProfile,
   getOrCreatePlannerList,
-  createTodoSubscription
+  createTodoSubscription,
+  listTodoLists,
+  createTodoList
 } from '@/lib/microsoftGraphClient';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { updateSecret } from '@/lib/supabaseVault';
@@ -121,6 +123,53 @@ export async function GET(request) {
 
     if (upsertError) {
       throw upsertError;
+    }
+
+    try {
+      const { data: projects } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('user_id', session.user.id);
+
+      const existingMappings = await supabase
+        .from('project_outlook_lists')
+        .select('project_id, graph_list_id')
+        .eq('user_id', session.user.id);
+
+      const mappingSet = new Set((existingMappings.data || []).map((item) => item.project_id));
+      const graphLists = await listTodoLists(accessToken);
+      const listByName = new Map();
+      if (Array.isArray(graphLists?.value)) {
+        graphLists.value.forEach((list) => {
+          if (list?.displayName) {
+            listByName.set(list.displayName.toLowerCase(), list);
+          }
+        });
+      }
+
+      const desiredLists = (projects || []).filter((project) => !mappingSet.has(project.id));
+
+      for (const project of desiredLists) {
+        const displayName = (project.name || 'Planner Project').trim().slice(0, 120);
+        let list = listByName.get(displayName.toLowerCase()) || null;
+
+        if (!list) {
+          list = await createTodoList(accessToken, displayName);
+          listByName.set(displayName.toLowerCase(), list);
+        }
+
+        await supabase
+          .from('project_outlook_lists')
+          .upsert({
+            user_id: session.user.id,
+            project_id: project.id,
+            graph_list_id: list.id,
+            graph_etag: list?.['@odata.etag'] || null,
+            is_active: true
+          }, { onConflict: 'project_id' });
+      }
+    } catch (listInitError) {
+      console.error('Failed to initialize Outlook lists for projects:', listInitError);
     }
 
     await enqueueTaskSyncJob({

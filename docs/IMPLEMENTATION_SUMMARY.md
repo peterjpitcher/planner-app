@@ -83,6 +83,7 @@ Applied to all list components to prevent unnecessary re-renders:
 - Implemented background job processor with webhook + cron endpoints
 - Added dashboard card for connect/disconnect status and manual sync triggers
 - Queued task mutations automatically for Graph syncing via `taskService`
+- Project-to-list mapping ensures each project has its own Microsoft To Do list, including automatic list creation and moves across projects
 
 ## 6. Files Modified
 

@@ -187,6 +187,26 @@ export async function deletePlannerTask(accessToken, listId, taskId, etag) {
   });
 }
 
+export async function createTodoList(accessToken, displayName) {
+  return graphRequest({
+    accessToken,
+    resource: '/me/todo/lists',
+    method: 'POST',
+    body: { displayName }
+  });
+}
+
+export async function getTodoList(accessToken, listId) {
+  return graphRequest({
+    accessToken,
+    resource: `/me/todo/lists/${listId}`
+  });
+}
+
+export async function listTodoLists(accessToken) {
+  return graphRequest({ accessToken, resource: '/me/todo/lists' });
+}
+
 export async function createTodoSubscription(accessToken, listId, notificationUrl, expirationMinutes = 60) {
   const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
 
