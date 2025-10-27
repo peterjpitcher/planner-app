@@ -238,6 +238,35 @@ export async function getConnection(userId) {
 
 async function ensureProjectList({ supabase, connection, userId, projectId }) {
   const existingMapping = await getProjectListMapping({ supabase, projectId });
+
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('name, status')
+    .eq('id', projectId)
+    .maybeSingle();
+
+  if (projectError || !project) {
+    throw projectError || new Error('Project not found');
+  }
+
+  const isTerminalStatus = [PROJECT_STATUS.COMPLETED, PROJECT_STATUS.CANCELLED].includes(project.status);
+
+  if (isTerminalStatus) {
+    if (existingMapping?.id) {
+      await supabase
+        .from('project_outlook_lists')
+        .update({
+          is_active: false,
+          graph_list_id: null,
+          subscription_id: null,
+          subscription_expires_at: null,
+          delta_token: null
+        })
+        .eq('id', existingMapping.id);
+    }
+    return null;
+  }
+
   if (existingMapping?.graph_list_id) {
     if (existingMapping.is_active === false) {
       await supabase
@@ -247,16 +276,6 @@ async function ensureProjectList({ supabase, connection, userId, projectId }) {
       return { ...existingMapping, is_active: true };
     }
     return existingMapping;
-  }
-
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('name')
-    .eq('id', projectId)
-    .maybeSingle();
-
-  if (projectError || !project) {
-    throw projectError || new Error('Project not found');
   }
 
   const displayName = buildListDisplayName(project.name || 'Planner Project');
@@ -376,6 +395,11 @@ async function handleCreateJob(job, connection) {
     projectId
   });
 
+  if (!projectMapping?.graph_list_id) {
+    console.info('Skipping Outlook sync for closed project', { projectId, userId: task.user_id });
+    return;
+  }
+
   let targetMapping = projectMapping;
   let graphTask = null;
 
@@ -398,6 +422,11 @@ async function handleCreateJob(job, connection) {
         userId: task.user_id,
         projectId
       });
+
+      if (!refreshedMapping?.graph_list_id) {
+        console.info('Skipping Outlook sync retry for closed project', { projectId, userId: task.user_id });
+        return;
+      }
 
       graphTask = await createTodoTask(
         connection.accessToken,
@@ -453,9 +482,22 @@ async function handleUpdateJob(job, connection) {
     userId: task.user_id,
     projectId: targetProjectId
   });
+  const isClosedProject = !projectMapping?.graph_list_id;
 
   if (!syncState?.graph_task_id) {
+    if (isClosedProject) {
+      console.info('Skipping Outlook sync create for closed project', { projectId: targetProjectId, userId: task.user_id });
+      return;
+    }
     await handleCreateJob({ ...job, payload: { ...jobPayload, projectId: targetProjectId } }, connection);
+    return;
+  }
+
+  if (isClosedProject) {
+    await supabase
+      .from('task_sync_state')
+      .delete()
+      .eq('task_id', task.id);
     return;
   }
 
@@ -493,6 +535,15 @@ async function handleUpdateJob(job, connection) {
           userId: task.user_id,
           projectId: targetProjectId
         });
+
+        if (!recreateMapping?.graph_list_id) {
+          await supabase
+            .from('task_sync_state')
+            .delete()
+            .eq('task_id', task.id);
+          console.info('Skipping Outlook sync re-create for closed project', { projectId: targetProjectId, userId: task.user_id });
+          return;
+        }
 
         graphTask = await createTodoTask(
           connection.accessToken,
