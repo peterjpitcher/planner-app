@@ -6,7 +6,7 @@ export async function storeSecret(secretValue) {
   }
 
   const supabase = getSupabaseServiceRole();
-  const { data, error } = await supabase.rpc('vault.create_secret', {
+  const { data, error } = await supabase.rpc('public.vault_create_secret', {
     secret: secretValue
   });
 
@@ -25,7 +25,7 @@ export async function updateSecret(secretId, secretValue) {
   const supabase = getSupabaseServiceRole();
 
   if (secretId) {
-    const { error } = await supabase.rpc('vault.update_secret', {
+    const { error } = await supabase.rpc('public.vault_update_secret', {
       secret_id: secretId,
       secret: secretValue
     });
@@ -46,7 +46,7 @@ export async function retrieveSecret(secretId) {
   }
 
   const supabase = getSupabaseServiceRole();
-  const { data, error } = await supabase.rpc('vault.get_secret', {
+  const { data, error } = await supabase.rpc('public.vault_get_secret', {
     secret_id: secretId
   });
 
@@ -63,7 +63,7 @@ export async function deleteSecret(secretId) {
   }
 
   const supabase = getSupabaseServiceRole();
-  const { error } = await supabase.rpc('vault.delete_secret', {
+  const { error } = await supabase.rpc('public.vault_delete_secret', {
     secret_id: secretId
   });
 
