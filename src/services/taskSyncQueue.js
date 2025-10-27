@@ -7,6 +7,22 @@ export async function enqueueTaskSyncJob({ userId, taskId, action, metadata = {}
 
   const supabase = getSupabaseServiceRole();
 
+  if (action === 'full_sync') {
+    const { data: existingJob, error: lookupError } = await supabase
+      .from('task_sync_jobs')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('action', 'full_sync')
+      .in('status', ['pending', 'processing'])
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error('Failed to check existing full_sync job', lookupError);
+    } else if (existingJob?.id) {
+      return;
+    }
+  }
+
   const payload = {
     user_id: userId,
     task_id: taskId || null,
@@ -20,6 +36,9 @@ export async function enqueueTaskSyncJob({ userId, taskId, action, metadata = {}
     .insert(payload);
 
   if (error) {
+    if (action === 'full_sync' && error.code === '23505') {
+      return;
+    }
     console.error('Failed to enqueue task sync job', error);
   }
 }
