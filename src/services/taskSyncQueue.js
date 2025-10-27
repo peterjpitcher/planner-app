@@ -2,7 +2,7 @@ import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 
 export async function enqueueTaskSyncJob({ userId, taskId, action, metadata = {}, scheduleAt }) {
   if (!userId || !action) {
-    return;
+    return false;
   }
 
   const supabase = getSupabaseServiceRole();
@@ -19,7 +19,7 @@ export async function enqueueTaskSyncJob({ userId, taskId, action, metadata = {}
     if (lookupError) {
       console.error('Failed to check existing full_sync job', lookupError);
     } else if (existingJob?.id) {
-      return;
+      return false;
     }
   }
 
@@ -37,10 +37,13 @@ export async function enqueueTaskSyncJob({ userId, taskId, action, metadata = {}
 
   if (error) {
     if (action === 'full_sync' && error.code === '23505') {
-      return;
+      return false;
     }
     console.error('Failed to enqueue task sync job', error);
+    return false;
   }
+
+  return true;
 }
 
 export async function fetchPendingTaskSyncJobs(limit = 25) {

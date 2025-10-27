@@ -32,14 +32,27 @@ async function enqueueFullSyncsForSubscriptions(subscriptionIds = []) {
 
   const uniqueUserIds = Array.from(new Set((data || []).map((row) => row.user_id)));
 
-  await Promise.all(
-    uniqueUserIds.map((userId) =>
-      enqueueTaskSyncJob({
-        userId,
-        action: 'full_sync'
-      })
-    )
-  );
+  let enqueued = 0;
+  let skipped = 0;
+
+  for (const userId of uniqueUserIds) {
+    const inserted = await enqueueTaskSyncJob({
+      userId,
+      action: 'full_sync'
+    });
+    if (inserted) {
+      enqueued += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  console.info('Outlook webhook full_sync enqueue results', {
+    subscriptionCount: subscriptionIds.length,
+    usersTargeted: uniqueUserIds.length,
+    enqueued,
+    skipped
+  });
 }
 
 export async function GET(request) {

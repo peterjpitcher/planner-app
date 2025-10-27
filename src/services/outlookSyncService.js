@@ -44,7 +44,7 @@ function buildListDisplayName(projectName) {
 async function getProjectListMapping({ supabase, projectId }) {
   const { data, error } = await supabase
     .from('project_outlook_lists')
-    .select('id, user_id, project_id, graph_list_id, graph_etag, is_active, subscription_id, subscription_expires_at, delta_token')
+    .select('id, user_id, project_id, graph_list_id, graph_list_name, graph_etag, is_active, subscription_id, subscription_expires_at, delta_token')
     .eq('project_id', projectId)
     .maybeSingle();
 
@@ -58,7 +58,7 @@ async function getProjectListMapping({ supabase, projectId }) {
 async function getProjectListMappingByListId({ supabase, userId, listId }) {
   const { data, error } = await supabase
     .from('project_outlook_lists')
-    .select('id, user_id, project_id, graph_list_id, graph_etag, is_active, subscription_id, subscription_expires_at, delta_token')
+    .select('id, user_id, project_id, graph_list_id, graph_list_name, graph_etag, is_active, subscription_id, subscription_expires_at, delta_token')
     .eq('user_id', userId)
     .eq('graph_list_id', listId)
     .maybeSingle();
@@ -237,11 +237,11 @@ export async function getConnection(userId) {
 }
 
 async function ensureProjectList({ supabase, connection, userId, projectId }) {
-  const existingMapping = await getProjectListMapping({ supabase, projectId });
+  let existingMapping = await getProjectListMapping({ supabase, projectId });
 
   const { data: project, error: projectError } = await supabase
     .from('projects')
-    .select('name, status')
+    .select('name, status, updated_at')
     .eq('id', projectId)
     .maybeSingle();
 
@@ -258,6 +258,7 @@ async function ensureProjectList({ supabase, connection, userId, projectId }) {
         .update({
           is_active: false,
           graph_list_id: null,
+          graph_list_name: null,
           subscription_id: null,
           subscription_expires_at: null,
           delta_token: null
@@ -268,14 +269,63 @@ async function ensureProjectList({ supabase, connection, userId, projectId }) {
   }
 
   if (existingMapping?.graph_list_id) {
-    if (existingMapping.is_active === false) {
-      await supabase
-        .from('project_outlook_lists')
-        .update({ is_active: true })
-        .eq('id', existingMapping.id);
-      return { ...existingMapping, is_active: true };
+    try {
+      const remoteList = await getTodoList(connection.accessToken, existingMapping.graph_list_id);
+      const remoteName = remoteList?.displayName || existingMapping.graph_list_name || project.name;
+      const updates = {};
+
+      if (existingMapping.is_active === false) {
+        updates.is_active = true;
+      }
+
+      if (existingMapping.graph_list_name !== remoteName) {
+        updates.graph_list_name = remoteName;
+        if (!existingMapping.graph_list_name || existingMapping.graph_list_name === project.name) {
+          await supabase
+            .from('projects')
+            .update({
+              name: remoteName,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', projectId)
+            .eq('name', existingMapping.graph_list_name ?? project.name);
+          console.info('Synchronized project name from Outlook rename', {
+            projectId,
+            userId,
+            previousName: existingMapping.graph_list_name ?? project.name,
+            remoteName
+          });
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await supabase
+          .from('project_outlook_lists')
+          .update(updates)
+          .eq('id', existingMapping.id);
+        existingMapping = { ...existingMapping, ...updates };
+      }
+
+      return existingMapping;
+    } catch (error) {
+      if (error?.status === 404) {
+        console.warn('Outlook list missing when ensuring project list', {
+          projectId,
+          userId,
+          listId: existingMapping.graph_list_id
+        });
+        await supabase
+          .from('project_outlook_lists')
+          .update({
+            graph_list_id: null,
+            graph_list_name: null,
+            is_active: false
+          })
+          .eq('id', existingMapping.id);
+      } else {
+        throw error;
+      }
     }
-    return existingMapping;
   }
 
   const displayName = buildListDisplayName(project.name || 'Planner Project');
@@ -300,26 +350,74 @@ async function ensureProjectList({ supabase, connection, userId, projectId }) {
     projectId,
     listId: list.id,
     etag: list['@odata.etag'] || null,
-    isActive: true
+    isActive: true,
+    extra: {
+      graph_list_name: list.displayName || displayName
+    }
   });
+
+  if (mapping && mapping.graph_list_name && project.name !== mapping.graph_list_name) {
+    await supabase
+      .from('projects')
+      .update({
+        name: mapping.graph_list_name,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', projectId)
+      .eq('name', project.name);
+
+    console.info('Aligned project name with newly created Outlook list', {
+      projectId,
+      userId,
+      projectName: project.name,
+      outlookName: mapping.graph_list_name
+    });
+  }
 
   return mapping;
 }
 
 async function ensureProjectForList({ supabase, connection, userId, listId }) {
-  const existingMapping = await getProjectListMappingByListId({ supabase, userId, listId });
+  let existingMapping = await getProjectListMappingByListId({ supabase, userId, listId });
+  const list = await getTodoList(connection.accessToken, listId);
+  const graphDisplayName = list?.displayName || 'Outlook Project';
+  const displayName = buildListDisplayName(graphDisplayName);
+
   if (existingMapping?.project_id) {
+    const updates = {};
+    if (existingMapping.graph_list_name !== graphDisplayName) {
+      const previousName = existingMapping.graph_list_name;
+      updates.graph_list_name = graphDisplayName;
+      await supabase
+        .from('project_outlook_lists')
+        .update(updates)
+        .eq('id', existingMapping.id);
+      existingMapping = { ...existingMapping, ...updates };
+
+      await supabase
+        .from('projects')
+        .update({
+          name: graphDisplayName,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingMapping.project_id)
+        .eq('name', previousName ?? graphDisplayName);
+
+      console.info('Updated project to match renamed Outlook list (remote initiated)', {
+        projectId: existingMapping.project_id,
+        userId,
+        listId,
+        name: graphDisplayName
+      });
+    }
     return existingMapping;
   }
-
-  const list = await getTodoList(connection.accessToken, listId);
-  const displayName = buildListDisplayName(list?.displayName || 'Outlook Project');
 
   const { data: project, error: projectError } = await supabase
     .from('projects')
     .insert({
       user_id: userId,
-      name: displayName,
+      name: graphDisplayName,
       priority: PRIORITY.MEDIUM,
       status: PROJECT_STATUS.OPEN,
       stakeholders: [],
@@ -338,7 +436,10 @@ async function ensureProjectForList({ supabase, connection, userId, listId }) {
     projectId: project.id,
     listId,
     etag: list?.['@odata.etag'] || null,
-    isActive: true
+    isActive: true,
+    extra: {
+      graph_list_name: graphDisplayName
+    }
   });
 
   return mapping;
