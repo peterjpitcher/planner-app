@@ -831,7 +831,7 @@ export async function syncRemoteChangesForUser(userId, connectionOverride = null
   const supabase = getSupabaseServiceRole();
   const { data: lists, error } = await supabase
     .from('project_outlook_lists')
-    .select('id, graph_list_id, delta_token')
+    .select('id, project_id, graph_list_id, delta_token')
     .eq('user_id', userId)
     .eq('is_active', true);
 
@@ -853,6 +853,27 @@ export async function syncRemoteChangesForUser(userId, connectionOverride = null
           .eq('id', list.id);
 
         response = await getTodoTaskDelta(connection.accessToken, list.graph_list_id, undefined);
+      } else if (error?.status === 404) {
+        console.warn('Outlook list missing during full sync, re-provisioning', { projectId: list.project_id, listId: list.graph_list_id, userId });
+        await supabase
+          .from('project_outlook_lists')
+          .update({ graph_list_id: null, is_active: false })
+          .eq('id', list.id);
+
+        const refreshedMapping = await ensureProjectList({
+          supabase,
+          connection,
+          userId,
+          projectId: list.project_id
+        });
+
+        if (!refreshedMapping?.graph_list_id) {
+          console.info('Skipping Outlook full sync for closed project', { projectId: list.project_id, userId });
+          continue;
+        }
+
+        response = await getTodoTaskDelta(connection.accessToken, refreshedMapping.graph_list_id, undefined);
+        list.graph_list_id = refreshedMapping.graph_list_id;
       } else {
         throw error;
       }
