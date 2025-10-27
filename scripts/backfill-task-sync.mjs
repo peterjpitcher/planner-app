@@ -66,10 +66,12 @@ async function ensureProjectMappings(projectIds, accessToken) {
   console.warn('[backfill] Ensure the user triggers a sync or reconnects Outlook to provision them.');
 }
 
+const TERMINAL_PROJECT_STATUSES = new Set(['Completed', 'Cancelled']);
+
 async function enqueueTaskJobs() {
   const { data: tasks, error } = await supabase
     .from('tasks')
-    .select('id, project_id, is_completed, name, task_sync_state(graph_task_id)')
+    .select('id, project_id, is_completed, name, projects(status), task_sync_state(graph_task_id)')
     .eq('user_id', userId);
 
   if (error) {
@@ -78,9 +80,18 @@ async function enqueueTaskJobs() {
   }
 
   const needsCreate = [];
+  let skippedTerminalProjects = 0;
   const projectIds = new Set();
 
   for (const task of tasks || []) {
+    const projectStatus = task.projects?.status || null;
+    const isTerminalProject = projectStatus ? TERMINAL_PROJECT_STATUSES.has(projectStatus) : false;
+
+    if (isTerminalProject) {
+      skippedTerminalProjects += 1;
+      continue;
+    }
+
     if (task.project_id) {
       projectIds.add(task.project_id);
     }
@@ -93,7 +104,9 @@ async function enqueueTaskJobs() {
     }
   }
 
-  console.log(`[backfill] ${tasks?.length || 0} total tasks, ${needsCreate.length} missing sync state.`);
+  console.log(
+    `[backfill] ${tasks?.length || 0} tasks total (${skippedTerminalProjects} skipped for terminal projects), ${needsCreate.length} missing sync state.`
+  );
 
   await ensureProjectMappings(Array.from(projectIds), null);
 

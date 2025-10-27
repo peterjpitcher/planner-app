@@ -144,7 +144,7 @@ Located in `scripts/`:
 
 | Script | Purpose |
 | --- | --- |
-| `node --env-file .env.local scripts/backfill-task-sync.mjs <userId>` | Enqueues `create` jobs for any of the user’s tasks missing sync state and adds a final `full_sync` job. |
+| `node --env-file .env.local scripts/backfill-task-sync.mjs <userId>` | Enqueues `create` jobs for open projects missing sync state (skips Completed/Cancelled) and adds a final `full_sync` job. |
 | `node --env-file .env.local scripts/archive-closed-projects.mjs` | Deletes Microsoft lists and Supabase mappings for closed/cancelled projects, removes per-task sync state, and cleans dead queue entries. |
 
 Both scripts load credentials from `.env.local` (ensure `SUPABASE_SERVICE_KEY`, Microsoft client credentials, and the Outook webhook URL are present).
