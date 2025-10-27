@@ -376,11 +376,40 @@ async function handleCreateJob(job, connection) {
     projectId
   });
 
-  const graphTask = await createTodoTask(
-    connection.accessToken,
-    projectMapping.graph_list_id,
-    buildGraphTaskPayload(task)
-  );
+  let targetMapping = projectMapping;
+  let graphTask = null;
+
+  try {
+    graphTask = await createTodoTask(
+      connection.accessToken,
+      targetMapping.graph_list_id,
+      buildGraphTaskPayload(task)
+    );
+  } catch (error) {
+    if (error?.status === 404) {
+      await supabase
+        .from('project_outlook_lists')
+        .update({ graph_list_id: null, is_active: false })
+        .eq('id', targetMapping.id);
+
+      const refreshedMapping = await ensureProjectList({
+        supabase,
+        connection,
+        userId: task.user_id,
+        projectId
+      });
+
+      graphTask = await createTodoTask(
+        connection.accessToken,
+        refreshedMapping.graph_list_id,
+        buildGraphTaskPayload(task)
+      );
+
+      targetMapping = refreshedMapping;
+    } else {
+      throw error;
+    }
+  }
 
   await upsertSyncState({
     supabase,
@@ -388,7 +417,7 @@ async function handleCreateJob(job, connection) {
     userId: task.user_id,
     graphTaskId: graphTask.id,
     graphEtag: graphTask['@odata.etag'] || null,
-    graphListId: projectMapping.graph_list_id,
+    graphListId: targetMapping.graph_list_id,
     direction: 'local'
   });
 }
@@ -442,11 +471,38 @@ async function handleUpdateJob(job, connection) {
       }
     }
 
-    const graphTask = await createTodoTask(
-      connection.accessToken,
-      projectMapping.graph_list_id,
-      buildGraphTaskPayload(task)
-    );
+    let recreateMapping = projectMapping;
+    let graphTask = null;
+
+    try {
+      graphTask = await createTodoTask(
+        connection.accessToken,
+        recreateMapping.graph_list_id,
+        buildGraphTaskPayload(task)
+      );
+    } catch (error) {
+      if (error?.status === 404) {
+        await supabase
+          .from('project_outlook_lists')
+          .update({ graph_list_id: null, is_active: false })
+          .eq('id', recreateMapping.id);
+
+        recreateMapping = await ensureProjectList({
+          supabase,
+          connection,
+          userId: task.user_id,
+          projectId: targetProjectId
+        });
+
+        graphTask = await createTodoTask(
+          connection.accessToken,
+          recreateMapping.graph_list_id,
+          buildGraphTaskPayload(task)
+        );
+      } else {
+        throw error;
+      }
+    }
 
     await upsertSyncState({
       supabase,
@@ -454,7 +510,7 @@ async function handleUpdateJob(job, connection) {
       userId: task.user_id,
       graphTaskId: graphTask.id,
       graphEtag: graphTask?.['@odata.etag'] || null,
-      graphListId: projectMapping.graph_list_id,
+      graphListId: recreateMapping.graph_list_id,
       direction: 'local'
     });
 
@@ -463,20 +519,35 @@ async function handleUpdateJob(job, connection) {
 
   const listIdForUpdate = existingListId || projectMapping.graph_list_id;
 
-  const graphTask = await updateTodoTask(
-    connection.accessToken,
-    listIdForUpdate,
-    syncState.graph_task_id,
-    buildGraphTaskPayload(task),
-    syncState.graph_etag
-  );
+  let updatedGraphTask = null;
+
+  try {
+    updatedGraphTask = await updateTodoTask(
+      connection.accessToken,
+      listIdForUpdate,
+      syncState.graph_task_id,
+      buildGraphTaskPayload(task),
+      syncState.graph_etag
+    );
+  } catch (error) {
+    if (error?.status === 404) {
+      await supabase
+        .from('task_sync_state')
+        .delete()
+        .eq('task_id', task.id);
+
+      await handleCreateJob(job, connection);
+      return;
+    }
+    throw error;
+  }
 
   await upsertSyncState({
     supabase,
     taskId: task.id,
     userId: task.user_id,
     graphTaskId: syncState.graph_task_id,
-    graphEtag: graphTask?.['@odata.etag'] || syncState.graph_etag || null,
+    graphEtag: updatedGraphTask?.['@odata.etag'] || syncState.graph_etag || null,
     graphListId: listIdForUpdate,
     direction: 'local'
   });
