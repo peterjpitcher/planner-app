@@ -146,7 +146,7 @@ function extractDateFromGraph(graphDateTime) {
 
 function buildGraphTaskPayload(task) {
   const payload = {
-    subject: task.name,
+    title: task.name,
     body: {
       contentType: 'text',
       content: task.description || ''
@@ -174,7 +174,7 @@ function buildGraphTaskPayload(task) {
 
 function mapGraphTaskToLocal(graphTask) {
   return {
-    name: graphTask.subject,
+    name: graphTask.title || graphTask.subject || '',
     description: graphTask.body?.content || '',
     due_date: extractDateFromGraph(graphTask.dueDateTime),
     priority: mapImportanceToPriority(graphTask.importance),
