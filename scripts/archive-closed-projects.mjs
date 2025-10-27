@@ -191,18 +191,6 @@ async function archiveClosedProjects() {
 
       const deleted = await deleteTodoList({ accessToken: connection.accessToken, listId });
 
-      await supabase
-        .from('project_outlook_lists')
-        .update({
-          is_active: false,
-          graph_list_id: null,
-          graph_etag: null,
-          subscription_id: null,
-          subscription_expires_at: null,
-          delta_token: null
-        })
-        .eq('id', mappingId);
-
       const { data: tasks } = await supabase
         .from('tasks')
         .select('id')
@@ -221,6 +209,11 @@ async function archiveClosedProjects() {
           .delete()
           .in('task_id', taskIds);
       }
+
+      await supabase
+        .from('project_outlook_lists')
+        .delete()
+        .eq('id', mappingId);
 
       console.log(`[cleanup] Archived project ${projectId} (user ${userId})${deleted ? '' : ' (list already absent)'}.`);
     } catch (err) {
