@@ -2,11 +2,23 @@
   "crons": [
     {
       "path": "/api/integrations/outlook/sync",
-      "schedule": "*/2 * * * *"
+      "schedule": "*/2 * * * *",
+      "request": {
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer ${OUTLOOK_SYNC_JOB_SECRET}"
+        }
+      }
     },
     {
       "path": "/api/integrations/outlook/subscriptions",
-      "schedule": "*/30 * * * *"
+      "schedule": "*/30 * * * *",
+      "request": {
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer ${OUTLOOK_SYNC_JOB_SECRET}"
+        }
+      }
     }
   ]
 }
