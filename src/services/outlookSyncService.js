@@ -532,6 +532,11 @@ async function handleRemoteCreateOrUpdate({ userId, graphTask, connection, listI
 
   const mappedTask = mapGraphTaskToLocal(graphTask);
 
+  if (!mappedTask.name || !mappedTask.name.trim()) {
+    console.warn('Skipping Graph task with empty subject', { userId, graphTaskId: graphTask.id });
+    return;
+  }
+
   let projectMapping = null;
   if (listIdFromGraph) {
     const existingMapping = await getProjectListMappingByListId({
@@ -568,7 +573,8 @@ async function handleRemoteCreateOrUpdate({ userId, graphTask, connection, listI
     });
 
     if (!createdTask) {
-      throw new Error('Failed to create local task from Graph');
+      console.warn('Failed to create local task from Graph payload', { userId, graphTaskId: graphTask.id });
+      return;
     }
 
     await upsertSyncState({
