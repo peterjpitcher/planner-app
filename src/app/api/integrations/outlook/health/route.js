@@ -3,6 +3,12 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { isAuthorizedCron } from '@/lib/cronAuth';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const maxDuration = 30;
+export const preferredRegion = 'fra1';
+
 function addWarning(warnings, condition, message) {
   if (condition) {
     warnings.push(message);

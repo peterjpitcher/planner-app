@@ -4,6 +4,8 @@ import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+export const maxDuration = 60;
+export const preferredRegion = 'fra1';
 
 function extractValidationToken(url) {
   const u = new URL(url);

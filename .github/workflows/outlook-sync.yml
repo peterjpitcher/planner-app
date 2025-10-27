@@ -12,11 +12,11 @@ jobs:
     steps:
       - name: Run task queue worker
         run: |
-          curl -sS -X GET \
+          curl -sS -X POST \
             -H "Authorization: Bearer ${{ secrets.OUTLOOK_SYNC_JOB_SECRET }}" \
             https://planner.orangejelly.co.uk/api/integrations/outlook/sync
       - name: Renew subscriptions
         run: |
-          curl -sS -X GET \
+          curl -sS -X POST \
             -H "Authorization: Bearer ${{ secrets.OUTLOOK_SYNC_JOB_SECRET }}" \
             https://planner.orangejelly.co.uk/api/integrations/outlook/subscriptions

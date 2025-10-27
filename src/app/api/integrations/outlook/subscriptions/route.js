@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const maxDuration = 60;
+export const preferredRegion = 'fra1';
 
 const MAX_TODO_SUBSCRIPTION_MINUTES = 4230; // documented Graph maximum for todoTask subscriptions
 
@@ -167,4 +168,14 @@ export async function POST(request) {
   return NextResponse.json({ processed: results.length, results });
 }
 
-export const GET = POST;
+export async function GET() {
+  return NextResponse.json(
+    { error: 'Method Not Allowed' },
+    {
+      status: 405,
+      headers: {
+        Allow: 'POST'
+      }
+    }
+  );
+}

@@ -107,6 +107,13 @@ async function graphRequest({ accessToken, resource, method = 'GET', body, heade
     const err = new Error(message);
     err.status = response.status;
     err.details = error;
+    const retryAfterHeader = response.headers.get('Retry-After');
+    if (retryAfterHeader) {
+      const retrySeconds = Number(retryAfterHeader);
+      if (!Number.isNaN(retrySeconds)) {
+        err.retryAfter = retrySeconds;
+      }
+    }
     throw err;
   }
 

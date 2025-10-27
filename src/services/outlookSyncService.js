@@ -1,8 +1,11 @@
+import { randomUUID } from 'crypto';
+
 import {
-  fetchPendingTaskSyncJobs,
-  markTaskSyncJobProcessing,
+  claimTaskSyncJobs,
   markTaskSyncJobCompleted,
-  markTaskSyncJobFailed
+  markTaskSyncJobFailed,
+  markTaskSyncJobDeferred,
+  updateTaskSyncJobHeartbeat
 } from './taskSyncQueue';
 
 import {
@@ -902,20 +905,32 @@ async function processSingleJob(job) {
 }
 
 export async function processTaskSyncJobs(limit = 25) {
-  const jobs = await fetchPendingTaskSyncJobs(limit);
+  const parsedLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 250) : 25;
+  const workerId = randomUUID();
+  const jobs = await claimTaskSyncJobs(parsedLimit, workerId);
   const results = [];
 
   for (const job of jobs) {
-    await markTaskSyncJobProcessing(job.id, job.attempts);
+    await updateTaskSyncJobHeartbeat(job.id);
 
     try {
       await processSingleJob(job);
-      await markTaskSyncJobCompleted(job.id);
+      await markTaskSyncJobCompleted(job.id, job.attempts);
       results.push({ jobId: job.id, status: 'completed' });
     } catch (error) {
+      const status = error?.status;
+      if (status === 429 || status === 503) {
+        const retryAfter = typeof error?.retryAfter === 'number' && !Number.isNaN(error.retryAfter)
+          ? Math.max(1, Math.floor(error.retryAfter))
+          : Math.min(60, Math.pow(2, job.attempts));
+        await markTaskSyncJobDeferred(job.id, job.attempts, retryAfter, error?.message || String(error));
+        results.push({ jobId: job.id, status: 'deferred', retryAfterSeconds: retryAfter, error: error?.message || String(error) });
+        continue;
+      }
+
       console.error(`Failed to process sync job ${job.id}`, error);
-      await markTaskSyncJobFailed(job.id, error.message, job.attempts);
-      results.push({ jobId: job.id, status: 'failed', error: error.message });
+      await markTaskSyncJobFailed(job.id, error?.message || String(error), job.attempts);
+      results.push({ jobId: job.id, status: 'failed', error: error?.message || String(error) });
     }
   }
 

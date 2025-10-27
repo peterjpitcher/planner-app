@@ -46,38 +46,33 @@ export async function enqueueTaskSyncJob({ userId, taskId, action, metadata = {}
   return true;
 }
 
-export async function fetchPendingTaskSyncJobs(limit = 25) {
+export async function claimTaskSyncJobs(limit = 25, workerId) {
   const supabase = getSupabaseServiceRole();
-
-  const { data, error } = await supabase
-    .from('task_sync_jobs')
-    .select('*')
-    .eq('status', 'pending')
-    .lte('scheduled_at', new Date().toISOString())
-    .order('scheduled_at', { ascending: true })
-    .limit(limit);
+  const { data, error } = await supabase.rpc('claim_task_sync_jobs', {
+    job_limit: limit,
+    worker_uuid: workerId || null
+  });
 
   if (error) {
-    console.error('Failed to fetch pending task sync jobs', error);
+    console.error('Failed to claim task sync jobs', error);
     return [];
   }
 
   return data || [];
 }
 
-export async function markTaskSyncJobProcessing(jobId, attempts) {
+export async function markTaskSyncJobCompleted(jobId, attempts) {
   const supabase = getSupabaseServiceRole();
   await supabase
     .from('task_sync_jobs')
-    .update({ status: 'processing', attempts: (attempts || 0) + 1, updated_at: new Date().toISOString() })
-    .eq('id', jobId);
-}
-
-export async function markTaskSyncJobCompleted(jobId) {
-  const supabase = getSupabaseServiceRole();
-  await supabase
-    .from('task_sync_jobs')
-    .update({ status: 'completed', processed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({
+      status: 'completed',
+      attempts,
+      last_error: null,
+      processed_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
     .eq('id', jobId);
 }
 
@@ -88,7 +83,35 @@ export async function markTaskSyncJobFailed(jobId, errorMessage, attempts) {
     .update({
       status: 'failed',
       last_error: errorMessage?.slice(0, 1000) || null,
-      attempts: (attempts || 0) + 1,
+      attempts,
+      heartbeat_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
+}
+
+export async function markTaskSyncJobDeferred(jobId, attempts, retrySeconds, errorMessage) {
+  const supabase = getSupabaseServiceRole();
+  const delay = Math.max(retrySeconds || 1, 1);
+  await supabase
+    .from('task_sync_jobs')
+    .update({
+      status: 'pending',
+      last_error: errorMessage?.slice(0, 1000) || null,
+      attempts,
+      scheduled_at: new Date(Date.now() + delay * 1000).toISOString(),
+      heartbeat_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
+}
+
+export async function updateTaskSyncJobHeartbeat(jobId) {
+  const supabase = getSupabaseServiceRole();
+  await supabase
+    .from('task_sync_jobs')
+    .update({
+      heartbeat_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
     .eq('id', jobId);
