@@ -24,7 +24,7 @@ This document captures the current Microsoft To Do integration for **Planner**, 
 3. **Callback handler** (`src/app/api/integrations/outlook/callback/route.js`) exchanges the auth code, stores refresh/access tokens in Supabase, seeds project/list mappings, optionally registers a webhook, and enqueues an initial `full_sync` job.
 4. **Background worker** (`src/services/outlookSyncService.js`) drains `task_sync_jobs` and synchronises tasks both ways via Microsoft Graph.
 5. **Webhook endpoint** (`src/app/api/integrations/outlook/webhook/route.js`) receives Microsoft change notifications and enqueues `full_sync` jobs for the affected user.
-6. **Cron jobs** trigger `/api/integrations/outlook/sync` (queue worker) every 2 minutes and `/api/integrations/outlook/subscriptions` (subscription maintenance) every 30 minutes.
+6. **Cron jobs** trigger `/api/integrations/outlook/sync` (queue worker) every 2 minutes and `/api/integrations/outlook/subscriptions` (subscription maintenance) every 30 minutes. These are now run via GitHub Actions (see section 6). Remove any legacy Vercel cron jobs to avoid duplicate calls.
 
 ---
 
@@ -118,33 +118,15 @@ Token storage relies on Supabase Vault RPC calls (`src/lib/supabaseVault.js`). E
 
 ---
 
-## 6. Vercel Cron Jobs
+## 6. Scheduled Jobs (GitHub Actions)
 
-Two cron jobs must be active:
+Vercel’s cron UI doesn’t currently support request headers, so the scheduled calls now live in GitHub Actions (`.github/workflows/outlook-sync.yml`). The workflow:
 
-| Path | Frequency | Purpose |
-| --- | --- | --- |
-| `/api/integrations/outlook/sync` | `*/2 * * * *` | Drains `task_sync_jobs`. |
-| `/api/integrations/outlook/subscriptions` | `*/30 * * * *` | Creates/renews todoTask webhook subscriptions per list. |
+- Runs every 2 minutes: `GET https://planner.orangejelly.co.uk/api/integrations/outlook/sync`
+- Runs every 30 minutes: `GET https://planner.orangejelly.co.uk/api/integrations/outlook/subscriptions`
+- Supplies the header `Authorization: Bearer ${{ secrets.OUTLOOK_SYNC_JOB_SECRET }}`
 
-### Header Requirement
-Both routes call `isAuthorizedCron(request)`:
-
-```js
-const secret = process.env.OUTLOOK_SYNC_JOB_SECRET;
-const bearer = request.headers.get('authorization');
-return bearer === `Bearer ${secret}` || request.headers.get('x-outlook-sync-secret') === secret;
-```
-
-`vercel.json` can only declare path and schedule; it **cannot** set custom headers. Headers must be added through the Vercel dashboard or private API:
-
-1. Navigate: **Project → Settings → Cron Jobs**.
-2. Delete the existing job.
-3. Click **Add Cron Job**, set path and schedule.
-4. Expand **Request Headers** and add `Authorization: Bearer <OUTLOOK_SYNC_JOB_SECRET>`.
-5. Repeat for the subscriptions job.
-
-Without this header, both endpoints respond `401 Unauthorized` and no jobs/subscription renewals execute.
+Make sure the repo secret `OUTLOOK_SYNC_JOB_SECRET` matches the value in your runtime environment. Remove or disable any legacy Vercel cron jobs to avoid duplicate or unauthorized calls.
 
 ---
 
