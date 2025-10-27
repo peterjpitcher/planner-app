@@ -714,7 +714,22 @@ export async function syncRemoteChangesForUser(userId, connectionOverride = null
   let processed = 0;
 
   for (const list of lists || []) {
-    const response = await getTodoTaskDelta(connection.accessToken, list.graph_list_id, list.delta_token || undefined);
+    let response;
+    try {
+      response = await getTodoTaskDelta(connection.accessToken, list.graph_list_id, list.delta_token || undefined);
+    } catch (error) {
+      if (error?.status === 410) {
+        await supabase
+          .from('project_outlook_lists')
+          .update({ delta_token: null })
+          .eq('id', list.id);
+
+        response = await getTodoTaskDelta(connection.accessToken, list.graph_list_id, undefined);
+      } else {
+        throw error;
+      }
+    }
+
     const items = Array.isArray(response?.value) ? response.value : [];
 
     for (const item of items) {
@@ -728,8 +743,8 @@ export async function syncRemoteChangesForUser(userId, connectionOverride = null
 
     processed += items.length;
 
-    const newDeltaToken = response?.['@odata.deltaLink'] || response?.['@odata.nextLink'];
-    if (newDeltaToken && newDeltaToken !== list.delta_token) {
+    const newDeltaToken = response?.['@odata.deltaLink'] || response?.['@odata.nextLink'] || null;
+    if ((newDeltaToken || list.delta_token) && newDeltaToken !== list.delta_token) {
       await supabase
         .from('project_outlook_lists')
         .update({ delta_token: newDeltaToken })

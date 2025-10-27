@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { getConnection } from '@/services/outlookSyncService';
 import { createTodoSubscription, renewTodoSubscription } from '@/lib/microsoftGraphClient';
+import { isAuthorizedCron } from '@/lib/cronAuth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,16 +11,6 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 const MAX_TODO_SUBSCRIPTION_MINUTES = 4230; // documented Graph maximum for todoTask subscriptions
-
-function ensureAuthorised(request) {
-  const secret = process.env.OUTLOOK_SYNC_JOB_SECRET;
-  if (!secret) {
-    return true;
-  }
-
-  const header = request.headers.get('authorization');
-  return header === `Bearer ${secret}`;
-}
 
 function getRenewBeforeMinutes() {
   const minutes = parseInt(process.env.OUTLOOK_RENEW_BEFORE_MIN ?? '360', 10);
@@ -119,7 +110,7 @@ async function createOrRenewSubscription({
 }
 
 export async function POST(request) {
-  if (!ensureAuthorised(request)) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

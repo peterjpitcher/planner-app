@@ -2,23 +2,12 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 import { processTaskSyncJobs } from '@/services/outlookSyncService';
 import { enqueueTaskSyncJob } from '@/services/taskSyncQueue';
-
-function isAuthorizedCron(request) {
-  const secret = process.env.OUTLOOK_SYNC_JOB_SECRET;
-  if (!secret) {
-    return true;
-  }
-
-  const bearer = request.headers.get('authorization');
-  if (bearer === `Bearer ${secret}`) {
-    return true;
-  }
-
-  const legacySecret = request.headers.get('x-outlook-sync-secret');
-  return legacySecret === secret;
-}
+import { isAuthorizedCron } from '@/lib/cronAuth';
 
 async function handleSyncQueue(request) {
   if (!isAuthorizedCron(request)) {

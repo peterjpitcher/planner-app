@@ -142,14 +142,23 @@ export async function getOrCreatePlannerList(accessToken, displayName = 'Planner
 }
 
 export async function getTodoTaskDelta(accessToken, listId, deltaToken) {
-  if (deltaToken) {
-    return graphRequest({ accessToken, resource: deltaToken, method: 'GET' });
-  }
+  try {
+    if (deltaToken) {
+      return await graphRequest({ accessToken, resource: deltaToken, method: 'GET' });
+    }
 
-  return graphRequest({
-    accessToken,
-    resource: `/me/todo/lists/${listId}/tasks/delta`
-  });
+    return await graphRequest({
+      accessToken,
+      resource: `/me/todo/lists/${listId}/tasks/delta`
+    });
+  } catch (error) {
+    if (error?.status === 410) {
+      const deltaError = new Error('Microsoft Graph delta token is no longer valid');
+      deltaError.status = 410;
+      throw deltaError;
+    }
+    throw error;
+  }
 }
 
 export async function getPlannerTasks(accessToken, listId) {
@@ -215,10 +224,11 @@ export async function createTodoSubscription(accessToken, listId, notificationUr
     resource: '/subscriptions',
     method: 'POST',
     body: {
-      changeType: 'updated',
+      changeType: 'created,updated,deleted',
       notificationUrl,
       resource: `/me/todo/lists/${listId}/tasks`,
       expirationDateTime: expiresAt,
+      latestSupportedTlsVersion: 'v1_2',
       ...(clientState ? { clientState } : {})
     }
   });
