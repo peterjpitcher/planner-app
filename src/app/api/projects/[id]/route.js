@@ -5,6 +5,76 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
+import { PROJECT_STATUS } from '@/lib/constants';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
+import { getConnection } from '@/services/outlookSyncService';
+import { deleteTodoList } from '@/lib/microsoftGraphClient';
+
+const TERMINAL_PROJECT_STATUSES = new Set([PROJECT_STATUS.COMPLETED, PROJECT_STATUS.CANCELLED]);
+
+async function archiveOutlookList({ userId, projectId }) {
+  const supabase = getSupabaseServiceRole();
+
+  const { data: mapping } = await supabase
+    .from('project_outlook_lists')
+    .select('id, graph_list_id')
+    .eq('project_id', projectId)
+    .maybeSingle();
+
+  if (!mapping) {
+    return;
+  }
+
+  const connection = await getConnection(userId);
+  if (connection && mapping.graph_list_id) {
+    try {
+      await deleteTodoList(connection.accessToken, mapping.graph_list_id);
+    } catch (error) {
+      if (error?.status !== 404) {
+        console.error('Failed to delete Outlook list for project', { projectId, error });
+      }
+    }
+  }
+
+  await supabase
+    .from('project_outlook_lists')
+    .update({
+      is_active: false,
+      graph_list_id: null,
+      graph_etag: null,
+      subscription_id: null,
+      subscription_expires_at: null,
+      delta_token: null
+    })
+    .eq('id', mapping.id);
+
+  if (mapping.graph_list_id) {
+    await supabase
+      .from('task_sync_state')
+      .delete()
+      .eq('graph_list_id', mapping.graph_list_id);
+  }
+
+  const { data: projectTasks } = await supabase
+    .from('tasks')
+    .select('id')
+    .eq('project_id', projectId);
+
+  const taskIds = (projectTasks || []).map((task) => task.id);
+
+  if (taskIds.length > 0) {
+    await supabase
+      .from('task_sync_state')
+      .delete()
+      .in('task_id', taskIds);
+
+    await supabase
+      .from('task_sync_jobs')
+      .delete()
+      .in('task_id', taskIds)
+      .in('status', ['pending', 'failed']);
+  }
+}
 
 // PATCH /api/projects/[id] - Update a project
 export async function PATCH(request, { params }) {
@@ -32,12 +102,12 @@ export async function PATCH(request, { params }) {
     const { id } = params;
     const body = await request.json();
     
-    const supabase = getSupabaseServer(session.accessToken);
-    
-    // Verify ownership
-    const { data: existingProject, error: fetchError } = await supabase
-      .from('projects')
-      .select('user_id')
+  const supabase = getSupabaseServer(session.accessToken);
+  
+  // Verify ownership
+  const { data: existingProject, error: fetchError } = await supabase
+    .from('projects')
+    .select('user_id, status')
       .eq('id', id)
       .single();
     
@@ -59,12 +129,16 @@ export async function PATCH(request, { params }) {
       .eq('id', id)
       .select()
       .single();
-    
+
     if (error) {
       const errorMessage = handleSupabaseError(error, 'update');
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
-    
+
+    if (body?.status && existingProject.status !== body.status && TERMINAL_PROJECT_STATUSES.has(body.status)) {
+      await archiveOutlookList({ userId: session.user.id, projectId: id });
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('PATCH /api/projects/[id] error:', error);

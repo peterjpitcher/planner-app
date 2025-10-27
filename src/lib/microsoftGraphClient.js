@@ -216,6 +216,14 @@ export async function listTodoLists(accessToken) {
   return graphRequest({ accessToken, resource: '/me/todo/lists' });
 }
 
+export async function deleteTodoList(accessToken, listId) {
+  return graphRequest({
+    accessToken,
+    resource: `/me/todo/lists/${listId}`,
+    method: 'DELETE'
+  });
+}
+
 export async function createTodoSubscription(accessToken, listId, notificationUrl, expirationMinutes = 60, clientState) {
   const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
 
