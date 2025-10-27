@@ -234,6 +234,14 @@ export async function deleteTodoList(accessToken, listId) {
 export async function createTodoSubscription(accessToken, listId, notificationUrl, expirationMinutes = 60, clientState) {
   const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
 
+  let normalizedClientState = null;
+  if (typeof clientState === 'string') {
+    const trimmed = clientState.trim();
+    if (trimmed.length > 0) {
+      normalizedClientState = trimmed.slice(0, 128);
+    }
+  }
+
   return graphRequest({
     accessToken,
     resource: '/subscriptions',
@@ -244,7 +252,7 @@ export async function createTodoSubscription(accessToken, listId, notificationUr
       resource: `/me/todo/lists/${listId}/tasks`,
       expirationDateTime: expiresAt,
       latestSupportedTlsVersion: 'v1_2',
-      ...(clientState ? { clientState } : {})
+      ...(normalizedClientState ? { clientState: normalizedClientState } : {})
     }
   });
 }

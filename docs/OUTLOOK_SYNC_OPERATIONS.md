@@ -48,7 +48,7 @@ These must be populated in Vercel (production) and in `.env.local` for local wor
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` | Azure AD app credentials. `MICROSOFT_TENANT_ID` defaults to `common`. |
 | `OUTLOOK_WEBHOOK_URL` | Absolute URL for incoming Microsoft webhook notifications. |
 | `OUTLOOK_SYNC_JOB_SECRET` | Shared secret used by GitHub Actions and health checks. |
-| `OUTLOOK_CLIENT_STATE` | Optional webhook guard; notifications must include this value. |
+| `OUTLOOK_CLIENT_STATE` | Optional webhook guard; subscriptions include it when supported, but webhook also falls back to subscription ID checks if Microsoft omits the value. |
 | `OUTLOOK_SUBSCRIPTION_DURATION_MIN`, `OUTLOOK_RENEW_BEFORE_MIN` | Controls webhook subscription lifetime/renewal cadence. |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous credentials (browser). |
 | `SUPABASE_SERVICE_KEY` | Supabase service-role key (server-side). |
@@ -97,7 +97,7 @@ All routes reside under `src/app/api/integrations/outlook/`:
 | `status` (`GET`) | Authenticated endpoint showing the current user’s connection status. |
 | `sync` (POST) | **Worker entry point.** Requires `Authorization: Bearer <OUTLOOK_SYNC_JOB_SECRET>` or Vercel cron header. Processes up to `x-sync-limit` jobs (defaults to 25). |
 | `subscriptions` (`GET`/`POST`) | Creates or renews Microsoft Graph change notification subscriptions and stores their IDs/expirations. |
-| `webhook` (`GET`/`POST`) | GET echoes the `validationToken` handshake as plain text (Microsoft requirement); POST validates `clientState` and enqueues at most one `full_sync` per user. |
+| `webhook` (`GET`/`POST`) | GET echoes the `validationToken` handshake as plain text (Microsoft requirement); POST prefers `clientState` but falls back to subscription ID matching before enqueuing at most one `full_sync` per user. |
 | `health` (`GET`) | Cron-protected health report (metrics + warnings). |
 
 All window/cron/webhook routes export `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`, `preferredRegion = 'fra1'`, and an explicit `maxDuration` so they always execute on the intended region within Vercel's time budget.

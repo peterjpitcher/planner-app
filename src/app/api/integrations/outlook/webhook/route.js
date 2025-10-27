@@ -83,10 +83,29 @@ export async function POST(request) {
     return new Response('Invalid payload', { status: 400 });
   }
 
+  const notifications = (payload.value || []).filter(
+    (item) => item && typeof item === 'object' && item.subscriptionId
+  );
+
+  if (notifications.length === 0) {
+    return new Response(null, { status: 202 });
+  }
+
   const expectedClientState = process.env.OUTLOOK_CLIENT_STATE;
-  const trustedNotifications = expectedClientState
-    ? payload.value.filter((item) => item.clientState === expectedClientState)
-    : payload.value;
+  let trustedNotifications = notifications;
+
+  if (expectedClientState) {
+    const matches = notifications.filter((item) => item.clientState === expectedClientState);
+    if (matches.length > 0) {
+      trustedNotifications = matches;
+    } else {
+      console.warn('Outlook webhook clientState mismatch', {
+        expected: expectedClientState,
+        received: Array.from(new Set(notifications.map((item) => item.clientState || 'null'))),
+        subscriptionIds: notifications.map((item) => item.subscriptionId)
+      });
+    }
+  }
 
   if (trustedNotifications.length === 0) {
     return new Response(null, { status: 202 });
