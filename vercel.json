@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/integrations/outlook/sync",
-      "schedule": "*/2 * * * *"
-    },
-    {
-      "path": "/api/integrations/outlook/subscriptions",
-      "schedule": "*/30 * * * *"
-    }
-  ]
-}
+{}
