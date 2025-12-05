@@ -207,9 +207,9 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       // 1. Add Note
       const noteContent = `Chased task. Pushed due date by ${daysToPush} day${daysToPush !== 1 ? 's' : ''}.`;
       await apiClient.createNote({
-        parent_id: task.id,
-        parent_type: 'task',
-        content: noteContent
+        task_id: task.id,
+        project_id: task.project_id || null,
+        content: noteContent,
       });
 
       // 2. Calculate New Date
