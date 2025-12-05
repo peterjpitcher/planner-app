@@ -152,7 +152,6 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
       const noteContent = `Chased task. Pushed due date by ${daysToPush} day${daysToPush !== 1 ? 's' : ''}.`;
       await apiClient.createNote({
         task_id: task.id,
-        project_id: task.project_id || null,
         content: noteContent,
       });
 
