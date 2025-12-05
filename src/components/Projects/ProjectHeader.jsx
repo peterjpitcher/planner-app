@@ -122,7 +122,7 @@ export default function ProjectHeader({
   };
 
   return (
-    <div className="relative z-10">
+    <div className="relative z-30">
       <div 
         className="relative cursor-pointer rounded-2xl bg-white/65 px-4 py-4 shadow-inner shadow-slate-200/40 transition-colors hover:bg-white/80" 
         onClick={() => { onToggleExpand(); setTargetProjectId(null); }}
