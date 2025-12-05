@@ -3,10 +3,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
-import { PencilIcon, Bars3Icon } from '@heroicons/react/24/outline';
+import { PencilIcon, Bars3Icon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
+import ChaseTaskModal from './ChaseTaskModal';
 
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
@@ -77,6 +78,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [currentPriority, setCurrentPriority] = useState(task.priority || '');
   const [isDragging, setIsDragging] = useState(false);
+  const [isChaseModalOpen, setIsChaseModalOpen] = useState(false);
   const { setTargetProjectId } = useTargetProject();
 
   useEffect(() => {
@@ -140,6 +142,37 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
       if (onTaskUpdated) onTaskUpdated(data);
     } catch (err) {
       // Error updating task status
+    }
+  };
+
+  const handleChaseConfirm = async (daysToPush) => {
+    setIsChaseModalOpen(false);
+    try {
+      // 1. Add Note
+      const noteContent = `Chased task. Pushed due date by ${daysToPush} day${daysToPush !== 1 ? 's' : ''}.`;
+      await apiClient.createNote({
+        parent_id: task.id,
+        parent_type: 'task',
+        content: noteContent
+      });
+
+      // 2. Calculate New Date
+      const baseDate = task.due_date ? new Date(task.due_date) : new Date();
+      const newDueDate = addDays(baseDate, daysToPush);
+      const formattedNewDate = format(newDueDate, 'yyyy-MM-dd');
+
+      // 3. Update Task
+      const data = await apiClient.updateTask(task.id, {
+        due_date: formattedNewDate,
+        updated_at: new Date().toISOString()
+      });
+      
+      if (data) {
+        setCurrentDueDate(formattedNewDate);
+        if (onTaskUpdated) onTaskUpdated(data);
+      }
+    } catch (error) {
+      console.error('Failed to chase task:', error);
     }
   };
 
@@ -233,6 +266,15 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
         onChange={handleToggleComplete}
         className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-slate-300/80 text-indigo-600 focus:ring-indigo-500 sm:h-5 sm:w-5"
       />
+      {!task.is_completed && (
+        <button
+          className="text-gray-300 hover:text-indigo-600 cursor-pointer flex-shrink-0 mt-0.5"
+          onClick={() => setIsChaseModalOpen(true)}
+          title="Chase task (add note & push due date)"
+        >
+          <PaperAirplaneIcon className="h-3.5 w-3.5 -rotate-45" />
+        </button>
+      )}
       <div className="flex-grow min-w-0">
         <div className="flex items-center justify-between">
           {isEditingName ? (
@@ -326,6 +368,12 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
           </span>
         </div>
       </div>
+      <ChaseTaskModal
+        isOpen={isChaseModalOpen}
+        onClose={() => setIsChaseModalOpen(false)}
+        onConfirm={handleChaseConfirm}
+        taskName={task.name}
+      />
     </div>
   );
 }

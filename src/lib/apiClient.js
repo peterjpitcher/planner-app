@@ -133,6 +133,18 @@ class APIClient {
     });
   }
 
+  // Batch fetch notes for multiple projects
+  async getProjectNotesBatch(projectIds) {
+    const cacheKey = `project-notes-batch-${projectIds.sort().join(',')}`;
+    return dedupedFetch(cacheKey, async () => {
+      const response = await this.fetchWithAuth('/api/notes/batch', {
+        method: 'POST',
+        body: JSON.stringify({ projectIds }),
+      });
+      return response || {};
+    });
+  }
+
   // Completed items report
   async getCompletedItems(startDate, endDate) {
     const params = new URLSearchParams({

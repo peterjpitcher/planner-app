@@ -5,7 +5,7 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 
-// POST /api/notes/batch - Fetch notes for multiple tasks
+// POST /api/notes/batch - Fetch notes for multiple tasks or projects
 export async function POST(request) {
   try {
     // Rate limiting - higher limit for batch operations
@@ -29,46 +29,62 @@ export async function POST(request) {
     }
     
     const body = await request.json();
-    const { taskIds } = body;
+    const { taskIds, projectIds } = body;
     
-    if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
-      return NextResponse.json({ error: 'Task IDs are required' }, { status: 400 });
+    const hasTaskIds = taskIds && Array.isArray(taskIds) && taskIds.length > 0;
+    const hasProjectIds = projectIds && Array.isArray(projectIds) && projectIds.length > 0;
+
+    if (!hasTaskIds && !hasProjectIds) {
+      return NextResponse.json({ error: 'Task IDs or Project IDs are required' }, { status: 400 });
     }
     
-    // Limit the number of tasks that can be fetched at once
-    if (taskIds.length > 200) {
-      return NextResponse.json({ error: 'Too many tasks requested (max 200)' }, { status: 400 });
+    // Limit the number of items that can be fetched at once
+    const count = (hasTaskIds ? taskIds.length : 0) + (hasProjectIds ? projectIds.length : 0);
+    if (count > 200) {
+      return NextResponse.json({ error: 'Too many items requested (max 200)' }, { status: 400 });
     }
     
     const supabase = getSupabaseServer(session.accessToken);
     
-    // Fetch all notes for the given task IDs
-    const { data, error } = await supabase
-      .from('notes')
-      .select('*')
-      .in('task_id', taskIds)
-      .order('created_at', { ascending: false });
+    let query = supabase.from('notes').select('*').order('created_at', { ascending: false });
+
+    if (hasTaskIds) {
+      query = query.in('task_id', taskIds);
+    } else if (hasProjectIds) {
+      query = query.in('project_id', projectIds);
+    }
+    
+    const { data, error } = await query;
     
     if (error) {
       const errorMessage = handleSupabaseError(error, 'fetch');
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
     
-    // Group notes by task ID
-    const notesByTask = {};
-    taskIds.forEach(id => {
-      notesByTask[id] = [];
-    });
+    // Group notes
+    const result = {};
     
-    if (data) {
-      data.forEach(note => {
-        if (notesByTask[note.task_id]) {
-          notesByTask[note.task_id].push(note);
-        }
-      });
+    if (hasTaskIds) {
+      taskIds.forEach(id => { result[id] = []; });
+      if (data) {
+        data.forEach(note => {
+          if (result[note.task_id]) {
+            result[note.task_id].push(note);
+          }
+        });
+      }
+    } else if (hasProjectIds) {
+      projectIds.forEach(id => { result[id] = []; });
+      if (data) {
+        data.forEach(note => {
+          if (result[note.project_id]) {
+            result[note.project_id].push(note);
+          }
+        });
+      }
     }
     
-    return NextResponse.json(notesByTask);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('POST /api/notes/batch error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

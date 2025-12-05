@@ -12,8 +12,8 @@ import MetricsBar from '@/components/dashboard/MetricsBar';
 import TasksPanel from '@/components/dashboard/TasksPanel';
 import { ProjectListSkeleton } from '@/components/ui/LoadingStates';
 import { EmptyProjects, EmptyFilteredResults } from '@/components/ui/EmptyStates';
-import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareAsc, compareDesc } from 'date-fns';
-import { RocketLaunchIcon, FireIcon, SparklesIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
+import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareDesc } from 'date-fns';
+import { RocketLaunchIcon, FireIcon, SparklesIcon, PlusCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 // Utility functions that don't need to be recreated
 const getPriorityValue = (priority) => {
@@ -193,6 +193,7 @@ export default function DashboardPage() {
   const [allUserTasks, setAllUserTasks] = useState([]);
   const [tasksByProject, setTasksByProject] = useState({});
   const [notesByTask, setNotesByTask] = useState({});
+  const [projectNotes, setProjectNotes] = useState({});
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [taskDragState, setTaskDragState] = useState({ active: false, sourceProjectId: null });
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
@@ -201,6 +202,7 @@ export default function DashboardPage() {
   const [activeDashboardFilters, setActiveDashboardFilters] = useState(() => createDefaultDashboardFilters());
   const [hideBillStakeholder, setHideBillStakeholder] = useState(false);
   const [isAddProjectModalOpen, setIsAddProjectModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -215,8 +217,14 @@ export default function DashboardPage() {
       // Batch fetch tasks for all projects
       if (finalSortedProjects.length > 0) {
         const projectIds = finalSortedProjects.map(p => p.id);
+        
+        // Fetch tasks
         const batchedTasks = await apiClient.getTasksBatch(projectIds);
         setTasksByProject(batchedTasks || {});
+
+        // Fetch project notes
+        const batchedProjectNotes = await apiClient.getProjectNotesBatch(projectIds);
+        setProjectNotes(batchedProjectNotes || {});
         
         // Flatten tasks for allUserTasks
         const allTasks = [];
@@ -244,6 +252,7 @@ export default function DashboardPage() {
         setTasksByProject({});
         setAllUserTasks([]);
         setNotesByTask({});
+        setProjectNotes({});
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -251,6 +260,7 @@ export default function DashboardPage() {
       setAllUserTasks([]);
       setTasksByProject({});
       setNotesByTask({});
+      setProjectNotes({});
     } finally {
       setIsLoadingData(false);
     }
@@ -299,6 +309,39 @@ export default function DashboardPage() {
     activeDashboardFilters,
     projectAnalysis,
   }), [projects, selectedStakeholder, hideBillStakeholder, activeDashboardFilters, projectAnalysis]);
+
+  const searchedProjects = useMemo(() => {
+    if (!searchTerm.trim()) return baseFilteredProjects;
+    
+    const lowerSearch = searchTerm.toLowerCase();
+    
+    return baseFilteredProjects.filter(project => {
+      // 1. Check project details
+      if (
+        project.name?.toLowerCase().includes(lowerSearch) ||
+        project.description?.toLowerCase().includes(lowerSearch)
+      ) return true;
+
+      // 2. Check project stakeholders
+      if (project.stakeholders?.some(s => s.toLowerCase().includes(lowerSearch))) return true;
+
+      // 3. Check project notes
+      const pNotes = projectNotes[project.id] || [];
+      if (pNotes.some(n => n.content?.toLowerCase().includes(lowerSearch))) return true;
+
+      // 4. Check tasks and task notes
+      const pTasks = tasksByProject[project.id] || [];
+      return pTasks.some(task => {
+        if (
+          task.name?.toLowerCase().includes(lowerSearch) ||
+          task.description?.toLowerCase().includes(lowerSearch)
+        ) return true;
+        
+        const tNotes = notesByTask[task.id] || [];
+        return tNotes.some(n => n.content?.toLowerCase().includes(lowerSearch));
+      });
+    });
+  }, [baseFilteredProjects, searchTerm, projectNotes, tasksByProject, notesByTask]);
 
   const filteredTasksForDashboard = useMemo(() => filterDashboardItems({
     type: DASHBOARD_FILTER_TYPES.TASK,
@@ -521,6 +564,7 @@ export default function DashboardPage() {
     setSelectedStakeholder('All Stakeholders');
     setActiveDashboardFilters(createDefaultDashboardFilters());
     setHideBillStakeholder(false);
+    setSearchTerm('');
   }, []);
   const handleSignOut = useCallback(async () => {
     try {
@@ -622,8 +666,9 @@ export default function DashboardPage() {
            activeDashboardFilters.noTasks || 
            activeDashboardFilters.untouched || 
            activeDashboardFilters.noDueDate ||
-           hideBillStakeholder;
-  }, [selectedStakeholder, activeDashboardFilters, hideBillStakeholder]);
+           hideBillStakeholder ||
+           searchTerm.trim().length > 0;
+  }, [selectedStakeholder, activeDashboardFilters, hideBillStakeholder, searchTerm]);
 
   // Memoize project title
   const projectSectionTitle = useMemo(() => {
@@ -684,8 +729,11 @@ export default function DashboardPage() {
         filters.push({ id: `focus:${key}`, label: DASHBOARD_FILTER_LABELS[key] || key });
       }
     });
+    if (searchTerm) {
+      filters.push({ id: 'search', label: `Search: "${searchTerm}"` });
+    }
     return filters;
-  }, [selectedStakeholder, hideBillStakeholder, activeDashboardFilters]);
+  }, [selectedStakeholder, hideBillStakeholder, activeDashboardFilters, searchTerm]);
   const workspaceSubtitle = useMemo(() => {
     if (hasActiveFilters) {
       return 'Filter stack engaged — review the prioritized view and clear filters when finished.';
@@ -789,41 +837,60 @@ export default function DashboardPage() {
           )}
 
           <section className="card-surface overflow-hidden border border-[#0496c7]/20 bg-white/90 text-[#052a3b] shadow-[0_28px_60px_-32px_rgba(4,150,199,0.35)]">
-            <div className="border-b border-[#0496c7]/20 bg-white px-6 py-6">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.25em] text-[#036586]/80">Projects</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#052a3b]">{projectSectionTitle}</h2>
-                  <p className="mt-2 text-sm text-[#2f617a]">
-                    {hasActiveFilters
-                      ? `Showing ${baseFilteredProjects.length} project${baseFilteredProjects.length === 1 ? '' : 's'} that match your current filters.`
-                      : `Monitoring ${baseFilteredProjects.length} project${baseFilteredProjects.length === 1 ? '' : 's'} in flight.`}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="rounded-full border border-[#0496c7]/30 bg-[#0496c7]/12 px-4 py-2 text-xs font-semibold tracking-wide text-[#036586]">
-                    {baseFilteredProjects.length} showing
+            <div className="border-b border-[#0496c7]/20 bg-white p-4 sm:p-6">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.25em] text-[#036586]/80">Projects</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-[#052a3b]">{projectSectionTitle}</h2>
+                    <p className="mt-2 text-sm text-[#2f617a]">
+                      {hasActiveFilters
+                        ? `Showing ${searchedProjects.length} project${searchedProjects.length === 1 ? '' : 's'} that match your current filters.`
+                        : `Monitoring ${searchedProjects.length} project${searchedProjects.length === 1 ? '' : 's'} in flight.`}
+                    </p>
                   </div>
-                  {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={handleResetFilters}
-                      className="inline-flex items-center rounded-full border border-[#0496c7]/25 px-4 py-2 text-xs font-medium text-[#036586] transition hover:border-[#0496c7]/45 hover:text-[#0496c7]"
-                    >
-                      Reset filters
-                    </button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="rounded-full border border-[#0496c7]/30 bg-[#0496c7]/12 px-4 py-2 text-xs font-semibold tracking-wide text-[#036586]">
+                      {searchedProjects.length} showing
+                    </div>
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={handleResetFilters}
+                        className="inline-flex items-center rounded-full border border-[#0496c7]/25 px-4 py-2 text-xs font-medium text-[#036586] transition hover:border-[#0496c7]/45 hover:text-[#0496c7]"
+                      >
+                        Reset filters
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Search Input */}
+                <div className="relative mt-2">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                    <MagnifyingGlassIcon className="h-5 w-5 text-[#036586]/50" aria-hidden="true" />
+                  </div>
+                  <input
+                    type="text"
+                    name="search"
+                    id="search"
+                    className="block w-full rounded-xl border border-[#0496c7]/20 bg-white/50 py-2.5 pl-10 pr-3 text-sm text-[#052a3b] placeholder-[#2f617a]/50 shadow-inner shadow-[#0496c7]/5 focus:border-[#0496c7]/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0496c7]/20 sm:text-sm"
+                    placeholder="Type to filter projects by name, task, or note..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
-            <div className="bg-white px-2 py-6 sm:px-4 md:px-6">
+            <div className="bg-white p-4 sm:p-6">
               {isLoadingData ? (
                 <ProjectListSkeleton />
-              ) : baseFilteredProjects.length > 0 ? (
+              ) : searchedProjects.length > 0 ? (
                 <ProjectList
-                  projects={baseFilteredProjects}
+                  projects={searchedProjects}
                   tasksByProject={tasksByProject}
                   notesByTask={notesByTask}
+                  projectNotes={projectNotes}
                   onProjectDataChange={handleProjectDataChange}
                   onProjectDeleted={handleProjectDeleted}
                   onProjectUpdated={handleProjectUpdate}
@@ -842,7 +909,7 @@ export default function DashboardPage() {
         </div>
       </AppShell>
 
-      <div className="px-4 pb-10 sm:px-6 lg:px-10">
+      <div className="px-4 pb-10 sm:px-6 lg:px-8">
         <button
           type="button"
           onClick={handleSignOut}

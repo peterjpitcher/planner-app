@@ -64,7 +64,7 @@ export default function AppShell({
       </div>
 
       <div className="relative">
-        <header className="px-4 pt-4 sm:px-6 lg:px-10 sm:pt-6">
+        <header className="px-4 pt-4 sm:px-6 lg:px-8 sm:pt-6">
           <div className="backdrop-card flex flex-col gap-5 rounded-2xl border border-[#0496c7]/25 px-5 py-4 sm:gap-6 sm:px-6 sm:py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.35em] text-[#036586]/80">Planner</p>
@@ -87,7 +87,7 @@ export default function AppShell({
           </div>
         </header>
 
-        <main className="relative z-10 px-6 pt-8 lg:px-10">
+        <main className="relative z-10 px-4 pt-8 sm:px-6 lg:px-8">
           <div className={gridClassName}>
             {sidebar && (
               <aside className="glass-panel hidden h-fit flex-col gap-6 rounded-3xl border border-[#0496c7]/25 p-6 text-[#052a3b] lg:flex">

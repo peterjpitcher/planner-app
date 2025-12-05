@@ -2,7 +2,6 @@
 
 import { EyeIcon, EyeSlashIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon, CalendarDaysIcon, ClockIcon, ExclamationTriangleIcon, InboxIcon } from '@heroicons/react/24/outline';
 import { Switch } from '@headlessui/react';
-import OutlookSyncCard from './OutlookSyncCard';
 
 const filterOrder = ['overdue', 'noTasks', 'untouched', 'noDueDate'];
 
@@ -186,8 +185,6 @@ export default function SidebarFilters({
           })}
         </div>
       </div>
-
-      <OutlookSyncCard />
     </div>
   );
 }

@@ -2,8 +2,6 @@ import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
-import { enqueueTaskSyncJob } from './taskSyncQueue';
-
 async function ensureUnassignedProject(supabase, userId) {
   const { data: existingProject, error: fetchError } = await supabase
     .from('projects')
@@ -101,17 +99,6 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
     .update({ updated_at: new Date().toISOString() })
     .eq('id', taskData.project_id);
 
-  if (!options.skipSyncJob) {
-    await enqueueTaskSyncJob({
-      userId,
-      taskId: data.id,
-      action: 'create',
-      metadata: {
-        projectId: data.project_id
-      }
-    });
-  }
-
   return { data };
 }
 
@@ -140,12 +127,6 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     updatesToApply.updated_at = new Date().toISOString();
   }
 
-  const { data: syncState } = await supabase
-    .from('task_sync_state')
-    .select('graph_task_id, graph_etag, graph_list_id')
-    .eq('task_id', taskId)
-    .maybeSingle();
-
   const { data, error } = await supabase
     .from('tasks')
     .update(updatesToApply)
@@ -163,20 +144,6 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
       .from('projects')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', existingTask.project_id);
-  }
-
-  if (!options.skipSyncJob) {
-    await enqueueTaskSyncJob({
-      userId,
-      taskId,
-      action: 'update',
-      metadata: {
-        graphTaskId: syncState?.graph_task_id || null,
-        graphEtag: syncState?.graph_etag || null,
-        projectId: data.project_id,
-        previousProjectId: existingTask.project_id
-      }
-    });
   }
 
   return { data };
@@ -197,12 +164,6 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
     return { error: { status: 403, message: 'Forbidden' } };
   }
 
-  const { data: syncState } = await supabase
-    .from('task_sync_state')
-    .select('graph_task_id, graph_etag, graph_list_id')
-    .eq('task_id', taskId)
-    .maybeSingle();
-
   const { error } = await supabase
     .from('tasks')
     .delete()
@@ -218,20 +179,6 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
       .from('projects')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', existingTask.project_id);
-  }
-
-  if (!options.skipSyncJob) {
-    await enqueueTaskSyncJob({
-      userId,
-      taskId,
-      action: 'delete',
-      metadata: {
-        graphTaskId: syncState?.graph_task_id || null,
-        graphEtag: syncState?.graph_etag || null,
-        projectId: existingTask.project_id,
-        graphListId: syncState?.graph_list_id || null
-      }
-    });
   }
 
   return { data: { success: true } };

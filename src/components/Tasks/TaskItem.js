@@ -1,14 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
+import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
-import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon } from '@heroicons/react/24/outline';
+import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
+import ChaseTaskModal from './ChaseTaskModal';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 
 // Helper to get priority styling
@@ -80,6 +81,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
   const [currentPriority, setCurrentPriority] = useState(task ? task.priority || '' : '');
   const noteInputRef = useRef(null); // Ref for the note input
   const [isDragging, setIsDragging] = useState(false);
+  const [isChaseModalOpen, setIsChaseModalOpen] = useState(false);
 
   // All useEffect and useCallback hooks
   useEffect(() => {
@@ -193,6 +195,45 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       if (onTaskUpdated) onTaskUpdated(data);
     } catch (err) {
       handleError(err, 'handleToggleComplete', { showAlert: true });
+    } finally {
+      setIsUpdatingTask(false);
+    }
+  };
+
+  const handleChaseConfirm = async (daysToPush) => {
+    setIsChaseModalOpen(false);
+    setIsUpdatingTask(true);
+    try {
+      // 1. Add Note
+      const noteContent = `Chased task. Pushed due date by ${daysToPush} day${daysToPush !== 1 ? 's' : ''}.`;
+      await apiClient.createNote({
+        parent_id: task.id,
+        parent_type: 'task',
+        content: noteContent
+      });
+
+      // 2. Calculate New Date
+      // If current due date exists, add to that. If not, add to today.
+      const baseDate = task.due_date ? new Date(task.due_date) : new Date();
+      const newDueDate = addDays(baseDate, daysToPush);
+      const formattedNewDate = format(newDueDate, 'yyyy-MM-dd');
+
+      // 3. Update Task
+      const updateObject = {
+        due_date: formattedNewDate,
+        updated_at: new Date().toISOString()
+      };
+
+      const data = await apiClient.updateTask(task.id, updateObject);
+      
+      if (data) {
+        setCurrentDueDate(formattedNewDate);
+        if (onTaskUpdated) onTaskUpdated(data);
+        // Refresh notes to show the chase note
+        fetchNotes();
+      }
+    } catch (error) {
+      handleError(error, 'handleChaseConfirm', { showAlert: true });
     } finally {
       setIsUpdatingTask(false);
     }
@@ -353,6 +394,15 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
             className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 flex-shrink-0 cursor-pointer mt-0.5"
             style={{ minWidth: '16px', minHeight: '16px' }}
           />
+          {!isCompleted && !isEditingTaskName && !isEditingTaskDescription && !isEditingDueDate && !isEditingPriority && (
+            <button
+              className="text-gray-300 hover:text-indigo-600 cursor-pointer flex-shrink-0 mt-0.5"
+              onClick={() => setIsChaseModalOpen(true)}
+              title="Chase task (add note & push due date)"
+            >
+              <PaperAirplaneIcon className="h-3.5 w-3.5 -rotate-45" />
+            </button>
+          )}
           <div className="flex min-w-0 flex-1">
             <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-1.5">
               {isEditingTaskName ? (
@@ -387,13 +437,15 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
                     autoFocus
                   />
                 ) : (
-                  <span 
-                    onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
-                    className={`block text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''}`}
-                    title={currentTaskDescription}
-                  >
-                    {currentTaskDescription || (isEditingTaskName ? '' : <span className="italic opacity-70">No description</span>)}
-                  </span>
+                  currentTaskDescription ? (
+                    <span 
+                      onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
+                      className={`block text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''}`}
+                      title={currentTaskDescription}
+                    >
+                      {currentTaskDescription}
+                    </span>
+                  ) : null
                 )
               )}
             </div>
@@ -495,6 +547,13 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
           )}
         </div>
       )}
+
+      <ChaseTaskModal
+        isOpen={isChaseModalOpen}
+        onClose={() => setIsChaseModalOpen(false)}
+        onConfirm={handleChaseConfirm}
+        taskName={task.name}
+      />
     </div>
   );
 }
