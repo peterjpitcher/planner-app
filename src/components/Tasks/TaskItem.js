@@ -212,8 +212,8 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       });
 
       // 2. Calculate New Date
-      // If current due date exists, add to that. If not, add to today.
-      const baseDate = task.due_date ? new Date(task.due_date) : new Date();
+      // Always add to today, regardless of original due date
+      const baseDate = new Date();
       const newDueDate = addDays(baseDate, daysToPush);
       const formattedNewDate = format(newDueDate, 'yyyy-MM-dd');
 

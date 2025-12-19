@@ -79,6 +79,20 @@ export default function AppShell({
                 </div>
               )}
               <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+                <div className="flex items-center gap-1 mr-4 border-r border-[#0496c7]/20 pr-4">
+                  <Link
+                    href="/dashboard"
+                    className="px-3 py-1.5 text-sm font-medium text-[#2f617a] hover:text-[#0496c7] transition-colors rounded-lg hover:bg-[#0496c7]/5"
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
+                    href="/journal"
+                    className="px-3 py-1.5 text-sm font-medium text-[#2f617a] hover:text-[#0496c7] transition-colors rounded-lg hover:bg-[#0496c7]/5"
+                  >
+                    Journal
+                  </Link>
+                </div>
                 {actions.map((action) => (
                   <ActionButton key={action.key ?? action.label} action={action} />
                 ))}

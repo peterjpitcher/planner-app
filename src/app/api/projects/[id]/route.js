@@ -29,7 +29,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     
   const supabase = getSupabaseServer(session.accessToken);
@@ -95,7 +95,7 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const { id } = params;
+    const { id } = await params;
     const supabase = getSupabaseServer();
     
     // Verify ownership
