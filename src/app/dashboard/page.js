@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { apiClient } from '@/lib/apiClient';
-import ProjectList from '@/components/Projects/ProjectList';
-import AddProjectModal from '@/components/Projects/AddProjectModal';
+import ProjectList from '@/components/projects/ProjectList';
+import AddProjectModal from '@/components/projects/AddProjectModal';
 import AppShell from '@/components/layout/AppShell';
 import SidebarFilters from '@/components/dashboard/SidebarFilters';
 import MetricsBar from '@/components/dashboard/MetricsBar';
@@ -210,14 +210,14 @@ export default function DashboardPage() {
     try {
       // Fetch projects using API
       const projectData = await apiClient.getProjects(showCompletedProjects);
-      
+
       const finalSortedProjects = (projectData || []).sort(sortProjectsByPriorityThenDateDesc);
       setProjects(finalSortedProjects);
 
       // Batch fetch tasks for all projects
       if (finalSortedProjects.length > 0) {
         const projectIds = finalSortedProjects.map(p => p.id);
-        
+
         // Fetch tasks
         const batchedTasks = await apiClient.getTasksBatch(projectIds);
         setTasksByProject(batchedTasks || {});
@@ -225,7 +225,7 @@ export default function DashboardPage() {
         // Fetch project notes
         const batchedProjectNotes = await apiClient.getProjectNotesBatch(projectIds);
         setProjectNotes(batchedProjectNotes || {});
-        
+
         // Flatten tasks for allUserTasks
         const allTasks = [];
         const now = new Date();
@@ -239,7 +239,7 @@ export default function DashboardPage() {
         });
         const sortedTasks = tasksDueTodayOrEarlier.sort(sortTasksByDateDescThenPriority);
         setAllUserTasks(sortedTasks);
-        
+
         // Batch fetch notes for all tasks
         if (allTasks.length > 0) {
           const taskIds = allTasks.map(t => t.id);
@@ -271,7 +271,7 @@ export default function DashboardPage() {
       fetchData();
     }
   }, [status, user, fetchData]);
-  
+
   useEffect(() => {
     // Only redirect if we're sure the user is unauthenticated
     if (status === 'unauthenticated') {
@@ -312,9 +312,9 @@ export default function DashboardPage() {
 
   const searchedProjects = useMemo(() => {
     if (!searchTerm.trim()) return baseFilteredProjects;
-    
+
     const lowerSearch = searchTerm.toLowerCase();
-    
+
     return baseFilteredProjects.filter(project => {
       // 1. Check project details
       if (
@@ -336,7 +336,7 @@ export default function DashboardPage() {
           task.name?.toLowerCase().includes(lowerSearch) ||
           task.description?.toLowerCase().includes(lowerSearch)
         ) return true;
-        
+
         const tNotes = notesByTask[task.id] || [];
         return tNotes.some(n => n.content?.toLowerCase().includes(lowerSearch));
       });
@@ -356,8 +356,8 @@ export default function DashboardPage() {
   const handleProjectDataChange = useCallback((itemId, changedData, itemType = 'project', details) => {
     if (itemType === 'task_added') {
       const newTask = details?.task || changedData;
-      if (!newTask?.id || !newTask.project_id) { 
-        fetchData(); 
+      if (!newTask?.id || !newTask.project_id) {
+        fetchData();
         return;
       }
 
@@ -509,7 +509,7 @@ export default function DashboardPage() {
       }
     } else if (itemType === 'project_status_changed' || itemType === 'project_details_changed') {
       const updatedProjectPartial = changedData;
-      setProjects(prevProjects => 
+      setProjects(prevProjects =>
         prevProjects
           .map(p => p.id === itemId ? { ...p, ...updatedProjectPartial, updated_at: new Date().toISOString() } : p)
           .filter(p => showCompletedProjects || (p.status !== 'Completed' && p.status !== 'Cancelled'))
@@ -522,7 +522,7 @@ export default function DashboardPage() {
           })
       );
     } else {
-      fetchData(); 
+      fetchData();
     }
   }, [showCompletedProjects, fetchData]);
 
@@ -592,7 +592,7 @@ export default function DashboardPage() {
 
   // Memoize project update handler
   const handleProjectUpdate = useCallback((updatedProject) => {
-    setProjects(prevProjects => 
+    setProjects(prevProjects =>
       prevProjects
         .map(p => p.id === updatedProject.id ? updatedProject : p)
         .sort((a, b) => {
@@ -616,9 +616,9 @@ export default function DashboardPage() {
       priority: priority || 'Medium',
     };
     const createdTask = await apiClient.createTask(newTaskPayload);
-    handleProjectDataChange(createdTask.id, createdTask, 'task_added', { 
-      task: createdTask, 
-      project: createdTask.projects 
+    handleProjectDataChange(createdTask.id, createdTask, 'task_added', {
+      task: createdTask,
+      project: createdTask.projects
     });
     return createdTask;
   }, [userId, handleProjectDataChange]);
@@ -661,13 +661,13 @@ export default function DashboardPage() {
 
   // Memoize active filter check
   const hasActiveFilters = useMemo(() => {
-    return selectedStakeholder !== 'All Stakeholders' || 
-           activeDashboardFilters.overdue || 
-           activeDashboardFilters.noTasks || 
-           activeDashboardFilters.untouched || 
-           activeDashboardFilters.noDueDate ||
-           hideBillStakeholder ||
-           searchTerm.trim().length > 0;
+    return selectedStakeholder !== 'All Stakeholders' ||
+      activeDashboardFilters.overdue ||
+      activeDashboardFilters.noTasks ||
+      activeDashboardFilters.untouched ||
+      activeDashboardFilters.noDueDate ||
+      hideBillStakeholder ||
+      searchTerm.trim().length > 0;
   }, [selectedStakeholder, activeDashboardFilters, hideBillStakeholder, searchTerm]);
 
   // Memoize project title
@@ -748,7 +748,7 @@ export default function DashboardPage() {
       </div>
     );
   }
-  
+
   // If authenticated but no user data yet, show loading
   if (status === 'authenticated' && !user) {
     return (
@@ -757,7 +757,7 @@ export default function DashboardPage() {
       </div>
     );
   }
-  
+
   // Don't render dashboard if not authenticated
   if (status === 'unauthenticated') {
     return null;
@@ -864,7 +864,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-                
+
                 {/* Search Input */}
                 <div className="relative mt-2">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">

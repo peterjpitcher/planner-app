@@ -7,7 +7,7 @@ import React from 'react';
  */
 export function ProjectSkeleton() {
   return (
-    <div className="animate-pulse bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+    <div className="animate-pulse bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
       <div className="flex justify-between items-start mb-3">
         <div className="flex-1">
           <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>

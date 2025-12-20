@@ -18,7 +18,7 @@ export default function MetricsBar({ metrics = [] }) {
         return (
           <div
             key={metric.id}
-            className="relative overflow-hidden rounded-3xl border border-[#0496c7]/25 bg-white/90 p-5 text-[#052a3b] shadow-[0_20px_45px_-28px_rgba(4,150,199,0.35)] transition hover:border-[#0496c7]/40 hover:bg-white"
+            className="relative overflow-hidden rounded-3xl border border-white/40 bg-white/95 p-4 sm:p-6 text-[#052a3b] shadow-lg transition hover:border-white/60 hover:bg-white"
           >
             <div className="absolute inset-0 opacity-80">
               <div className={`absolute -top-12 right-0 h-32 w-32 rounded-full blur-3xl ${metric.glow || 'bg-[#0496c7]/28'}`} />

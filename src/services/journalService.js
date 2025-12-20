@@ -3,23 +3,18 @@ import { supabase } from '@/lib/supabaseClient';
 
 export const journalService = {
     async saveEntry(content) {
-        const { data: { user } } = await supabase.auth.getUser();
+        const response = await fetch('/api/journal/entries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+        });
 
-        if (!user) throw new Error('User not authenticated');
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to save entry');
+        }
 
-        const { data, error } = await supabase
-            .from('journal_entries')
-            .insert([
-                {
-                    user_id: user.id,
-                    content
-                }
-            ])
-            .select()
-            .single();
-
-        if (error) throw error;
-        return data;
+        return response.json();
     },
 
     async getEntries() {

@@ -1,13 +1,13 @@
 'use client';
 
-import LoginForm from '@/components/Auth/LoginForm';
+import LoginForm from '@/components/auth/LoginForm';
 import Link from 'next/link';
 import { Suspense } from 'react';
 
 function LoginContent() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen py-2 bg-gray-50">
-      <div className="w-full max-w-md p-8 space-y-8 bg-white shadow-md rounded-lg">
+      <div className="w-full max-w-md p-6 sm:p-8 space-y-8 bg-white shadow-md rounded-lg">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">Welcome Back!</h1>
           <p className="mt-2 text-sm text-gray-600">

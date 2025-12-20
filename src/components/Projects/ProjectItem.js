@@ -5,15 +5,15 @@ import { format } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { EyeIcon, EyeSlashIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
-import TaskList from '@/components/Tasks/TaskList';
-import NoteList from '@/components/Notes/NoteList';
-import AddNoteForm from '@/components/Notes/AddNoteForm';
-import ProjectNoteWorkspaceModal from '@/components/Notes/ProjectNoteWorkspaceModal';
+import TaskList from '@/components/tasks/TaskList';
+import NoteList from '@/components/notes/NoteList';
+import AddNoteForm from '@/components/notes/AddNoteForm';
+import ProjectNoteWorkspaceModal from '@/components/notes/ProjectNoteWorkspaceModal';
 import ProjectCompletionModal from './ProjectCompletionModal';
 import ProjectHeader from './ProjectHeader';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { useSession } from 'next-auth/react';
-import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
+import QuickTaskForm from '@/components/tasks/QuickTaskForm';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 import { getPriorityClasses } from '@/lib/projectHelpers';
 
@@ -30,25 +30,25 @@ const ProjectItem = forwardRef((
     areAllTasksExpanded,
     isDropMode = false,
     dragSourceProjectId = null,
-    onTaskDragStateChange = () => {},
+    onTaskDragStateChange = () => { },
   },
   ref
 ) => {
   const { data: session } = useSession();
   const currentUser = session?.user;
-  
+
   // Task State
   const [tasks, setTasks] = useState(propTasks || []);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showTasks, setShowTasks] = useState(areAllTasksExpanded !== undefined ? areAllTasksExpanded : true);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
-  
+
   // Note State
   const [showProjectNotes, setShowProjectNotes] = useState(false);
   const [projectNotes, setProjectNotes] = useState(propNotes || []);
   const [isLoadingProjectNotes, setIsLoadingProjectNotes] = useState(false);
   const [isNoteWorkspaceOpen, setIsNoteWorkspaceOpen] = useState(false);
-  
+
   // Modal State
   const [copyStatus, setCopyStatus] = useState('Copy');
   const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -85,7 +85,7 @@ const ProjectItem = forwardRef((
   // Update notes when propNotes changes
   useEffect(() => {
     if (propNotes) {
-      const sortedNotes = [...propNotes].sort((a, b) => 
+      const sortedNotes = [...propNotes].sort((a, b) =>
         new Date(b.created_at) - new Date(a.created_at)
       );
       setProjectNotes(sortedNotes);
@@ -104,7 +104,7 @@ const ProjectItem = forwardRef((
     setIsLoadingProjectNotes(true);
     try {
       const data = await apiClient.getNotes(project.id);
-      const sortedNotes = (data || []).sort((a, b) => 
+      const sortedNotes = (data || []).sort((a, b) =>
         new Date(b.created_at) - new Date(a.created_at)
       );
       setProjectNotes(sortedNotes);
@@ -137,51 +137,51 @@ const ProjectItem = forwardRef((
   const handleUpdateProject = async (updates) => {
     // Intercept status change for completion modal
     if (updates.status === 'Completed' && openTasksCount > 0) {
-        setStatusToConfirm('Completed');
-        setShowCompletionModal(true);
-        return; // Don't update yet
+      setStatusToConfirm('Completed');
+      setShowCompletionModal(true);
+      return; // Don't update yet
     }
 
     try {
-        const data = await apiClient.updateProject(project.id, {
-            ...updates,
-            updated_at: new Date().toISOString()
-        });
-        
-        if (onProjectDataChange && data) {
-            onProjectDataChange(project.id, data, 'project_details_changed');
-        }
+      const data = await apiClient.updateProject(project.id, {
+        ...updates,
+        updated_at: new Date().toISOString()
+      });
+
+      if (onProjectDataChange && data) {
+        onProjectDataChange(project.id, data, 'project_details_changed');
+      }
     } catch (err) {
-        handleError(err, 'handleUpdateProject', { showAlert: true });
-        throw err; // Re-throw so child can revert state
+      handleError(err, 'handleUpdateProject', { showAlert: true });
+      throw err; // Re-throw so child can revert state
     }
   };
 
   const handleTaskAdded = (newTask) => {
     const newTasks = [newTask, ...tasks].sort((a, b) => {
-        if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-        return 0;
+      if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+      return 0;
     });
     setTasks(newTasks);
     onProjectDataChange(project.id, { ...project, updated_at: new Date().toISOString() }, 'task_added', { task: newTask });
   };
 
-  const handleTaskUpdated = (updatedTask) => { 
+  const handleTaskUpdated = (updatedTask) => {
     const updatedTasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t)
-        .sort((a, b) => {
-            if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-            return 0;
-        });
+      .sort((a, b) => {
+        if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+        return 0;
+      });
     setTasks(updatedTasks);
 
     if (onProjectDataChange && project && updatedTask) {
-        onProjectDataChange(project.id, updatedTask, 'task_updated');
+      onProjectDataChange(project.id, updatedTask, 'task_updated');
     }
 
     if (updatedTask.is_completed && project) {
       const allTasksForProjectNowComplete = updatedTasks.every(t => t.is_completed);
-      if (allTasksForProjectNowComplete && updatedTasks.length > 0 && !isProjectCompletedOrCancelled) { 
-        setTargetProjectId(project.id); 
+      if (allTasksForProjectNowComplete && updatedTasks.length > 0 && !isProjectCompletedOrCancelled) {
+        setTargetProjectId(project.id);
       }
     }
   };
@@ -189,7 +189,7 @@ const ProjectItem = forwardRef((
   const completeOpenTaskFromWorkspace = async (taskId) => {
     if (!taskId) return;
     try {
-      const updatedTask = await apiClient.updateTask(taskId, { 
+      const updatedTask = await apiClient.updateTask(taskId, {
         is_completed: true,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -205,12 +205,12 @@ const ProjectItem = forwardRef((
 
   const handleDeleteProject = async () => {
     if (project && window.confirm('Are you sure you want to delete project "' + project.name + '" and all its tasks? This action cannot be undone.')) {
-        try {
-            await apiClient.deleteProject(project.id);
-            if (onProjectDeleted) onProjectDeleted(project.id);
-        } catch (err) {
-            handleError(err, 'handleDeleteProject', { showAlert: true });
-        }
+      try {
+        await apiClient.deleteProject(project.id);
+        if (onProjectDeleted) onProjectDeleted(project.id);
+      } catch (err) {
+        handleError(err, 'handleDeleteProject', { showAlert: true });
+      }
     }
   };
 
@@ -255,7 +255,7 @@ const ProjectItem = forwardRef((
           }
         })
       );
-      
+
       if (tasksWithNotes && tasksWithNotes.length > 0) {
         tasksWithNotes.forEach(taskItem => {
           projectDataText += `  - Task: ${taskItem.name}\n`;
@@ -299,9 +299,9 @@ const ProjectItem = forwardRef((
     if (openTasks.length > 0) {
       try {
         await Promise.all(
-          openTasks.map(task => 
-            apiClient.updateTask(task.id, { 
-              is_completed: true, 
+          openTasks.map(task =>
+            apiClient.updateTask(task.id, {
+              is_completed: true,
               completed_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
@@ -309,23 +309,23 @@ const ProjectItem = forwardRef((
         );
         // Force reload tasks? Usually not needed if we trust the loop
       } catch (err) {
-        handleError(err, 'handleConfirmCompleteTasksAndProject', { 
-          showAlert: true, 
-          fallbackMessage: 'Could not complete all open tasks. Project status not changed.' 
+        handleError(err, 'handleConfirmCompleteTasksAndProject', {
+          showAlert: true,
+          fallbackMessage: 'Could not complete all open tasks. Project status not changed.'
         });
         return;
       }
     }
     if (statusToConfirm) {
       try {
-          await apiClient.updateProject(project.id, { 
-            status: statusToConfirm, 
-            updated_at: new Date().toISOString() 
-          });
-          // Update via parent callback
-           onProjectDataChange(project.id, { ...project, status: statusToConfirm }, 'project_status_changed');
+        await apiClient.updateProject(project.id, {
+          status: statusToConfirm,
+          updated_at: new Date().toISOString()
+        });
+        // Update via parent callback
+        onProjectDataChange(project.id, { ...project, status: statusToConfirm }, 'project_status_changed');
       } catch (e) {
-          // ignore
+        // ignore
       }
       setStatusToConfirm(null);
     }
@@ -458,12 +458,12 @@ const ProjectItem = forwardRef((
           <div className="rounded-2xl bg-white/75 p-4 sm:p-6 shadow-inner shadow-slate-200/40 transition-colors">
             {/* Minimal Drop Content */}
             <div className="flex items-center justify-between gap-3">
-                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{project.name || 'Unnamed Project'}</p>
-                  <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDragOverTarget ? 'text-emerald-500' : 'text-[#036586]/70'}`}>
-                    {dropStatusText}
-                  </p>
-                </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{project.name || 'Unnamed Project'}</p>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDragOverTarget ? 'text-emerald-500' : 'text-[#036586]/70'}`}>
+                  {dropStatusText}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -516,8 +516,8 @@ const ProjectItem = forwardRef((
     <div {...containerProps}>
       <span className={`pointer-events-none absolute inset-x-3 top-2 h-[6px] rounded-full bg-gradient-to-r ${priorityStyles.ribbonClass}`} />
       <div className={`pointer-events-none absolute -top-10 right-0 h-32 w-32 rounded-full ${priorityStyles.glowClass} blur-3xl`} />
-      
-      <ProjectHeader 
+
+      <ProjectHeader
         project={project}
         isExpanded={showTasks}
         onToggleExpand={() => setShowTasks(!showTasks)}
@@ -556,45 +556,45 @@ const ProjectItem = forwardRef((
       )}
 
       {showTasks && (
-          <div className="border-t border-gray-200 bg-gray-50/50 relative z-10">
-            <div className="px-4 py-3 sm:px-6 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs font-semibold text-slate-600">
-                  Tasks ({openTasksCount} open, {completedTasksCount} completed)
-                </h4>
-                {tasks.length > 0 && completedTasksCount > 0 && (
-                    <button
-                            onClick={(e) => {e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks);}}
-                            className="touch-target-sm text-xs text-indigo-600 hover:text-indigo-800 flex items-center"
-                        >
-                            {showCompletedTasks ? <EyeSlashIcon className="w-3.5 h-3.5 mr-1"/> : <EyeIcon className="w-3.5 h-3.5 mr-1"/>}
-                            {showCompletedTasks ? 'Hide' : 'Show'} Completed
-                        </button>
-                    )}
-              </div>
-            </div>
-            <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-              {isLoadingTasks ? (
-                <div className="flex items-center justify-center rounded-2xl border border-[#0496c7]/25 bg-white/85 py-3 text-xs text-[#036586] shadow-inner shadow-[#0496c7]/10">
-                  Loading tasks…
-                </div>
-              ) : tasks.length > 0 ? (
-                <TaskList
-                  tasks={tasks}
-                  notesByTask={notesByTask}
-                  isLoading={isLoadingTasks}
-                  onTaskUpdated={handleTaskUpdated}
-                  showCompletedTasks={showCompletedTasks}
-                  isProjectCompleted={isProjectCompletedOrCancelled}
-                  onTaskDragStateChange={onTaskDragStateChange}
-                />
-              ) : (
-                <div className="rounded-2xl border border-dashed border-[#0496c7]/30 bg-[#0496c7]/5 px-3 py-2 text-xs text-[#036586]/80">
-                  No tasks yet—use the quick add above to create one.
-                </div>
+        <div className="border-t border-gray-200 bg-gray-50/50 relative z-10">
+          <div className="px-4 py-3 sm:px-6 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs font-semibold text-slate-600">
+                Tasks ({openTasksCount} open, {completedTasksCount} completed)
+              </h4>
+              {tasks.length > 0 && completedTasksCount > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks); }}
+                  className="touch-target-sm text-xs text-indigo-600 hover:text-indigo-800 flex items-center"
+                >
+                  {showCompletedTasks ? <EyeSlashIcon className="w-3.5 h-3.5 mr-1" /> : <EyeIcon className="w-3.5 h-3.5 mr-1" />}
+                  {showCompletedTasks ? 'Hide' : 'Show'} Completed
+                </button>
               )}
             </div>
           </div>
+          <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+            {isLoadingTasks ? (
+              <div className="flex items-center justify-center rounded-2xl border border-[#0496c7]/25 bg-white/85 py-3 text-xs text-[#036586] shadow-inner shadow-[#0496c7]/10">
+                Loading tasks…
+              </div>
+            ) : tasks.length > 0 ? (
+              <TaskList
+                tasks={tasks}
+                notesByTask={notesByTask}
+                isLoading={isLoadingTasks}
+                onTaskUpdated={handleTaskUpdated}
+                showCompletedTasks={showCompletedTasks}
+                isProjectCompleted={isProjectCompletedOrCancelled}
+                onTaskDragStateChange={onTaskDragStateChange}
+              />
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#0496c7]/30 bg-[#0496c7]/5 px-3 py-2 text-xs text-[#036586]/80">
+                No tasks yet—use the quick add above to create one.
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Project Notes Section */}
@@ -626,10 +626,10 @@ const ProjectItem = forwardRef((
           )}
         </div>
       )}
-      
+
       <ProjectCompletionModal
         isOpen={showCompletionModal}
-        onClose={() => {setShowCompletionModal(false); setStatusToConfirm(null);}}
+        onClose={() => { setShowCompletionModal(false); setStatusToConfirm(null); }}
         onConfirmCompleteTasks={handleConfirmCompleteTasksAndProject}
         projectName={project.name}
         openTasksCount={openTasksCount}
@@ -653,9 +653,9 @@ const ProjectItem = forwardRef((
 ProjectItem.displayName = 'ProjectItem';
 
 export default React.memo(ProjectItem, (prev, next) => {
-    return prev.project === next.project && 
-           prev.areAllTasksExpanded === next.areAllTasksExpanded &&
-           prev.tasks === next.tasks &&
-           prev.isDropMode === next.isDropMode &&
-           prev.dragSourceProjectId === next.dragSourceProjectId;
+  return prev.project === next.project &&
+    prev.areAllTasksExpanded === next.areAllTasksExpanded &&
+    prev.tasks === next.tasks &&
+    prev.isDropMode === next.isDropMode &&
+    prev.dragSourceProjectId === next.dragSourceProjectId;
 });

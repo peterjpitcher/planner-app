@@ -1,16 +1,16 @@
 'use client';
 
 import { useCallback } from 'react';
-import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
+import StandaloneTaskList from '@/components/tasks/StandaloneTaskList';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
-import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
+import QuickTaskForm from '@/components/tasks/QuickTaskForm';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import {
   FireIcon as SolidFireIcon,
   ExclamationTriangleIcon as SolidExclamationTriangleIcon,
   CheckCircleIcon as SolidCheckIcon,
 } from '@heroicons/react/20/solid';
-import { todayISO } from '@/components/Tasks/QuickTaskForm';
+import { todayISO } from '@/components/tasks/QuickTaskForm';
 
 const quickPriorities = [
   { value: 'High', icon: SolidFireIcon, tooltip: 'High priority' },
@@ -48,11 +48,11 @@ export default function TasksPanel({
           priorityOptions={quickPriorities}
           defaultPriority="Medium"
           defaultDueDate={todayISO()}
-          className="border-b border-[#0496c7]/15 bg-white px-4 py-4 text-[#052a3b]"
+          className="border-b border-[#0496c7]/15 bg-white p-4 sm:p-6 text-[#052a3b]"
         />
 
         {isLoading ? (
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <TaskListSkeleton />
           </div>
         ) : (

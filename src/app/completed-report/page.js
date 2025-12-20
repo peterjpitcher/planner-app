@@ -4,14 +4,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { 
-  startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, 
+import {
+  startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, format, isEqual,
   eachDayOfInterval, getWeekOfMonth, parseISO
 } from 'date-fns';
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, ClipboardDocumentIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
-import NoteList from '@/components/Notes/NoteList'; // Assuming this can be reused
+import NoteList from '@/components/notes/NoteList'; // Assuming this can be reused
 
 const CompletedReportPage = () => {
   const { data: session, status } = useSession();
@@ -19,11 +19,11 @@ const CompletedReportPage = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState('day'); // 'day', 'week', 'month'
   const [dateRange, setDateRange] = useState({ startDate: startOfDay(new Date()), endDate: endOfDay(new Date()) });
-  
+
   const [completedTasksData, setCompletedTasksData] = useState([]);
   const [completedProjectsData, setCompletedProjectsData] = useState([]);
   const [allUserNotes, setAllUserNotes] = useState([]);
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -72,7 +72,7 @@ const CompletedReportPage = () => {
 
     try {
       const data = await apiClient.getCompletedItems(dateRange.startDate, dateRange.endDate);
-      
+
       setCompletedTasksData(data.tasks || []);
       setCompletedProjectsData(data.projects || []);
       setAllUserNotes(data.allNotes || []);
@@ -90,19 +90,19 @@ const CompletedReportPage = () => {
   useEffect(() => {
     fetchCompletedItems();
   }, [fetchCompletedItems]);
-  
+
   // Derive projectsInPeriod for the filter panel from fetched data
   useEffect(() => {
     const projectsMap = new Map();
-    
+
     // Process all potential project sources to populate the map for the filter panel
     // Stakeholder data will be directly on tasks/notes for filtering later
 
     completedProjectsData.forEach(project => {
       if (!projectsMap.has(project.id)) {
-        projectsMap.set(project.id, { 
-          id: project.id, 
-          name: project.name, 
+        projectsMap.set(project.id, {
+          id: project.id,
+          name: project.name,
           // type: 'project', // Type isn't strictly needed for projectsInPeriod anymore if just for display/filtering
           stakeholders: project.stakeholders // Keep for consistency if used elsewhere, but primary use is now direct from task/note
         });
@@ -111,39 +111,39 @@ const CompletedReportPage = () => {
 
     completedTasksData.forEach(task => {
       if (task.project && !projectsMap.has(task.project.id)) {
-        projectsMap.set(task.project.id, { 
-          id: task.project.id, 
+        projectsMap.set(task.project.id, {
+          id: task.project.id,
           name: task.project.name,
           stakeholders: task.project.stakeholders || [] // Will be populated by the new query
         });
       }
     });
-    
+
     const currentNotesInPeriod = allUserNotes.filter(note => {
-        const createdAt = parseISO(note.created_at);
-        return createdAt >= dateRange.startDate && createdAt <= dateRange.endDate;
+      const createdAt = parseISO(note.created_at);
+      return createdAt >= dateRange.startDate && createdAt <= dateRange.endDate;
     });
 
     currentNotesInPeriod.forEach(note => {
-        let projectRef = null;
-        if (note.tasks && note.tasks.project_id) {
-            projectRef = note.tasks.project_id;
-        } else if (note.projects) {
-            projectRef = note.projects;
-        }
+      let projectRef = null;
+      if (note.tasks && note.tasks.project_id) {
+        projectRef = note.tasks.project_id;
+      } else if (note.projects) {
+        projectRef = note.projects;
+      }
 
-        if (projectRef && !projectsMap.has(projectRef.id)) {
-            projectsMap.set(projectRef.id, { 
-                id: projectRef.id, 
-                name: projectRef.name,
-                stakeholders: projectRef.stakeholders || [] // Will be populated by the new query
-            });
-        }
+      if (projectRef && !projectsMap.has(projectRef.id)) {
+        projectsMap.set(projectRef.id, {
+          id: projectRef.id,
+          name: projectRef.name,
+          stakeholders: projectRef.stakeholders || [] // Will be populated by the new query
+        });
+      }
     });
 
     const uniqueProjects = Array.from(projectsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     setProjectsInPeriod(uniqueProjects);
-    
+
     // Initialize visibility: all true by default, or maintain existing if already set
     setProjectVisibility(prev => {
       const newVisibility = { ...prev };
@@ -164,10 +164,10 @@ const CompletedReportPage = () => {
       // Filter out notes already associated with tasks/projects completed in THIS period (they are shown with their parent)
       const isAttachedToCompletedTaskInPeriod = completedTasksData.some(task => task.notes && task.notes.some(n => n.id === note.id));
       const isAttachedToCompletedProjectInPeriod = completedProjectsData.some(proj => proj.notes && proj.notes.some(n => n.id === note.id));
-      
+
       return createdAt >= dateRange.startDate && createdAt <= dateRange.endDate &&
-             !isAttachedToCompletedTaskInPeriod && !isAttachedToCompletedProjectInPeriod &&
-             ( (note.tasks && projectVisibility[note.tasks.project_id?.id]) || (note.projects && projectVisibility[note.projects.id]) || (!note.tasks && !note.projects) ); // last part handles notes not linked to any project (if possible)
+        !isAttachedToCompletedTaskInPeriod && !isAttachedToCompletedProjectInPeriod &&
+        ((note.tasks && projectVisibility[note.tasks.project_id?.id]) || (note.projects && projectVisibility[note.projects.id]) || (!note.tasks && !note.projects)); // last part handles notes not linked to any project (if possible)
     });
   }, [allUserNotes, dateRange, completedTasksData, completedProjectsData, projectVisibility]);
 
@@ -175,54 +175,54 @@ const CompletedReportPage = () => {
     const grouped = {};
     const itemsToGroup = [
       ...completedTasksData
-          .filter(task => {
-            // const project = projectsInPeriod.find(p => p.id === task.project_id?.id); // No longer need to find in projectsInPeriod for stakeholders
-            const isVisible = !!(task.project && projectVisibility[task.project.id]); // Ensure boolean
-            
-            let taskIsBillHidden = false;
-            if (hideBillStakeholder && task.project && Array.isArray(task.project.stakeholders)) {
-              taskIsBillHidden = task.project.stakeholders.includes('Bill');
-            }
-            return isVisible && !taskIsBillHidden;
-          })
-          .map(task => ({ ...task, type: 'task', date: parseISO(task.completed_at) })),
+        .filter(task => {
+          // const project = projectsInPeriod.find(p => p.id === task.project_id?.id); // No longer need to find in projectsInPeriod for stakeholders
+          const isVisible = !!(task.project && projectVisibility[task.project.id]); // Ensure boolean
+
+          let taskIsBillHidden = false;
+          if (hideBillStakeholder && task.project && Array.isArray(task.project.stakeholders)) {
+            taskIsBillHidden = task.project.stakeholders.includes('Bill');
+          }
+          return isVisible && !taskIsBillHidden;
+        })
+        .map(task => ({ ...task, type: 'task', date: parseISO(task.completed_at) })),
       ...completedProjectsData
-          .filter(project => {
-            const isVisible = projectVisibility[project.id];
-            // Bill filtering for directly completed projects remains the same (uses project.stakeholders)
-            const isBillHidden = hideBillStakeholder && project.stakeholders?.includes('Bill');
-            return isVisible && !isBillHidden;
-          })
-          .map(project => ({ ...project, type: 'project', date: parseISO(project.updated_at) })), // Assuming updated_at is completion
+        .filter(project => {
+          const isVisible = projectVisibility[project.id];
+          // Bill filtering for directly completed projects remains the same (uses project.stakeholders)
+          const isBillHidden = hideBillStakeholder && project.stakeholders?.includes('Bill');
+          return isVisible && !isBillHidden;
+        })
+        .map(project => ({ ...project, type: 'project', date: parseISO(project.updated_at) })), // Assuming updated_at is completion
       ...notesInPeriod
-          .filter(note => {
-            let noteIsBillHidden = false;
-            let parentProjectForNoteStakeholders = [];
-            let parentProjectForNoteInfo = null; // For logging
+        .filter(note => {
+          let noteIsBillHidden = false;
+          let parentProjectForNoteStakeholders = [];
+          let parentProjectForNoteInfo = null; // For logging
 
-            if (note.tasks && note.tasks.project_id) {
-              parentProjectForNoteStakeholders = note.tasks.project_id.stakeholders || [];
-              parentProjectForNoteInfo = note.tasks.project_id;
-            } else if (note.projects) {
-              parentProjectForNoteStakeholders = note.projects.stakeholders || [];
-              parentProjectForNoteInfo = note.projects;
-            }
+          if (note.tasks && note.tasks.project_id) {
+            parentProjectForNoteStakeholders = note.tasks.project_id.stakeholders || [];
+            parentProjectForNoteInfo = note.tasks.project_id;
+          } else if (note.projects) {
+            parentProjectForNoteStakeholders = note.projects.stakeholders || [];
+            parentProjectForNoteInfo = note.projects;
+          }
 
-            const isNoteVisibleByProjectParent = 
-                (note.tasks && note.tasks.project_id && projectVisibility[note.tasks.project_id.id]) || 
-                (note.projects && projectVisibility[note.projects.id]) || 
-                (!note.tasks && !note.projects); // Standalone notes are visible if not filtered by Bill
+          const isNoteVisibleByProjectParent =
+            (note.tasks && note.tasks.project_id && projectVisibility[note.tasks.project_id.id]) ||
+            (note.projects && projectVisibility[note.projects.id]) ||
+            (!note.tasks && !note.projects); // Standalone notes are visible if not filtered by Bill
 
-            if (!note.tasks && !note.projects) { // Note not linked to any project
-              return isNoteVisibleByProjectParent; 
-            }
-            
-            if (hideBillStakeholder && Array.isArray(parentProjectForNoteStakeholders)) {
-              noteIsBillHidden = parentProjectForNoteStakeholders.includes('Bill');
-            }
-            return isNoteVisibleByProjectParent && !noteIsBillHidden;
-          })
-          .map(note => ({ ...note, type: 'note', date: parseISO(note.created_at) }))
+          if (!note.tasks && !note.projects) { // Note not linked to any project
+            return isNoteVisibleByProjectParent;
+          }
+
+          if (hideBillStakeholder && Array.isArray(parentProjectForNoteStakeholders)) {
+            noteIsBillHidden = parentProjectForNoteStakeholders.includes('Bill');
+          }
+          return isNoteVisibleByProjectParent && !noteIsBillHidden;
+        })
+        .map(note => ({ ...note, type: 'note', date: parseISO(note.created_at) }))
     ];
 
     itemsToGroup.sort((a, b) => a.date - b.date); // Sort all items together by date ascending
@@ -236,7 +236,7 @@ const CompletedReportPage = () => {
     });
     return grouped;
   }, [completedTasksData, completedProjectsData, notesInPeriod, projectVisibility, hideBillStakeholder]);
-  
+
   const handleViewChange = (newViewType) => {
     setViewType(newViewType);
     // CurrentDate remains the same, useEffect for dateRange will recalculate
@@ -279,7 +279,7 @@ const CompletedReportPage = () => {
     report += `Period: ${format(dateRange.startDate, 'EEEE, MMM do, yyyy')} - ${format(dateRange.endDate, 'EEEE, MMM do, yyyy')}\n`;
     report += `View: ${viewType.charAt(0).toUpperCase() + viewType.slice(1)}\n\n`;
 
-    const sortedGroupKeys = Object.keys(groupItems).sort((a,b) => new Date(b) - new Date(a));
+    const sortedGroupKeys = Object.keys(groupItems).sort((a, b) => new Date(b) - new Date(a));
 
     if (sortedGroupKeys.length === 0) { // Simplified condition
       report += "No tasks, projects, or notes found for this period.\n";
@@ -294,18 +294,18 @@ const CompletedReportPage = () => {
             report += `    Completed: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
             if (item.description) report += `    Description: ${item.description}\n`;
             if (item.notes && item.notes.length > 0) {
-                report += `    Notes (attached to task):\n`;
-                item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'EEEE, MMM do, h:mm a')}: ${n.content}\n`);
+              report += `    Notes (attached to task):\n`;
+              item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'EEEE, MMM do, h:mm a')}: ${n.content}\n`);
             }
           } else if (item.type === 'project') {
             report += `  Project: ${item.name}\n`;
             report += `    Completed: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
             if (item.description) report += `    Description: ${item.description}\n`;
-             if (item.notes && item.notes.length > 0) {
-                report += `    Notes (attached to project):\n`;
-                item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'EEEE, MMM do, h:mm a')}: ${n.content}\n`);
+            if (item.notes && item.notes.length > 0) {
+              report += `    Notes (attached to project):\n`;
+              item.notes.forEach(n => report += `      - ${format(parseISO(n.created_at), 'EEEE, MMM do, h:mm a')}: ${n.content}\n`);
             }
-          } else if (item.type === 'note') { 
+          } else if (item.type === 'note') {
             let parentContext = 'General Note';
             if (item.tasks && item.tasks.project_id) {
               parentContext = `Task: ${item.tasks.name || 'Unnamed Task'} (Project: ${item.tasks.project_id.name || 'Unnamed Project'})`;
@@ -314,7 +314,7 @@ const CompletedReportPage = () => {
             } else if (item.projects) {
               parentContext = `Project: ${item.projects.name || 'Unnamed Project'}`;
             }
-            report += `  Note (Created): ${item.content.substring(0,100)}${item.content.length > 100 ? '...' : ''}\n`;
+            report += `  Note (Created): ${item.content.substring(0, 100)}${item.content.length > 100 ? '...' : ''}\n`;
             report += `    Parent: ${parentContext}\n`;
             report += `    Created At: ${format(item.date, 'EEEE, MMM do, h:mm a')}\n`;
           }
@@ -353,13 +353,13 @@ const CompletedReportPage = () => {
             {item.type === 'task' && item.project && (
               <p className="text-xs text-gray-500">Project: {item.project.name}</p>
             )}
-             {item.type === 'note' && (
+            {item.type === 'note' && (
               <p className="text-xs text-gray-500">
                 Parent: {
                   item.tasks && item.tasks.project_id ? `Task - ${item.tasks.name || 'Unnamed Task'} (Project: ${item.tasks.project_id.name || 'Unnamed Project'})` :
-                  item.tasks ? `Task - ${item.tasks.name || 'Unnamed Task'}` :
-                  item.projects ? `Project - ${item.projects.name || 'Unnamed Project'}` :
-                  'N/A'
+                    item.tasks ? `Task - ${item.tasks.name || 'Unnamed Task'}` :
+                      item.projects ? `Project - ${item.projects.name || 'Unnamed Project'}` :
+                        'N/A'
                 }
               </p>
             )}
@@ -369,21 +369,21 @@ const CompletedReportPage = () => {
           </span>
         </div>
         {item.description && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap break-words">{item.description}</p>}
-        
+
         {/* Display notes for tasks and projects */}
         {(item.type === 'task' || item.type === 'project') && item.notes && item.notes.length > 0 && (
           <div className="mt-2 pt-2 border-t border-gray-200">
             <h4 className="text-xs font-medium text-gray-600 mb-1">Notes for this {item.type}:</h4>
-            <NoteList notes={item.notes.map(n => ({...n, parentType: item.type}))} />
+            <NoteList notes={item.notes.map(n => ({ ...n, parentType: item.type }))} />
           </div>
         )}
       </div>
     );
   };
-  
+
   const renderGroupedItems = (itemsMap) => {
     const sortedDateKeys = Object.keys(itemsMap).sort((a, b) => new Date(a) - new Date(b)); // Sort date groups ascending
-    
+
     if (sortedDateKeys.length === 0) return null;
 
     return sortedDateKeys.map(dateKey => {
@@ -436,17 +436,17 @@ const CompletedReportPage = () => {
         {/* Left Sidebar: Filters */}
         <aside className="w-64 lg:w-72 bg-white p-4 border-r border-gray-200 flex-shrink-0 sticky top-[61px] h-[calc(100vh-61px)] overflow-y-auto">
           <div className="mb-4 flex items-center justify-between">
-             <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider flex-grow break-words mr-1">
-                {format(dateRange.startDate, 'EEEE, MMM do')} - {format(dateRange.endDate, 'EEEE, MMM do, yyyy')}
-             </h2>
-             <div className="flex-shrink-0">
-                <button onClick={handlePrevious} className="p-1 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100"><ChevronLeftIcon className="h-5 w-5" /></button>
-                <button onClick={handleNext} className="p-1 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100"><ChevronRightIcon className="h-5 w-5" /></button>
-             </div>
+            <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider flex-grow break-words mr-1">
+              {format(dateRange.startDate, 'EEEE, MMM do')} - {format(dateRange.endDate, 'EEEE, MMM do, yyyy')}
+            </h2>
+            <div className="flex-shrink-0">
+              <button onClick={handlePrevious} className="p-1 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100"><ChevronLeftIcon className="h-5 w-5" /></button>
+              <button onClick={handleNext} className="p-1 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100"><ChevronRightIcon className="h-5 w-5" /></button>
+            </div>
           </div>
 
           <div className="space-y-1 mb-4">
-            {[ 'day', 'week', 'month'].map(v => (
+            {['day', 'week', 'month'].map(v => (
               <button
                 key={v}
                 onClick={() => handleViewChange(v)}
@@ -456,14 +456,14 @@ const CompletedReportPage = () => {
               </button>
             ))}
           </div>
-          
+
           <div className="mb-4">
             <button
-                onClick={handleCopyReport}
-                disabled={isLoading}
-                className="w-full flex items-center justify-center text-sm px-3 py-1.5 rounded-md bg-indigo-500 text-white hover:bg-indigo-600 disabled:bg-indigo-300"
+              onClick={handleCopyReport}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center text-sm px-3 py-1.5 rounded-md bg-indigo-500 text-white hover:bg-indigo-600 disabled:bg-indigo-300"
             >
-                <ClipboardDocumentIcon className="h-4 w-4 mr-2"/> {copyStatusMessage}
+              <ClipboardDocumentIcon className="h-4 w-4 mr-2" /> {copyStatusMessage}
             </button>
           </div>
 
@@ -471,24 +471,24 @@ const CompletedReportPage = () => {
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Filter by Project</h3>
               <div className="space-y-1 mb-2">
-                <button 
-                    onClick={handleSelectAllProjects}
-                    className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                <button
+                  onClick={handleSelectAllProjects}
+                  className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
                 >
-                    Select All
-                </button>
-                <button 
-                    onClick={handleDeselectAllProjects}
-                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-                >
-                    Deselect All
+                  Select All
                 </button>
                 <button
-                    onClick={() => setHideBillStakeholder(prev => !prev)}
-                    className={`flex items-center text-xs px-2 py-1 rounded transition-colors ${hideBillStakeholder ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                    title={hideBillStakeholder ? "Show items with Bill as stakeholder" : "Hide items with Bill as stakeholder"}>
-                    <FunnelIcon className="h-3.5 w-3.5 mr-1" />
-                    {hideBillStakeholder ? 'Unhide Bill' : 'Hide Bill'}
+                  onClick={handleDeselectAllProjects}
+                  className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                >
+                  Deselect All
+                </button>
+                <button
+                  onClick={() => setHideBillStakeholder(prev => !prev)}
+                  className={`flex items-center text-xs px-2 py-1 rounded transition-colors ${hideBillStakeholder ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                  title={hideBillStakeholder ? "Show items with Bill as stakeholder" : "Hide items with Bill as stakeholder"}>
+                  <FunnelIcon className="h-3.5 w-3.5 mr-1" />
+                  {hideBillStakeholder ? 'Unhide Bill' : 'Hide Bill'}
                 </button>
               </div>
               <div className="space-y-1 max-h-[calc(100vh-350px)] overflow-y-auto pr-1"> {/* Adjust max-h as needed */}
@@ -512,7 +512,7 @@ const CompletedReportPage = () => {
         <main className="flex-grow p-4 sm:p-6 bg-gray-50 overflow-y-auto h-[calc(100vh-61px)]">
           {isLoading && <p className="text-center text-gray-500 py-10">Loading completed items...</p>}
           {error && <p className="text-center text-red-500 py-10">Error: {error}</p>}
-          
+
           {!isLoading && !error && (
             <>
               {Object.keys(groupItems).length > 0 ? ( // Check if groupItems has any keys

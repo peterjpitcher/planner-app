@@ -61,9 +61,8 @@ function FilterCard({ id, isActive, count, onToggle }) {
     <button
       type="button"
       onClick={() => onToggle(id)}
-      className={`group relative overflow-hidden rounded-2xl border px-4 py-4 text-left transition ${
-        isActive ? 'border-[#0496c7] bg-[#0496c7]/12 shadow-[0_18px_40px_-28px_rgba(4,150,199,0.45)]' : 'border-[#0496c7]/15 bg-white/85 hover:border-[#0496c7]/35 hover:bg-white'
-      }`}
+      className={`group relative overflow-hidden rounded-2xl border px-4 py-4 text-left transition ${isActive ? 'border-[#0496c7] bg-[#0496c7]/12 shadow-[0_18px_40px_-28px_rgba(4,150,199,0.45)]' : 'border-[#0496c7]/15 bg-white/85 hover:border-[#0496c7]/35 hover:bg-white'
+        }`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -76,9 +75,8 @@ function FilterCard({ id, isActive, count, onToggle }) {
           </div>
         </div>
         <span
-          className={`flex h-8 min-w-[2.5rem] items-center justify-center rounded-full border text-xs font-semibold transition ${
-            isActive ? 'border-[#0496c7] bg-[#0496c7]/15 text-[#036586]' : 'border-[#0496c7]/15 bg-white text-[#2f617a]/80'
-          }`}
+          className={`flex h-8 min-w-[2.5rem] items-center justify-center rounded-full border text-xs font-semibold transition ${isActive ? 'border-[#0496c7] bg-[#0496c7]/15 text-[#036586]' : 'border-[#0496c7]/15 bg-white text-[#2f617a]/80'
+            }`}
         >
           {count}
         </span>
@@ -105,7 +103,7 @@ export default function SidebarFilters({
   projectAnalysis,
 }) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/80">Stakeholders</p>
         <h2 className="mt-2 text-lg font-semibold text-[#052a3b]">Filter pipeline</h2>
@@ -120,7 +118,7 @@ export default function SidebarFilters({
               name="stakeholder-filter"
               value={selectedStakeholder}
               onChange={onStakeholderChange}
-              className="block w-full appearance-none rounded-2xl border border-white/15 bg-slate-900/50 px-4 pr-12 py-3 text-sm text-white shadow-inner outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/40"
+              className="block w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 pr-12 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-400/20"
             >
               <option value="All Stakeholders">All stakeholders</option>
               {uniqueStakeholders.map((stakeholder) => (
@@ -129,7 +127,7 @@ export default function SidebarFilters({
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#2f617a]/70">
+            <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-500">
               <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
                 <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               </svg>

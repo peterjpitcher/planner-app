@@ -7,8 +7,8 @@ import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
-import NoteList from '@/components/Notes/NoteList';
-import AddNoteForm from '@/components/Notes/AddNoteForm';
+import NoteList from '@/components/notes/NoteList';
+import AddNoteForm from '@/components/notes/AddNoteForm';
 import ChaseTaskModal from './ChaseTaskModal';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 
@@ -31,7 +31,7 @@ const getTaskPriorityClasses = (priority) => {
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
   if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', fullDate: '' };
-  
+
   let date;
   if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
     date = startOfDay(new Date(dateToConsider + 'T00:00:00'));
@@ -60,7 +60,7 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   } else if (daysDiff >= 0 && daysDiff <= 7) {
     text = `Due: ${format(date, 'EEEE, MMM do')}`;
   } // For future dates beyond 7 days, text remains `Due: EEEE, MMM do` and classes remain default
-  
+
   return { text, classes, fullDate: fullDateText };
 };
 
@@ -86,32 +86,32 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
   // All useEffect and useCallback hooks
   useEffect(() => {
     if (task) {
-        // Always update non-editable fields like completion status directly from prop
-        setIsCompleted(task.is_completed);
+      // Always update non-editable fields like completion status directly from prop
+      setIsCompleted(task.is_completed);
 
-        // Only update editable fields from prop if not currently being edited
-        if (!isEditingTaskName) {
-            setCurrentTaskName(task.name);
-        }
-        if (!isEditingTaskDescription) {
-            setCurrentTaskDescription(task.description || '');
-        }
-        if (!isEditingDueDate) {
-            setCurrentDueDate(task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
-        }
-        if (!isEditingPriority) {
-            setCurrentPriority(task.priority || '');
-        }
+      // Only update editable fields from prop if not currently being edited
+      if (!isEditingTaskName) {
+        setCurrentTaskName(task.name);
+      }
+      if (!isEditingTaskDescription) {
+        setCurrentTaskDescription(task.description || '');
+      }
+      if (!isEditingDueDate) {
+        setCurrentDueDate(task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
+      }
+      if (!isEditingPriority) {
+        setCurrentPriority(task.priority || '');
+      }
     }
   }, [task, isEditingTaskName, isEditingTaskDescription, isEditingDueDate, isEditingPriority]); // Added isEditingPriority
 
   const fetchNotes = useCallback(async () => {
-    if (!task || !task.id) return; 
+    if (!task || !task.id) return;
     setIsLoadingNotes(true);
     try {
       const data = await apiClient.getNotes(null, task.id);
       // Sort notes by created_at descending (newest first)
-      const sortedNotes = (data || []).sort((a, b) => 
+      const sortedNotes = (data || []).sort((a, b) =>
         new Date(b.created_at) - new Date(a.created_at)
       );
       setNotes(sortedNotes);
@@ -121,7 +121,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
     } finally {
       setIsLoadingNotes(false);
     }
-  }, [task]); 
+  }, [task]);
 
   // Update notes when propNotes changes
   useEffect(() => {
@@ -129,11 +129,11 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       setNotes(propNotes);
     }
   }, [propNotes]);
-  
+
   // Only fetch notes if we don't have them from props
   useEffect(() => {
     let timeoutId;
-    if (showNotes && task && task.id && !propNotes) { 
+    if (showNotes && task && task.id && !propNotes) {
       fetchNotes(); // Only fetch if not provided via props
       // Delay focus slightly to ensure the input field is rendered and visible
       timeoutId = setTimeout(() => {
@@ -149,7 +149,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [showNotes, task, fetchNotes, propNotes]);
-  
+
   const taskNameInputRef = useRef(null);
   useEffect(() => {
     if (isEditingTaskName && taskNameInputRef.current) {
@@ -166,7 +166,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
     return priority;
   };
 
-  const updatedAgo = task.updated_at 
+  const updatedAgo = task.updated_at
     ? formatDistanceToNowStrict(parseISO(task.updated_at), { addSuffix: true })
     : 'never';
 
@@ -186,10 +186,10 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
     setIsUpdatingTask(true);
     const newCompletedStatus = !isCompleted;
     try {
-      const data = await apiClient.updateTask(task.id, { 
-        is_completed: newCompletedStatus, 
+      const data = await apiClient.updateTask(task.id, {
+        is_completed: newCompletedStatus,
         completed_at: newCompletedStatus ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString() 
+        updated_at: new Date().toISOString()
       });
       setIsCompleted(newCompletedStatus);
       if (onTaskUpdated) onTaskUpdated(data);
@@ -224,7 +224,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       };
 
       const data = await apiClient.updateTask(task.id, updateObject);
-      
+
       if (data) {
         setCurrentDueDate(formattedNewDate);
         if (onTaskUpdated) onTaskUpdated(data);
@@ -246,12 +246,12 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
   const createUpdateHandler = (field, currentValue, originalValue, setter, editSetter, isDate = false) => async () => {
     // Ensure task exists before trying to update
     if (!task) {
-        handleError(new Error('Task data is missing'), 'createUpdateHandler', { 
-          showAlert: true,
-          fallbackMessage: 'Cannot update: task data is missing.'
-        });
-        if (editSetter) editSetter(false);
-        return;
+      handleError(new Error('Task data is missing'), 'createUpdateHandler', {
+        showAlert: true,
+        fallbackMessage: 'Cannot update: task data is missing.'
+      });
+      if (editSetter) editSetter(false);
+      return;
     }
     const processedValue = isDate ? (currentValue ? currentValue : null) : (currentValue || '').trim();
     const processedOriginalValue = isDate ? (originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : null) : (originalValue || '').trim();
@@ -265,7 +265,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       const updateObject = { [field]: processedValue, updated_at: new Date().toISOString() };
       // If due date is being cleared, Supabase expects null, not an empty string
       if (isDate && !processedValue) {
-          updateObject[field] = null;
+        updateObject[field] = null;
       }
 
       const data = await apiClient.updateTask(task.id, updateObject);
@@ -279,11 +279,11 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       }
     } catch (err) {
       const errorMessage = handleSupabaseError(err, 'update') || err.message;
-      handleError(err, 'createUpdateHandler', { 
-        showAlert: true, 
+      handleError(err, 'createUpdateHandler', {
+        showAlert: true,
         fallbackMessage: `Failed to update task ${field}: ${errorMessage}`
       });
-      setter(isDate && originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : (originalValue || (isDate ? '' : ''))); 
+      setter(isDate && originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : (originalValue || (isDate ? '' : '')));
     } finally {
       editSetter(false);
       setIsUpdatingTask(false);
@@ -304,16 +304,16 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
   const handlePriorityUpdate = createUpdateHandler('priority', currentPriority, task ? task.priority : '', setCurrentPriority, setIsEditingPriority);
 
   const createKeyDownHandler = (updateHandler, originalValue, setter, editSetter, isDate = false) => (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { 
-        e.preventDefault();
-        updateHandler();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      updateHandler();
     }
     if (e.key === 'Escape') {
       setter(isDate && originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : (originalValue || (isDate ? '' : '')));
       editSetter(false);
     }
   };
-  
+
   const handleTaskNameInputKeyDown = createKeyDownHandler(handleTaskNameUpdate, task ? task.name : '', setCurrentTaskName, setIsEditingTaskName);
   const handleTaskDescriptionKeyDown = createKeyDownHandler(handleTaskDescriptionUpdate, task ? task.description : '', setCurrentTaskDescription, setIsEditingTaskDescription);
   const handleDueDateInputKeyDown = createKeyDownHandler(handleDueDateUpdate, task ? task.due_date : null, setCurrentDueDate, setIsEditingDueDate);
@@ -364,7 +364,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
   };
 
   return (
-    <div 
+    <div
       className={`py-0.5 px-2 border-b border-gray-200 last:border-b-0 ${priorityStyles.cardOuterClass} ${isCompleted ? 'opacity-60 hover:opacity-80' : 'hover:shadow-sm'} ${isDragging ? 'ring-2 ring-indigo-300 ring-offset-1' : ''} transition-opacity duration-150 relative group`}
       data-task-id={task.id}
     >
@@ -415,8 +415,8 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
                   ref={taskNameInputRef}
                 />
               ) : (
-                <span 
-                  onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)} 
+                <span
+                  onClick={() => !isCompleted && !isEditingTaskDescription && setIsEditingTaskName(true)}
                   className={`block w-full text-sm font-medium ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskDescription ? 'cursor-default' : ''}`}
                   title={currentTaskName}
                 >
@@ -437,8 +437,8 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
                   />
                 ) : (
                   currentTaskDescription ? (
-                    <span 
-                      onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)} 
+                    <span
+                      onClick={() => !isCompleted && !isEditingTaskName && setIsEditingTaskDescription(true)}
                       className={`block text-xs text-gray-600 ${editableTextClasses(false)} ${isCompleted ? 'line-through' : ''} ${isEditingTaskName ? 'cursor-default' : ''}`}
                       title={currentTaskDescription}
                     >
@@ -465,10 +465,10 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
           )}
 
           {isEditingPriority ? (
-            <select 
+            <select
               value={currentPriority}
-              onChange={(e) => setCurrentPriority(e.target.value)} 
-              onBlur={handlePriorityUpdate} 
+              onChange={(e) => setCurrentPriority(e.target.value)}
+              onBlur={handlePriorityUpdate}
               onKeyDown={(e) => e.key === 'Enter' && handlePriorityUpdate() || e.key === 'Escape' && (setCurrentPriority(task.priority || ''), setIsEditingPriority(false))}
               className="h-6 rounded-md border border-gray-300 p-0.5 text-xs focus:border-indigo-500 focus:ring-indigo-500"
               autoFocus
@@ -479,12 +479,12 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
               <option value="High">High</option>
             </select>
           ) : (
-            <div 
+            <div
               className={`flex items-center rounded p-0.5 ${isCompleted ? 'pointer-events-none' : 'cursor-pointer hover:bg-gray-100/50'}`}
-              onClick={() => {if (!isCompleted) setIsEditingPriority(true);}}
+              onClick={() => { if (!isCompleted) setIsEditingPriority(true); }}
               title={`Priority: ${currentPriority || 'N/A'}`}
             >
-              {priorityStyles.icon} 
+              {priorityStyles.icon}
               <span className={`ml-0.5 text-xs ${priorityStyles.textClass} ${isCompleted ? 'text-gray-500' : ''}`}>{currentPriority || 'No Priority'}</span>
             </div>
           )}
@@ -502,17 +502,17 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
               />
             </div>
           ) : (
-            <span 
-              onClick={() => !isCompleted && setIsEditingDueDate(true)} 
+            <span
+              onClick={() => !isCompleted && setIsEditingDueDate(true)}
               className={`${dueDateStatusToDisplay.classes} ${!isCompleted ? 'cursor-pointer hover:text-indigo-700' : ''} break-words`}
               title={dueDateStatusToDisplay.fullDate || (task.due_date ? format(parseISO(task.due_date), 'EEEE, MMM do, yyyy') : 'Set due date')}
             >
               {dueDateStatusToDisplay.text}
             </span>
           )}
-          
-          <button 
-            onClick={() => setShowNotes(!showNotes)} 
+
+          <button
+            onClick={() => setShowNotes(!showNotes)}
             className="icon-button relative flex items-center text-gray-400 hover:text-indigo-600"
             aria-expanded={showNotes}
             aria-controls={`notes-section-${task.id}`}

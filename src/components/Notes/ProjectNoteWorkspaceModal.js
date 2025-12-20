@@ -5,7 +5,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { VALIDATION } from '@/lib/constants';
 import { apiClient } from '@/lib/apiClient';
 import NoteList from './NoteList';
-import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
+import QuickTaskForm from '@/components/tasks/QuickTaskForm';
 import { format } from 'date-fns';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -237,16 +237,16 @@ export default function ProjectNoteWorkspaceModal({
                           >
                             {noteCreationDisabled ? 'Notes Locked' : isSavingNote ? 'Saving…' : 'Save & Close'}
                           </button>
-                        <button
-                          type="button"
-                          onClick={handleAttemptClose}
-                          className="ml-auto inline-flex items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm font-medium text-slate-400 transition hover:text-slate-600"
-                          disabled={isSavingNote}
-                        >
-                          Close
-                        </button>
+                          <button
+                            type="button"
+                            onClick={handleAttemptClose}
+                            className="ml-auto inline-flex items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm font-medium text-slate-400 transition hover:text-slate-600"
+                            disabled={isSavingNote}
+                          >
+                            Close
+                          </button>
+                        </div>
                       </div>
-                    </div>
                       <div className="mt-6 flex-1 overflow-y-auto">
                         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Recent Notes
