@@ -1,16 +1,16 @@
 'use client';
 
 import { useCallback } from 'react';
-import StandaloneTaskList from '@/components/tasks/StandaloneTaskList';
+import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
-import QuickTaskForm from '@/components/tasks/QuickTaskForm';
+import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import {
   FireIcon as SolidFireIcon,
   ExclamationTriangleIcon as SolidExclamationTriangleIcon,
   CheckCircleIcon as SolidCheckIcon,
 } from '@heroicons/react/20/solid';
-import { todayISO } from '@/components/tasks/QuickTaskForm';
+import { todayISO } from '@/components/Tasks/QuickTaskForm';
 
 const quickPriorities = [
   { value: 'High', icon: SolidFireIcon, tooltip: 'High priority' },

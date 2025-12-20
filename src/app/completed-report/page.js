@@ -11,7 +11,7 @@ import {
 } from 'date-fns';
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, ClipboardDocumentIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
-import NoteList from '@/components/notes/NoteList'; // Assuming this can be reused
+import NoteList from '@/components/Notes/NoteList'; // Assuming this can be reused
 
 const CompletedReportPage = () => {
   const { data: session, status } = useSession();

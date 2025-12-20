@@ -7,8 +7,8 @@ import { quickPickOptions } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
-import NoteList from '@/components/notes/NoteList';
-import AddNoteForm from '@/components/notes/AddNoteForm';
+import NoteList from '@/components/Notes/NoteList';
+import AddNoteForm from '@/components/Notes/AddNoteForm';
 import ChaseTaskModal from './ChaseTaskModal';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 

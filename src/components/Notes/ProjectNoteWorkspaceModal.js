@@ -5,7 +5,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { VALIDATION } from '@/lib/constants';
 import { apiClient } from '@/lib/apiClient';
 import NoteList from './NoteList';
-import QuickTaskForm from '@/components/tasks/QuickTaskForm';
+import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { format } from 'date-fns';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
