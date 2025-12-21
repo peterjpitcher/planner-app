@@ -36,5 +36,4 @@ Planner is a Task Management application built with **Next.js 15** (App Router) 
 - **`src/components/Tasks/TaskItem.js`:** Individual task rendering with inline editing and "Chase" functionality.
 
 ## Recent Changes (Dec 2025)
-- **Outlook Sync Removed:** The legacy bi-directional sync with Microsoft Outlook has been fully decommissioned to simplify the codebase.
 - **"Chase" Feature:** Added ability to push task due dates and auto-log notes via `ChaseTaskModal`.

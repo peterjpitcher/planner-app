@@ -51,6 +51,42 @@ export async function POST(request) {
         `
       },
       {
+        name: 'Create journal entries table and indexes',
+        sql: `
+          CREATE TABLE IF NOT EXISTS public.journal_entries (
+            id uuid not null default gen_random_uuid(),
+            user_id uuid not null default auth.uid(),
+            content text not null,
+            created_at timestamp with time zone not null default now(),
+            updated_at timestamp with time zone not null default now(),
+            constraint journal_entries_pkey primary key (id),
+            constraint journal_entries_user_id_fkey foreign key (user_id) references auth.users (id) on delete cascade
+          );
+
+          CREATE INDEX IF NOT EXISTS journal_entries_user_id_idx 
+          ON public.journal_entries (user_id);
+
+          CREATE INDEX IF NOT EXISTS journal_entries_created_at_idx 
+          ON public.journal_entries (created_at);
+        `
+      },
+      {
+        name: 'Add journal entry AI columns',
+        sql: `
+          ALTER TABLE public.journal_entries
+            ADD COLUMN IF NOT EXISTS cleaned_content text;
+
+          ALTER TABLE public.journal_entries
+            ADD COLUMN IF NOT EXISTS ai_status text not null default 'skipped';
+
+          ALTER TABLE public.journal_entries
+            ADD COLUMN IF NOT EXISTS ai_error text;
+
+          ALTER TABLE public.journal_entries
+            ADD COLUMN IF NOT EXISTS cleaned_at timestamp with time zone;
+        `
+      },
+      {
         name: 'Enable RLS on projects',
         sql: `ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;`
       },
@@ -134,6 +170,35 @@ export async function POST(request) {
           DROP POLICY IF EXISTS "Users can delete their own notes" ON public.notes;
           CREATE POLICY "Users can delete their own notes" 
           ON public.notes FOR DELETE 
+          USING (auth.uid() = user_id);
+        `
+      },
+      {
+        name: 'Enable RLS on journal entries',
+        sql: `ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;`
+      },
+      {
+        name: 'Create journal entries RLS policies',
+        sql: `
+          DROP POLICY IF EXISTS "Users can view their own journal entries" ON public.journal_entries;
+          CREATE POLICY "Users can view their own journal entries" 
+          ON public.journal_entries FOR SELECT 
+          USING (auth.uid() = user_id);
+          
+          DROP POLICY IF EXISTS "Users can create their own journal entries" ON public.journal_entries;
+          CREATE POLICY "Users can create their own journal entries" 
+          ON public.journal_entries FOR INSERT 
+          WITH CHECK (auth.uid() = user_id);
+          
+          DROP POLICY IF EXISTS "Users can update their own journal entries" ON public.journal_entries;
+          CREATE POLICY "Users can update their own journal entries" 
+          ON public.journal_entries FOR UPDATE 
+          USING (auth.uid() = user_id) 
+          WITH CHECK (auth.uid() = user_id);
+          
+          DROP POLICY IF EXISTS "Users can delete their own journal entries" ON public.journal_entries;
+          CREATE POLICY "Users can delete their own journal entries" 
+          ON public.journal_entries FOR DELETE 
           USING (auth.uid() = user_id);
         `
       }

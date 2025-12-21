@@ -17,6 +17,32 @@ function getOpenAIClient() {
     return openaiClient;
 }
 
+function extractBulletPoints(text) {
+    if (!text || typeof text !== 'string') {
+        return [];
+    }
+
+    const lines = text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const isBullet = (line) => /^[-*\u2022]\s+/.test(line) || /^\d+[.)]\s+/.test(line);
+    const bulletLines = lines.filter(isBullet);
+    const sourceLines = bulletLines.length > 0 ? bulletLines : lines;
+
+    const points = sourceLines
+        .map((line) => line.replace(/^[-*\u2022]\s+/, '').replace(/^\d+[.)]\s+/, '').trim())
+        .filter(Boolean);
+
+    if (points.length > 0) {
+        return points;
+    }
+
+    const fallback = text.trim();
+    return fallback ? [fallback] : [];
+}
+
 export async function POST(req) {
     try {
         const openai = getOpenAIClient();
@@ -87,22 +113,53 @@ export async function POST(req) {
             return NextResponse.json({ error: 'No entries provided' }, { status: 400 });
         }
 
-        const compiledText = entries.map(e => `[${new Date(e.created_at).toLocaleDateString()}] ${e.content}`).join('\n\n');
+        const compiledText = entries
+            .map((entry) => {
+                const entryContent = entry.cleaned_content || entry.content || '';
+                return `[${new Date(entry.created_at).toLocaleDateString()}] ${entryContent}`;
+            })
+            .join('\n\n');
 
-        const prompt = `You are a professional therapist named Victoria. 
-    Analyze the following journal entries from your client for the past ${type === 'weekly' ? 'week' : 'year'}.
-    Provide a summary of their emotional state, key themes, and potential topics to discuss in the upcoming therapy session.
-    Address the client directly but professionally.
-    
-    Journal Entries:
-    ${compiledText}`;
+        const timeRangeLabel = (() => {
+            switch (type) {
+                case 'weekly':
+                    return 'the past week';
+                case 'monthly':
+                    return 'the past month';
+                case 'annual':
+                    return 'the past year';
+                case 'custom':
+                    return 'the selected date range';
+                default:
+                    return 'the recent period';
+            }
+        })();
+
+        const prompt = `You are an experienced, licensed therapist.
+Using the journal entries from ${timeRangeLabel}, write 6-10 bullet points that the client should consider discussing with their therapist, Victoria, in their next session.
+
+Guidelines:
+- Output only bullet points, no greeting, sign-off, or title.
+- Use "-" to start each bullet.
+- Each bullet should be concise (1-2 sentences), supportive, and non-judgmental.
+- Focus on emotions, themes, patterns, and specific situations that stand out.
+- Avoid diagnosis or medical advice.
+- Do not format as an email or write as Victoria speaking to the client.
+
+Journal Entries:
+${compiledText}`;
 
         const completion = await openai.chat.completions.create({
-            messages: [{ role: 'system', content: 'You are a helpful and empathetic therapist assistant.' }, { role: 'user', content: prompt }],
+            messages: [
+                { role: 'system', content: 'You are an experienced, licensed therapist who writes clear, supportive discussion prompts.' },
+                { role: 'user', content: prompt }
+            ],
             model: 'gpt-4o', // or gpt-3.5-turbo
         });
 
-        return NextResponse.json({ summary: completion.choices[0].message.content });
+        const content = completion.choices?.[0]?.message?.content ?? '';
+        const points = extractBulletPoints(content);
+        return NextResponse.json({ summary: points });
     } catch (error) {
         console.error('AI Summary Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

@@ -33,6 +33,6 @@ export const config = {
      * - /favicon.ico (favicon file)
      * - /public/* (public files)
      */
-    "/((?!login|api/auth|api/debug-env|api/health|api/integrations/outlook/webhook|api/integrations/outlook/sync|api/integrations/outlook/subscriptions|api/integrations/outlook/health|_next/static|_next/image|favicon.ico|public).*)",
+    "/((?!login|api/auth|api/debug-env|api/health|_next/static|_next/image|favicon.ico|public).*)",
   ],
 };

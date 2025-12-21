@@ -111,9 +111,10 @@ async function runMigration() {
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('\n📋 Migration Summary:\n');
   console.log('This migration needs to:');
-  console.log('  1. Create performance indexes on projects, tasks, and notes tables');
-  console.log('  2. Enable Row Level Security (RLS) on all tables');
-  console.log('  3. Create RLS policies for user data isolation\n');
+  console.log('  1. Create the journal_entries table if it is missing');
+  console.log('  2. Create performance indexes on projects, tasks, notes, and journal_entries');
+  console.log('  3. Enable Row Level Security (RLS) on all tables');
+  console.log('  4. Create RLS policies for user data isolation\n');
   
   if (!hasFullAccess) {
     console.log('⚠️  WARNING: Cannot execute DDL statements through the API without service key.');
@@ -150,12 +151,30 @@ ON public.notes (task_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_project_created 
 ON public.notes (project_id, created_at DESC);
 
+-- Journal entries table (if missing)
+CREATE TABLE IF NOT EXISTS public.journal_entries (
+  id uuid not null default gen_random_uuid(),
+  user_id uuid not null default auth.uid(),
+  content text not null,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  constraint journal_entries_pkey primary key (id),
+  constraint journal_entries_user_id_fkey foreign key (user_id) references auth.users (id) on delete cascade
+);
+
+CREATE INDEX IF NOT EXISTS journal_entries_user_id_idx 
+ON public.journal_entries (user_id);
+
+CREATE INDEX IF NOT EXISTS journal_entries_created_at_idx 
+ON public.journal_entries (created_at);
+
 -- Enable Row Level Security
 -- ==========================
 
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
 
 -- Projects RLS Policies
 -- =====================
@@ -229,6 +248,29 @@ CREATE POLICY "Users can delete their own notes"
 ON public.notes FOR DELETE 
 USING (auth.uid() = user_id);
 
+-- Journal entries RLS Policies
+-- ============================
+
+DROP POLICY IF EXISTS "Users can view their own journal entries" ON public.journal_entries;
+CREATE POLICY "Users can view their own journal entries" 
+ON public.journal_entries FOR SELECT 
+USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can create their own journal entries" ON public.journal_entries;
+CREATE POLICY "Users can create their own journal entries" 
+ON public.journal_entries FOR INSERT 
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update their own journal entries" ON public.journal_entries;
+CREATE POLICY "Users can update their own journal entries" 
+ON public.journal_entries FOR UPDATE 
+USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own journal entries" ON public.journal_entries;
+CREATE POLICY "Users can delete their own journal entries" 
+ON public.journal_entries FOR DELETE 
+USING (auth.uid() = user_id);
+
 -- Verification Query
 -- ==================
 -- Run this to verify indexes were created:
@@ -241,7 +283,7 @@ FROM
     pg_indexes
 WHERE 
     schemaname = 'public'
-    AND tablename IN ('projects', 'tasks', 'notes')
+    AND tablename IN ('projects', 'tasks', 'notes', 'journal_entries')
 ORDER BY 
     tablename, indexname;
 `;
@@ -276,7 +318,7 @@ ORDER BY
   
   try {
     // Check if we can query tables
-    const tables = ['projects', 'tasks', 'notes'];
+    const tables = ['projects', 'tasks', 'notes', 'journal_entries'];
     
     for (const table of tables) {
       const { count, error } = await supabase

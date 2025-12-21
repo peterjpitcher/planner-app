@@ -101,6 +101,7 @@ export function handleSupabaseError(error, operation) {
     '23505': 'This item already exists',
     '23503': 'Cannot delete - item is referenced by other data',
     '22P02': ERROR_MESSAGES.VALIDATION,
+    '42P01': 'Database table is missing. Run migrations to create it.',
     
     // Network errors
     'Failed to fetch': ERROR_MESSAGES.NETWORK,

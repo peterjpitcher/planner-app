@@ -1,7 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { createContext, useContext, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const SupabaseContext = createContext(null);
@@ -25,17 +24,7 @@ function getSupabaseInstance() {
 }
 
 export function SupabaseProvider({ children }) {
-  const { data: session } = useSession();
   const [supabase] = useState(() => getSupabaseInstance());
-
-  useEffect(() => {
-    // Note: Access token is no longer exposed to client for security
-    // All authenticated requests should go through API routes
-    // This context now provides unauthenticated Supabase client only
-    if (supabase && session) {
-      console.warn('Direct Supabase calls from client should be migrated to API routes for security');
-    }
-  }, [session, supabase]);
 
   if (!supabase) {
     throw new Error('Missing Supabase environment variables');

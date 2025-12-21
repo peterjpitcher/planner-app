@@ -1,12 +1,13 @@
 
-import { supabase } from '@/lib/supabaseClient';
+
 
 export const journalService = {
-    async saveEntry(content) {
+    async saveEntry(content, entryId) {
         const response = await fetch('/api/journal/entries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content }),
+            credentials: 'include',
+            body: JSON.stringify({ content, entryId }),
         });
 
         if (!response.ok) {
@@ -18,18 +19,21 @@ export const journalService = {
     },
 
     async getEntries() {
-        const { data: { user } } = await supabase.auth.getUser();
+        const response = await fetch('/api/journal/entries', {
+            cache: 'no-store',
+            credentials: 'include',
+        });
 
-        if (!user) throw new Error('User not authenticated');
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to fetch entries');
+        }
 
-        const { data, error } = await supabase
-            .from('journal_entries')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        return data;
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            return data;
+        }
+        return data?.data || [];
     },
 
     async getSummary(type = 'weekly', dates = null) {
@@ -59,18 +63,35 @@ export const journalService = {
         });
 
         if (filteredEntries.length === 0) {
-            return { summary: "No journal entries found for this period." };
+            return { summary: [], message: 'No journal entries found for this period.' };
         }
 
         const response = await fetch('/api/journal/summary', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ type, entries: filteredEntries }),
         });
 
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error || 'Failed to generate summary');
+        }
+
+        return response.json();
+    },
+
+    async cleanupEntry(entryId) {
+        const response = await fetch('/api/journal/entries/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ entryId }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to clean entry');
         }
 
         return response.json();

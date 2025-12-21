@@ -6,7 +6,6 @@ This guide captures the current technical posture and the remaining backlog pull
 - **Data loading:** API routes batch-fetch projects, tasks, and notes to avoid N+1 queries.
 - **Memoization:** Heavy list items (projects/tasks) rely on `React.memo`, `useMemo`, and `useCallback` to limit re-renders.
 - **Client/Server split:** UI stays on the client where interactivity is needed; all database access stays on the server via Supabase helpers.
-- **Deprecated integrations:** Microsoft Outlook sync was removed to simplify the stack.
 - **Styling:** Tailwind v4 with LightningCSS; date handling via `date-fns`.
 
 ## Performance & DX Practices

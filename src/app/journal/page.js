@@ -1,27 +1,115 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import AppShell from '@/components/layout/AppShell';
 import JournalEditor from '@/components/journal/JournalEditor';
+import TherapyPrepModal from '@/components/journal/TherapyPrepModal';
 import { journalService } from '@/services/journalService';
-import { BookOpenIcon, SparklesIcon, CalendarIcon } from '@heroicons/react/24/outline';
+import { BookOpenIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 export default function JournalPage() {
     const { data: session } = useSession();
     const [entries, setEntries] = useState([]);
-    const [summary, setSummary] = useState(null);
+    const [summaryPoints, setSummaryPoints] = useState([]);
+    const [summaryNotice, setSummaryNotice] = useState('');
+    const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+    const [summaryContext, setSummaryContext] = useState({ type: 'weekly', dates: null });
     const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
     const [summaryType, setSummaryType] = useState('weekly'); // 'weekly', 'monthly', 'annual', 'custom'
     const [customDates, setCustomDates] = useState({ start: '', end: '' });
+    const cleanupInFlightRef = useRef(new Set());
+    const cleanupAttemptsRef = useRef(new Map());
+
+    const formatDateLabel = (value) => {
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    };
+
+    const summaryPeriodLabel = (() => {
+        const { type, dates } = summaryContext || {};
+        if (type === 'custom' && dates?.start && dates?.end) {
+            const startLabel = formatDateLabel(dates.start);
+            const endLabel = formatDateLabel(dates.end);
+            if (startLabel && endLabel) {
+                return `${startLabel} - ${endLabel}`;
+            }
+            return 'Custom range';
+        }
+        switch (type) {
+            case 'weekly':
+                return 'Past week';
+            case 'monthly':
+                return 'Past month';
+            case 'annual':
+                return 'Past year';
+            case 'custom':
+                return 'Custom range';
+            default:
+                return 'Recent entries';
+        }
+    })();
 
     const fetchEntries = async () => {
         try {
             const data = await journalService.getEntries();
-            setEntries(data || []);
+            setEntries(data);
         } catch (error) {
             console.error('Failed to load entries:', error);
         }
+    };
+
+    const updateEntryState = useCallback((updatedEntry) => {
+        if (!updatedEntry?.id) return;
+        setEntries((prev) => prev.map((entry) => (
+            entry.id === updatedEntry.id ? updatedEntry : entry
+        )));
+    }, [setEntries]);
+
+    const requestCleanup = useCallback(async (entryId) => {
+        if (!entryId) return;
+        if (cleanupInFlightRef.current.has(entryId)) return;
+
+        const attempts = cleanupAttemptsRef.current.get(entryId) || 0;
+        if (attempts >= 3) return;
+
+        cleanupInFlightRef.current.add(entryId);
+        cleanupAttemptsRef.current.set(entryId, attempts + 1);
+
+        try {
+            const result = await journalService.cleanupEntry(entryId);
+            if (result?.data) {
+                updateEntryState(result.data);
+            }
+
+            if (result?.aiStatus === 'failed' && attempts + 1 < 3) {
+                setTimeout(() => requestCleanup(entryId), 4000 * (attempts + 1));
+            }
+        } catch (error) {
+            if (attempts + 1 < 3) {
+                setTimeout(() => requestCleanup(entryId), 4000 * (attempts + 1));
+            }
+        } finally {
+            cleanupInFlightRef.current.delete(entryId);
+        }
+    }, [updateEntryState]);
+
+    const handleEntrySaved = (savedEntry) => {
+        if (savedEntry?.id) {
+            setEntries((prev) => {
+                const filtered = prev.filter((entry) => entry.id !== savedEntry.id);
+                return [savedEntry, ...filtered];
+            });
+            requestCleanup(savedEntry.id);
+            return;
+        }
+
+        fetchEntries();
     };
 
     useEffect(() => {
@@ -30,12 +118,32 @@ export default function JournalPage() {
         }
     }, [session]);
 
+    useEffect(() => {
+        if (!session?.user || entries.length === 0) return;
+
+        entries
+            .filter((entry) => !entry.cleaned_content && ['pending', 'failed'].includes(entry.ai_status))
+            .forEach((entry) => requestCleanup(entry.id));
+    }, [entries, session, requestCleanup]);
+
     const handleGenerateSummary = async () => {
         setIsGeneratingSummary(true);
-        setSummary(null);
+        setSummaryPoints([]);
+        setSummaryNotice('');
+        setIsSummaryModalOpen(false);
         try {
             const result = await journalService.getSummary(summaryType, customDates);
-            setSummary(result.summary);
+            setSummaryContext({
+                type: summaryType,
+                dates: summaryType === 'custom' ? { ...customDates } : null,
+            });
+            const points = Array.isArray(result.summary) ? result.summary : [];
+            setSummaryPoints(points);
+            if (points.length === 0) {
+                setSummaryNotice(result.message || 'No discussion prompts were generated for this period.');
+                return;
+            }
+            setIsSummaryModalOpen(true);
         } catch (error) {
             console.error('Failed to generate summary:', error);
             alert(error.message);
@@ -59,7 +167,7 @@ export default function JournalPage() {
                             <BookOpenIcon className="h-5 w-5" />
                             New Entry
                         </h2>
-                        <JournalEditor onEntrySaved={fetchEntries} />
+                        <JournalEditor onEntrySaved={handleEntrySaved} />
                     </section>
 
                     <section>
@@ -82,7 +190,9 @@ export default function JournalPage() {
                                                 minute: '2-digit'
                                             })}
                                         </div>
-                                        <p className="text-[#052a3b] whitespace-pre-wrap leading-relaxed">{entry.content}</p>
+                                        <p className="text-[#052a3b] whitespace-pre-wrap leading-relaxed">
+                                            {entry.cleaned_content || entry.content}
+                                        </p>
                                     </div>
                                 ))
                             )}
@@ -99,7 +209,7 @@ export default function JournalPage() {
                         </div>
 
                         <p className="text-sm text-[#2f617a] mb-6">
-                            Generate a clinical summary of your recent journal entries to prepare for your session with Victoria.
+                            Generate therapist-written discussion prompts based on your recent entries for your next session with Victoria.
                         </p>
 
                         <div className="grid grid-cols-2 gap-2 mb-4 bg-white/50 p-1 rounded-lg">
@@ -163,25 +273,40 @@ export default function JournalPage() {
                             ) : (
                                 <>
                                     <SparklesIcon className="h-5 w-5" />
-                                    <span>Generate Summary</span>
+                                    <span>Generate Prompts</span>
                                 </>
                             )}
                         </button>
 
-                        {summary && (
-                            <div className="mt-6 pt-6 border-t border-[#0496c7]/10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <h3 className="text-sm font-semibold text-[#052a3b] mb-3 uppercase tracking-wider">
-                                    Analysis for Victoria
-                                </h3>
-                                <div className="prose prose-sm prose-blue max-w-none bg-white/50 p-4 rounded-xl text-[#052a3b]/90 leading-relaxed">
-                                    {summary}
-                                </div>
+                        {summaryNotice && (
+                            <div className="mt-4 text-xs text-[#2f617a]">
+                                {summaryNotice}
+                            </div>
+                        )}
+
+                        {summaryPoints.length > 0 && (
+                            <div className="mt-4 flex items-center justify-between rounded-xl border border-[#0496c7]/10 bg-white/60 px-3 py-2 text-xs text-[#2f617a]">
+                                <span>Therapy prep ready to review.</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsSummaryModalOpen(true)}
+                                    className="font-semibold text-[#0496c7] hover:text-[#0382ac]"
+                                >
+                                    Open
+                                </button>
                             </div>
                         )}
                     </div>
                 </div>
 
             </div>
+            <TherapyPrepModal
+                isOpen={isSummaryModalOpen}
+                onClose={() => setIsSummaryModalOpen(false)}
+                summaryPoints={summaryPoints}
+                summaryType={summaryContext?.type}
+                periodLabel={summaryPeriodLabel}
+            />
         </AppShell>
     );
 }

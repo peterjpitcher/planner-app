@@ -15,4 +15,13 @@ if (!supabaseAnonKey) {
 
 console.log('Supabase Client initialized with URL:', supabaseUrl);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey); 
+const createSupabaseClient = () => createClient(supabaseUrl, supabaseAnonKey);
+
+// Use a global variable to store the client in development to prevent multiple instances during HMR
+const client = global.supabase ?? createSupabaseClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  global.supabase = client;
+}
+
+export const supabase = client; 

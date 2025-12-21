@@ -49,7 +49,7 @@ async function checkAndCreateTables() {
   console.log('\n📊 Checking database tables...\n');
   
   // Check if tables exist and have the right structure
-  const tables = ['projects', 'tasks', 'notes'];
+  const tables = ['projects', 'tasks', 'notes', 'journal_entries'];
   
   for (const table of tables) {
     try {
@@ -79,7 +79,7 @@ async function testRLSStatus() {
     }
   });
   
-  const tables = ['projects', 'tasks', 'notes'];
+  const tables = ['projects', 'tasks', 'notes', 'journal_entries'];
   
   for (const table of tables) {
     try {
