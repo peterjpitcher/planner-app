@@ -59,6 +59,22 @@ const OPTIONAL_VARS = {
     description: 'Server port',
     example: '3000',
     default: '3000'
+  },
+  'MICROSOFT_CLIENT_ID': {
+    description: 'Azure App Registration client ID (daily digest email)',
+    example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+  },
+  'MICROSOFT_CLIENT_SECRET': {
+    description: 'Azure App Registration client secret (daily digest email)',
+    example: '***'
+  },
+  'MICROSOFT_TENANT_ID': {
+    description: 'Microsoft Entra tenant ID (daily digest email)',
+    example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+  },
+  'MICROSOFT_USER_EMAIL': {
+    description: 'Mailbox used to send/receive digest (daily digest email)',
+    example: 'peter@orangejelly.co.uk'
   }
 };
 
@@ -142,7 +158,9 @@ function validateEnvironment() {
     if (!value) {
       warnings.push({
         name: varName,
-        message: `Optional variable not set (will use default): ${varName}`,
+        message: config.default
+          ? `Optional variable not set (will use default): ${varName}`
+          : `Optional variable not set: ${varName}`,
         description: config.description,
         default: config.default
       });
