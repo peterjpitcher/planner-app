@@ -3,7 +3,7 @@
 /**
  * Environment validation script
  * Run this in CI/CD or locally to ensure all required environment variables are set
- * Usage: node check-env.js
+ * Usage: node scripts/check-env.js
  */
 
 // Simple color output without external dependencies

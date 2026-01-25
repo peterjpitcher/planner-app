@@ -14,6 +14,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
   const [name, setName] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState('Medium'); // Default priority
+  const [job, setJob] = useState('');
   const [stakeholders, setStakeholders] = useState(''); // Input as comma-separated string
   const [description, setDescription] = useState('');
   const [error, setError] = useState(null);
@@ -52,6 +53,7 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
       name: sanitizeInput(name),
       due_date: dueDate || null,
       priority: priority || PRIORITY.MEDIUM,
+      job: sanitizeInput(job) || null,
       stakeholders: stakeholders.split(',').map(s => sanitizeInput(s)).filter(s => s),
       description: sanitizeInput(description) || null,
       status: PROJECT_STATUS.OPEN,
@@ -197,6 +199,20 @@ export default function AddProjectForm({ onProjectAdded, onClose }) {
           <option value="Medium">Medium</option>
           <option value="Low">Low</option>
         </select>
+      </div>
+
+      <div>
+        <label htmlFor="job" className="block text-sm font-medium text-gray-700">
+          Job / Swimlane
+        </label>
+        <input
+          id="job"
+          type="text"
+          value={job}
+          onChange={(e) => setJob(e.target.value)}
+          placeholder="e.g., Job A, Freelance, Client X"
+          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+        />
       </div>
 
       <div>

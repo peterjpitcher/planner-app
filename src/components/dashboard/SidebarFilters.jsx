@@ -2,6 +2,8 @@
 
 import { EyeIcon, EyeSlashIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon, CalendarDaysIcon, ClockIcon, ExclamationTriangleIcon, InboxIcon } from '@heroicons/react/24/outline';
 import { Switch } from '@headlessui/react';
+import { cn } from '@/lib/utils';
+import { Card } from '@/components/ui/Card';
 
 const filterOrder = ['overdue', 'noTasks', 'untouched', 'noDueDate'];
 
@@ -30,23 +32,29 @@ const filterMeta = {
 
 function ToggleRow({ label, helper, icon: Icon, enabled, onChange }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-[#0496c7]/20 bg-white/85 px-4 py-3 transition shadow-sm shadow-[#0496c7]/10">
+    <div className="flex items-center justify-between rounded-lg border border-border bg-card p-3 shadow-sm transition-colors hover:bg-muted/30">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0496c7]/15 text-[#036586]">
-          <Icon className="h-5 w-5" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-[#052a3b]">{label}</p>
-          {helper && <p className="text-xs text-[#2f617a]/80">{helper}</p>}
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          {helper && <p className="text-xs text-muted-foreground">{helper}</p>}
         </div>
       </div>
       <Switch
         checked={enabled}
         onChange={onChange}
-        className={`relative inline-flex h-7 w-14 shrink-0 items-center rounded-full border border-[#0496c7]/30 transition ${enabled ? 'bg-[#0496c7]' : 'bg-white'}`}
+        className={cn(
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+          enabled ? "bg-primary" : "bg-input"
+        )}
       >
         <span
-          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition ${enabled ? 'translate-x-7' : 'translate-x-1'}`}
+          className={cn(
+            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+            enabled ? "translate-x-4" : "translate-x-0.5"
+          )}
         />
       </Switch>
     </div>
@@ -61,34 +69,45 @@ function FilterCard({ id, isActive, count, onToggle }) {
     <button
       type="button"
       onClick={() => onToggle(id)}
-      className={`group relative overflow-hidden rounded-2xl border px-4 py-4 text-left transition ${isActive ? 'border-[#0496c7] bg-[#0496c7]/12 shadow-[0_18px_40px_-28px_rgba(4,150,199,0.45)]' : 'border-[#0496c7]/15 bg-white/85 hover:border-[#0496c7]/35 hover:bg-white'
-        }`}
+      className={cn(
+        "group relative w-full overflow-hidden rounded-lg border p-3 text-left transition-all",
+        isActive
+          ? "border-primary bg-primary/5 shadow-sm"
+          : "border-border bg-card hover:bg-muted/50 hover:border-primary/50"
+      )}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${isActive ? 'bg-[#0496c7]/20 text-[#036586]' : 'bg-[#0496c7]/12 text-[#2f617a]/80'}`}>
-            <Icon className="h-5 w-5" />
+          <span className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+            isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+          )}>
+            <Icon className="h-4 w-4" />
           </span>
           <div>
-            <p className="text-sm font-semibold tracking-tight text-[#052a3b]">{meta.label}</p>
-            <p className="mt-1 text-xs text-[#2f617a]/80">{meta.description}</p>
+            <p className={cn("text-sm font-semibold tracking-tight", isActive ? "text-primary" : "text-foreground")}>
+              {meta.label}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
           </div>
         </div>
         <span
-          className={`flex h-8 min-w-[2.5rem] items-center justify-center rounded-full border text-xs font-semibold transition ${isActive ? 'border-[#0496c7] bg-[#0496c7]/15 text-[#036586]' : 'border-[#0496c7]/15 bg-white text-[#2f617a]/80'
-            }`}
+          className={cn(
+            "flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors",
+            isActive ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+          )}
         >
           {count}
         </span>
       </div>
-      <span
-        className={`absolute inset-0 -z-10 bg-gradient-to-r from-[#0496c7]/18 via-[#5bd2c1]/12 to-transparent opacity-0 transition-all duration-300 ${isActive ? 'opacity-100' : 'group-hover:opacity-100'}`}
-      />
     </button>
   );
 }
 
 export default function SidebarFilters({
+  uniqueJobs,
+  selectedJob,
+  onJobChange,
   uniqueStakeholders,
   selectedStakeholder,
   onStakeholderChange,
@@ -96,29 +115,48 @@ export default function SidebarFilters({
   onToggleCompleted,
   areAllTasksExpanded,
   onToggleExpandTasks,
-  hideBillStakeholder,
-  onToggleHideBill,
   activeDashboardFilters,
   onToggleDashboardFilter,
   projectAnalysis,
 }) {
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/80">Stakeholders</p>
-        <h2 className="mt-2 text-lg font-semibold text-[#052a3b]">Filter pipeline</h2>
-        <p className="mt-3 text-sm text-[#2f617a]/80">
-          Narrow down projects by accountability partner. Stakeholder tags can be combined with focus filters.
-        </p>
-        <div className="mt-4">
-          <label htmlFor="stakeholder-filter" className="sr-only">Stakeholder filter</label>
+    <Card className="border-none shadow-none bg-transparent">
+      <div className="space-y-8">
+        {/* Jobs Section */}
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Jobs</p>
+          <div className="relative">
+            <select
+              id="job-filter"
+              value={selectedJob}
+              onChange={onJobChange}
+              className="w-full appearance-none rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
+            >
+              <option value="All Jobs">All jobs</option>
+              <option value="No Job">No job</option>
+              {(uniqueJobs || []).map((job) => (
+                <option key={job} value={job}>
+                  {job}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+              <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+                <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Stakeholders Section */}
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Stakeholders</p>
           <div className="relative">
             <select
               id="stakeholder-filter"
-              name="stakeholder-filter"
               value={selectedStakeholder}
               onChange={onStakeholderChange}
-              className="block w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 pr-12 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-400/20"
+              className="w-full appearance-none rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
             >
               <option value="All Stakeholders">All stakeholders</option>
               {uniqueStakeholders.map((stakeholder) => (
@@ -127,62 +165,54 @@ export default function SidebarFilters({
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-500">
-              <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
-                <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+              <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+                <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
               </svg>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="space-y-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/80">Workspace</p>
-        <h2 className="text-lg font-semibold text-[#052a3b]">Display controls</h2>
-        <div className="mt-3 space-y-3">
-          <ToggleRow
-            label={showCompletedProjects ? 'Hiding completed projects' : 'Showing completed projects'}
-            helper={showCompletedProjects ? 'Completed and cancelled projects are visible.' : 'Completed and cancelled projects are hidden.'}
-            icon={showCompletedProjects ? EyeIcon : EyeSlashIcon}
-            enabled={showCompletedProjects}
-            onChange={onToggleCompleted}
-          />
-          <ToggleRow
-            label={areAllTasksExpanded ? 'Collapse task groups' : 'Expand all task groups'}
-            helper="Toggles every project’s task list."
-            icon={areAllTasksExpanded ? ArrowsPointingInIcon : ArrowsPointingOutIcon}
-            enabled={areAllTasksExpanded}
-            onChange={onToggleExpandTasks}
-          />
-          <ToggleRow
-            label={hideBillStakeholder ? 'Showing only GMI tasks' : 'Show only GMI tasks'}
-            helper="Exclude any project that lists Bill as a stakeholder."
-            icon={hideBillStakeholder ? EyeSlashIcon : EyeIcon}
-            enabled={hideBillStakeholder}
-            onChange={onToggleHideBill}
-          />
+        {/* Workspace Controls */}
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">View Options</p>
+          <div className="space-y-2">
+            <ToggleRow
+              label={showCompletedProjects ? 'Hide completed' : 'Show completed'}
+              helper="Toggle visibility of finished work"
+              icon={showCompletedProjects ? EyeSlashIcon : EyeIcon}
+              enabled={showCompletedProjects}
+              onChange={onToggleCompleted}
+            />
+            <ToggleRow
+              label={areAllTasksExpanded ? 'Collapse All' : 'Expand All'}
+              helper="Toggle task lists"
+              icon={areAllTasksExpanded ? ArrowsPointingInIcon : ArrowsPointingOutIcon}
+              enabled={areAllTasksExpanded}
+              onChange={onToggleExpandTasks}
+            />
+          </div>
+        </div>
+
+        {/* Priority Filters */}
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Priority Filters</p>
+          <div className="space-y-2">
+            {filterOrder.map((filterKey) => {
+              const ids = projectAnalysis[filterKey] || [];
+              return (
+                <FilterCard
+                  key={filterKey}
+                  id={filterKey}
+                  count={ids.length}
+                  isActive={Boolean(activeDashboardFilters[filterKey])}
+                  onToggle={onToggleDashboardFilter}
+                />
+              );
+            })}
+          </div>
         </div>
       </div>
-
-      <div className="space-y-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/80">Focus</p>
-        <h2 className="text-lg font-semibold text-[#052a3b]">Priority filters</h2>
-        <p className="text-sm text-[#2f617a]/80">Highlight critical projects. Counts update in real time.</p>
-        <div className="mt-4 space-y-3">
-          {filterOrder.map((filterKey) => {
-            const ids = projectAnalysis[filterKey] || [];
-            return (
-              <FilterCard
-                key={filterKey}
-                id={filterKey}
-                count={ids.length}
-                isActive={Boolean(activeDashboardFilters[filterKey])}
-                onToggle={onToggleDashboardFilter}
-              />
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    </Card>
   );
 }

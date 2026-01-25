@@ -11,6 +11,7 @@ import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
 import ChaseTaskModal from './ChaseTaskModal';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
+import { TaskScoreBadge } from './TaskScoreBadge';
 
 // Helper to get priority styling
 const getTaskPriorityClasses = (priority) => {
@@ -511,6 +512,8 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
             </span>
           )}
 
+          <TaskScoreBadge task={task} className="border-gray-200 bg-white/70 text-gray-700" />
+
           <button
             onClick={() => setShowNotes(!showNotes)}
             className="icon-button relative flex items-center text-gray-400 hover:text-indigo-600"
@@ -564,6 +567,8 @@ export default React.memo(TaskItem, (prevProps, nextProps) => {
     prevProps.task.name === nextProps.task.name &&
     prevProps.task.is_completed === nextProps.task.is_completed &&
     prevProps.task.priority === nextProps.task.priority &&
-    prevProps.task.due_date === nextProps.task.due_date
+    prevProps.task.due_date === nextProps.task.due_date &&
+    prevProps.task.importance_score === nextProps.task.importance_score &&
+    prevProps.task.urgency_score === nextProps.task.urgency_score
   );
 }); 

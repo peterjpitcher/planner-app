@@ -377,7 +377,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
   );
 }
 
-export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, hideBillStakeholder, onTaskDragStateChange = () => {} }) {
+export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdateNeeded, onTaskDragStateChange = () => {} }) {
   const [isLoading, setIsLoading] = useState(true);
   const { targetProjectId, setTargetProjectId, actionedProjectIdRef } = useTargetProject();
 
@@ -394,21 +394,7 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
     const tomorrow = startOfDay(addDays(today, 1));
     const endOfThisWeek = endOfWeek(today, { weekStartsOn: 1 }); // Assuming Monday is the start of the week
 
-    const billRegex = /\bbill\b/i;
-    const projectIdsToExclude = hideBillStakeholder
-      ? new Set(
-          (projects || [])
-            .filter(project => billRegex.test((project.stakeholders || []).join(' ')))
-            .map(project => project.id)
-        )
-      : null;
-
-    const filteredTasks = allUserTasks.filter(task => {
-      if (task.is_completed) return false;
-      if (!hideBillStakeholder || !projectIdsToExclude) return true;
-      if (!task.project_id) return true;
-      return !projectIdsToExclude.has(task.project_id);
-    });
+    const filteredTasks = allUserTasks.filter(task => !task.is_completed);
 
     // Sort tasks first by priority (descending), then by due date (ascending)
     const sortedTasks = filteredTasks.sort((a, b) => {
@@ -466,7 +452,7 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
     // No need to re-sort each group individually if the overall list is pre-sorted correctly.
 
     return groups;
-  }, [allUserTasks, projects, hideBillStakeholder]);
+  }, [allUserTasks]);
 
   const groupOrder = ['overdue', 'today', 'tomorrow', 'thisWeek'];
   const groupLabels = {

@@ -1,14 +1,10 @@
-'use client';
-
-function cn(...inputs) {
-    return inputs.filter(Boolean).join(' ');
-}
+import { cn } from "@/lib/utils";
 
 export function Card({ className, children, ...props }) {
     return (
         <div
             className={cn(
-                "bg-[var(--surface-card)] backdrop-blur-sm rounded-[var(--radius-md)] border border-[var(--surface-border)] shadow-sm",
+                "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
                 className
             )}
             {...props}
@@ -18,15 +14,25 @@ export function Card({ className, children, ...props }) {
     );
 }
 
-export function GlassPanel({ className, children, ...props }) {
+export function CardHeader({ className, children, ...props }) {
     return (
-        <div
-            className={cn(
-                "bg-[var(--surface-overlay)] backdrop-filter backdrop-blur-[var(--glass-blur)] rounded-[var(--radius-lg)] border border-[var(--surface-border)] shadow-[var(--shadow-soft)]",
-                className
-            )}
-            {...props}
-        >
+        <div className={cn("flex flex-col space-y-1.5 p-6", className)} {...props}>
+            {children}
+        </div>
+    );
+}
+
+export function CardTitle({ className, children, ...props }) {
+    return (
+        <h3 className={cn("font-semibold leading-none tracking-tight", className)} {...props}>
+            {children}
+        </h3>
+    );
+}
+
+export function CardContent({ className, children, ...props }) {
+    return (
+        <div className={cn("p-6 pt-0", className)} {...props}>
             {children}
         </div>
     );

@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import StandaloneTaskList from '@/components/Tasks/StandaloneTaskList';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
 import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
+import { Card, CardContent } from '@/components/ui/Card'; // Use standard Card
 import { PlusIcon } from '@heroicons/react/24/outline';
 import {
   FireIcon as SolidFireIcon,
@@ -23,7 +24,6 @@ export default function TasksPanel({
   tasks,
   projects,
   onTaskUpdate,
-  hideBillStakeholder,
   onQuickAdd,
   onTaskDragStateChange,
 }) {
@@ -33,38 +33,49 @@ export default function TasksPanel({
   }, [onQuickAdd]);
 
   return (
-    <div id="tasks-panel" className="flex w-full flex-col gap-4 sm:max-w-[28rem] sm:self-center lg:max-w-none">
+    <div id="tasks-panel" className="flex w-full flex-col gap-4">
+      {/* Standardized Header */}
       <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/85">Tasks</p>
-        <h2 className="mt-2 text-xl font-semibold text-[#052a3b]">Flight board</h2>
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Tasks</p>
+        <h2 className="text-lg font-semibold text-foreground">Flight board</h2>
       </div>
-      <div className="card-surface mx-auto w-full overflow-hidden border border-[#0496c7]/20 bg-white/90 p-0 text-[#052a3b] shadow-[0_24px_50px_-32px_rgba(4,150,199,0.35)] backdrop-blur sm:max-w-[28rem] lg:mx-0 lg:max-w-none">
-        <QuickTaskForm
-          onSubmit={handleQuickSubmit}
-          namePlaceholder="What needs doing?"
-          buttonLabel="Add"
-          buttonIcon={PlusIcon}
-          priorityType="pills"
-          priorityOptions={quickPriorities}
-          defaultPriority="Medium"
-          defaultDueDate={todayISO()}
-          className="border-b border-[#0496c7]/15 bg-white p-4 sm:p-6 text-[#052a3b]"
-        />
 
-        {isLoading ? (
-          <div className="p-4 sm:p-6">
-            <TaskListSkeleton />
-          </div>
-        ) : (
-          <StandaloneTaskList
-            allUserTasks={tasks}
-            projects={projects}
-            onTaskUpdateNeeded={onTaskUpdate}
-            hideBillStakeholder={hideBillStakeholder}
-            onTaskDragStateChange={onTaskDragStateChange}
+      <Card className="border-border shadow-sm bg-card overflow-hidden">
+        {/* Quick Add Section - No internal padding on Card, so we pad the children */}
+        <div className="border-b border-border bg-muted/30 p-4">
+          <QuickTaskForm
+            onSubmit={handleQuickSubmit}
+            namePlaceholder="What needs doing?"
+            buttonLabel="Add"
+            buttonIcon={PlusIcon}
+            priorityType="pills"
+            priorityOptions={quickPriorities}
+            defaultPriority="Medium"
+            defaultDueDate={todayISO()}
+            // Override internal class to fit new container
+            className="bg-transparent"
           />
-        )}
-      </div>
+        </div>
+
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-4">
+              <TaskListSkeleton />
+            </div>
+          ) : (
+            // StandaloneTaskList might have its own padding, check or wrap
+            // Assuming it renders a list, let's give it padding container
+            <div className="bg-background/50">
+              <StandaloneTaskList
+                allUserTasks={tasks}
+                projects={projects}
+                onTaskUpdateNeeded={onTaskUpdate}
+                onTaskDragStateChange={onTaskDragStateChange}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

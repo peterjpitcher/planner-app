@@ -58,8 +58,7 @@ export const NOTE_TYPE = {
 // Filter Labels
 export const FILTER_LABELS = {
   ALL_STAKEHOLDERS: 'All Stakeholders',
-  NO_STAKEHOLDER: 'No Stakeholder',
-  HIDE_BILL: 'Hide Bill'
+  NO_STAKEHOLDER: 'No Stakeholder'
 };
 
 // Error Messages

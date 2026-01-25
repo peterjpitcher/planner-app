@@ -8,10 +8,11 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
+const projectRoot = path.resolve(__dirname, '..');
 
 // Load environment variables from .env.local
 try {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(projectRoot, '.env.local');
   const envContent = fs.readFileSync(envPath, 'utf8');
   envContent.split('\n').forEach(line => {
     const [key, ...valueParts] = line.split('=');
@@ -39,7 +40,7 @@ console.log('🚀 Direct Migration Runner');
 console.log('==========================\n');
 
 // Read the migration file
-const migrationPath = path.join(__dirname, 'supabase/migrations/20250904_performance_and_rls.sql');
+const migrationPath = path.join(projectRoot, 'supabase', 'migrations', '20250904_performance_and_rls.sql');
 const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
 
 console.log('📋 Migration to apply:');
@@ -63,9 +64,10 @@ console.log('   - RLS enabled');
 console.log('   - Policies created\n');
 
 // Create a ready-to-paste file
-const outputFile = 'ready-to-paste-migration.sql';
+const outputFile = path.join(projectRoot, 'db', 'migrations', 'ready-to-paste-migration.sql');
+fs.mkdirSync(path.dirname(outputFile), { recursive: true });
 fs.writeFileSync(outputFile, migrationSQL);
-console.log(`💾 Migration SQL saved to: ${outputFile}`);
+console.log(`💾 Migration SQL saved to: ${path.relative(projectRoot, outputFile)}`);
 console.log('   You can copy this file\'s contents to paste into the SQL Editor\n');
 
 // Test current database state

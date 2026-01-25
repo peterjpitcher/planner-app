@@ -44,7 +44,7 @@ export async function GET(request) {
     // Build base query
     let query = supabase
       .from('tasks')
-      .select('*, projects(id, name)', { count: 'exact' })
+      .select('*, projects(id, name, job)', { count: 'exact' })
       .eq('user_id', session.user.id);
     
     // Apply project filter if specified
@@ -99,7 +99,8 @@ export async function GET(request) {
     // Transform data to include project_name at top level for easier consumption
     const transformedData = (data || []).map(task => ({
       ...task,
-      project_name: task.projects?.name || null
+      project_name: task.projects?.name || null,
+      project_job: task.projects?.job || null
     }));
     
     // Build response with pagination info if count is available

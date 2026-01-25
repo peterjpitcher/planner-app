@@ -25,7 +25,7 @@
 - **Mobile footer** now respects iOS device safe areas
 
 ### Developer Tools
-- **Environment validation script** (`check-env.js`)
+- **Environment validation script** (`scripts/check-env.js`)
 - **Migration runner scripts** created for future use
 
 ## ⚠️ Pending Manual Migration
@@ -33,7 +33,7 @@
 ### Database Indexes & RLS Policies
 The following SQL migration needs to be run manually in your Supabase Dashboard:
 
-**Location**: `apply-migration.sql`
+**Location**: `db/migrations/apply-migration.sql`
 
 **What it does**:
 1. Creates 7 performance indexes on projects, tasks, and notes tables
@@ -44,7 +44,7 @@ The following SQL migration needs to be run manually in your Supabase Dashboard:
 
 1. Open your [Supabase Dashboard](https://hufxwovthhsjmtifvign.supabase.co/project/hufxwovthhsjmtifvign)
 2. Navigate to **SQL Editor**
-3. Copy the contents of `apply-migration.sql`
+3. Copy the contents of `db/migrations/apply-migration.sql`
 4. Paste into the SQL Editor
 5. Click **Run**
 
@@ -82,20 +82,20 @@ All tables are accessible and functioning normally.
 
 ## Next Steps
 
-1. **Run the migration** in Supabase Dashboard using `apply-migration.sql`
+1. **Run the migration** in Supabase Dashboard using `db/migrations/apply-migration.sql`
 2. **Test the application** to ensure everything continues working
 3. **Monitor performance** - you should see improved query speeds
 4. **Deploy to production** with confidence
 
 ## Files Created
 
-- `apply-migration.sql` - Complete migration with verification queries
-- `check-env.js` - Environment validation script
+- `db/migrations/apply-migration.sql` - Complete migration with verification queries
+- `scripts/check-env.js` - Environment validation script
 - `src/lib/supabaseServer.js` - Centralized Supabase client
 - `src/lib/supabaseRequest.js` - Request helper with timeout/retry
 - `src/app/api/health/app/route.js` - Application health endpoint
 - `src/app/api/health/supabase/route.js` - Database health endpoint
-- `src/migrations/001_add_performance_indexes.sql` - Original migration
+- `db/migrations/archive/001_add_performance_indexes.sql` - Original migration
 
 ## Summary
 

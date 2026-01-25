@@ -2,58 +2,124 @@
 @import '../styles/touch-targets.css';
 
 :root {
-  /* Cerulean Blue Palette */
-  --brand-primary: #007BA7;
-  --brand-primary-rgb: 0, 123, 167;
+  /* Base - Light Gray/Blue tint background for content */
+  --background: 210 20% 98%;
+  --foreground: 214 97% 25%;
+  /* Deep Blue Text for high contrast */
 
-  --background: #f0f9ff;
-  --foreground: #022c3b;
+  /* Card - White surfaces */
+  --card: 0 0% 100%;
+  --card-foreground: 214 97% 25%;
 
-  --surface-base: rgba(255, 255, 255, 0.92);
-  --surface-overlay: rgba(255, 255, 255, 0.96);
-  --surface-border: rgba(255, 255, 255, 0.4);
-  --surface-card: rgba(255, 255, 255, 0.95);
+  /* Popovers */
+  --popover: 0 0% 100%;
+  --popover-foreground: 214 97% 25%;
 
-  --text-primary: #022c3b;
-  --text-secondary: #335c6e;
+  /* Primary - Vibrant Ocean Blue (#0496C7) */
+  --primary: 195 96% 40%;
+  --primary-foreground: 0 0% 100%;
 
-  --accent: var(--brand-primary);
-  --accent-soft: rgba(0, 123, 167, 0.08);
+  /* Secondary - Light Cyan tint (#55E2E9 but very soft for backgrounds) or Neutral */
+  --secondary: 190 30% 96%;
+  --secondary-foreground: 214 97% 25%;
 
-  --success: #0e9f6e;
-  --danger: #e24d4c;
+  /* Muted - Grays with slight cool tint */
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 16% 47%;
 
-  --glass-blur: blur(24px);
-  --radius-lg: 20px;
-  --radius-md: 14px;
-  --radius-sm: 10px;
+  /* Accent - Bright Cyan (#04BADE / #55E2E9) for interactions */
+  --accent: 190 96% 44%;
+  --accent-foreground: 0 0% 100%;
 
-  --shadow-soft: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  /* Destructive */
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  /* Borders & Input */
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 195 96% 40%;
+
+  /* Radius */
+  --radius: 0.5rem;
+
+  /* Sidebar - Deepest Ocean Blue (#02367B) */
+  --sidebar-background: 214 97% 25%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-primary: 195 96% 40%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 214 80% 35%;
+  /* Slightly lighter blue for hover */
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 214 80% 30%;
+  --sidebar-ring: 195 96% 40%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #021821;
-    --foreground: #e0f2fe;
+.dark {
+  /* Dark Mode - Inverted Ocean logic if needed, but keeping simple for now */
+  --background: 214 97% 10%;
+  --foreground: 210 40% 98%;
 
-    --surface-base: rgba(0, 123, 167, 0.25);
-    --surface-overlay: rgba(2, 32, 44, 0.7);
-    --surface-card: rgba(5, 40, 56, 0.85);
-    --surface-border: rgba(0, 123, 167, 0.3);
+  --card: 214 97% 12%;
+  --card-foreground: 210 40% 98%;
 
-    --text-primary: #e0f2fe;
-    --text-secondary: #94b8c7;
-  }
+  --popover: 214 97% 12%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 195 96% 40%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 214 50% 20%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 214 50% 20%;
+  --muted-foreground: 215 20% 65%;
+
+  --accent: 190 96% 44%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214 50% 20%;
+  --input: 214 50% 20%;
+  --ring: 195 96% 40%;
+
+  --sidebar-background: 214 97% 15%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-primary: 195 96% 40%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 214 80% 25%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 214 80% 20%;
+  --sidebar-ring: 195 96% 40%;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
-  /* Cerulean gradient background */
-  background: linear-gradient(135deg, #007BA7 0%, #005a7a 100%) fixed;
-  color: var(--text-primary);
-  font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-  background-attachment: fixed;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer utilities {
+  .border-border {
+    border-color: hsl(var(--border));
+  }
+
+  .bg-background {
+    background-color: hsl(var(--background));
+  }
+
+  .bg-card {
+    background-color: hsl(var(--card));
+  }
+
+  .text-foreground {
+    color: hsl(var(--foreground));
+  }
 }
 
 .backdrop-card {

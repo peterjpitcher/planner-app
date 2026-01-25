@@ -8,10 +8,11 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
+const projectRoot = path.resolve(__dirname, '..');
 
 // Load environment variables from .env.local
 try {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(projectRoot, '.env.local');
   const envContent = fs.readFileSync(envPath, 'utf8');
   envContent.split('\n').forEach(line => {
     const [key, ...valueParts] = line.split('=');
@@ -136,15 +137,15 @@ async function outputInstructions() {
   console.log('1. Open your Supabase Dashboard:');
   console.log(`   ${supabaseUrl.replace('.supabase.co', '.supabase.co/project/hufxwovthhsjmtifvign')}`);
   console.log('\n2. Navigate to the SQL Editor');
-  console.log('\n3. Copy the contents of: apply-migration.sql');
+  console.log('\n3. Copy the contents of: db/migrations/apply-migration.sql');
   console.log('\n4. Paste into the SQL Editor');
   console.log('\n5. Click "Run" to execute the migration');
   
   console.log('\n' + '━'.repeat(60));
-  console.log('\n📁 Migration files created:');
-  console.log('   • apply-migration.sql - Complete migration with verification');
-  console.log('   • migration-to-run.sql - Raw migration statements');
-  console.log('   • src/migrations/001_add_performance_indexes.sql - Original migration\n');
+  console.log('\n📁 Migration files:');
+  console.log('   • db/migrations/apply-migration.sql - Complete migration with verification');
+  console.log('   • db/migrations/migration-to-run.sql - Raw migration statements');
+  console.log('   • db/migrations/archive/001_add_performance_indexes.sql - Original migration\n');
   
   // Create a simple verification endpoint
   console.log('After running the migration, you can verify it worked by visiting:');

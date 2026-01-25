@@ -8,7 +8,7 @@ This document summarizes all the improvements implemented based on the comprehen
 ## 1. Security Improvements ✅
 
 ### Row Level Security (RLS)
-- **Created**: `/docs/fix-rls-policies.sql`
+- **Created**: `/db/maintenance/fix-rls-policies.sql`
 - **Action Required**: Run this SQL in your Supabase dashboard to fix the overly permissive policies
 - **Impact**: Ensures users can only access their own data
 
@@ -104,7 +104,7 @@ Applied to all list components to prevent unnecessary re-renders:
 
 ## 6. Immediate Actions Required
 
-1. **Run RLS SQL**: Execute `/docs/fix-rls-policies.sql` in Supabase
+1. **Run RLS SQL**: Execute `/db/maintenance/fix-rls-policies.sql` in Supabase
 2. **Add Service Key**: Add `SUPABASE_SERVICE_KEY` to your environment variables for API routes
 3. **Test Application**: Verify all features work with the improvements
 

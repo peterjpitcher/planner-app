@@ -1,6 +1,8 @@
 'use client';
 
 import { ArrowTrendingUpIcon, BoltIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/Card';
 
 const iconMap = {
   default: BoltIcon,
@@ -16,31 +18,37 @@ export default function MetricsBar({ metrics = [] }) {
       {metrics.map((metric) => {
         const Icon = metric.icon || iconMap[metric.intent || 'default'];
         return (
-          <div
+          <Card
             key={metric.id}
-            className="relative overflow-hidden rounded-3xl border border-white/40 bg-white/95 p-4 sm:p-6 text-[#052a3b] shadow-lg transition hover:border-white/60 hover:bg-white"
+            className="relative overflow-hidden transition-all hover:bg-muted/50"
           >
-            <div className="absolute inset-0 opacity-80">
-              <div className={`absolute -top-12 right-0 h-32 w-32 rounded-full blur-3xl ${metric.glow || 'bg-[#0496c7]/28'}`} />
+            <div className="absolute inset-0 opacity-10">
+              <div className={cn(
+                "absolute -top-12 right-0 h-32 w-32 rounded-full blur-3xl",
+                metric.glow || "bg-primary" // Use theme primary if no specific glow
+              )} />
             </div>
-            <div className="relative flex items-start justify-between">
+            <CardContent className="p-6 relative flex items-start justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[#036586]/85">{metric.label}</p>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold text-[#052a3b]">{metric.value}</span>
+                <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">{metric.label}</p>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold text-foreground">{metric.value}</span>
                   {metric.delta && (
-                    <span className={`text-xs font-medium ${metric.delta > 0 ? 'text-[#0e9f6e]' : 'text-[#2f617a]'}`}>
+                    <span className={cn(
+                      "text-xs font-medium",
+                      metric.delta > 0 ? "text-green-600" : "text-muted-foreground"
+                    )}>
                       {metric.delta > 0 ? `▲ ${metric.delta}` : metric.delta === 0 ? 'No change' : `▼ ${Math.abs(metric.delta)}`}
                     </span>
                   )}
                 </div>
-                {metric.helper && <p className="mt-2 text-sm text-[#2f617a]">{metric.helper}</p>}
+                {metric.helper && <p className="mt-1 text-sm text-muted-foreground">{metric.helper}</p>}
               </div>
-              <div className="rounded-2xl bg-[#0496c7]/12 p-3 text-[#036586] shadow-inner shadow-[#0496c7]/20">
-                <Icon className="h-6 w-6" />
+              <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
+                <Icon className="h-5 w-5" />
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         );
       })}
     </div>

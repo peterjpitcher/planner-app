@@ -62,10 +62,15 @@ class APIClient {
   }
 
   // Tasks
-  async getTasks(projectId = null, includeCompleted = false) {
+  async getTasks(projectId = null, includeCompleted = false, options = {}) {
     const params = new URLSearchParams();
     if (projectId) params.append('projectId', projectId);
     if (includeCompleted) params.append('includeCompleted', 'true');
+    if (options?.range) params.append('range', options.range);
+    if (options?.days !== undefined) params.append('days', String(options.days));
+    if (options?.includeOverdue === false) params.append('includeOverdue', 'false');
+    if (options?.limit !== undefined) params.append('limit', String(options.limit));
+    if (options?.offset !== undefined) params.append('offset', String(options.offset));
     
     const response = await this.fetchWithAuth(`/api/tasks?${params}`);
     return response.data || [];

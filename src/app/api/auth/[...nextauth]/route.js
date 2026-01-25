@@ -204,6 +204,11 @@ export const authOptions = {
   },
   
   // 6. Environment-specific settings
+  // When `.env.local` is pulled from Vercel it often contains the production
+  // `NEXTAUTH_URL` (https://...). In local development (http://localhost) that
+  // would make NextAuth default to secure cookies, which the browser will not
+  // store over HTTP — resulting in a “login works but you stay on /login” loop.
+  useSecureCookies: process.env.NODE_ENV === 'production',
   secret: process.env.NEXTAUTH_SECRET, // Explicitly set the secret
   debug: false, // Disable debug logging
   

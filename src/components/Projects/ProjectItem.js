@@ -16,6 +16,8 @@ import { useSession } from 'next-auth/react';
 import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 import { getPriorityClasses } from '@/lib/projectHelpers';
+import { cn } from '@/lib/utils'; // Standard utility
+import { compareTasksByWorkPriority } from '@/lib/taskScoring';
 
 const getTodayISODate = () => format(new Date(), 'yyyy-MM-dd');
 
@@ -70,13 +72,7 @@ const ProjectItem = forwardRef((
     if (propTasks) {
       const sortedTasks = [...propTasks].sort((a, b) => {
         if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-        const dateA = a.due_date ? new Date(a.due_date) : null;
-        const dateB = b.due_date ? new Date(b.due_date) : null;
-        if (dateA && dateB) return dateA - dateB;
-        if (dateA) return -1;
-        if (dateB) return 1;
-        const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
-        return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
+        return compareTasksByWorkPriority(a, b);
       });
       setTasks(sortedTasks);
     }
@@ -94,11 +90,6 @@ const ProjectItem = forwardRef((
 
   const fetchProjectNotes = useCallback(async () => {
     if (!project || !project.id) return;
-    // If we already have notes from props and they are not empty, avoid re-fetching unless forced
-    // But for now, let's allow re-fetch to ensure latest data if needed, or just rely on props.
-    // Since Dashboard fetches all notes, we might just want to rely on that to avoid double fetch.
-    // However, opening the notes section implies user wants to see notes, so maybe a fresh fetch isn't bad.
-    // Let's keep it but optimized.
     if (propNotes && propNotes.length > 0) return;
 
     setIsLoadingProjectNotes(true);
@@ -132,14 +123,14 @@ const ProjectItem = forwardRef((
 
   const openTasks = tasks.filter(task => !task.is_completed);
   const openTasksCount = openTasks.length;
+  const totalTasksCount = tasks.length;
   const completedTasksCount = tasks.length - openTasksCount;
 
   const handleUpdateProject = async (updates) => {
-    // Intercept status change for completion modal
     if (updates.status === 'Completed' && openTasksCount > 0) {
       setStatusToConfirm('Completed');
       setShowCompletionModal(true);
-      return; // Don't update yet
+      return;
     }
 
     try {
@@ -153,7 +144,7 @@ const ProjectItem = forwardRef((
       }
     } catch (err) {
       handleError(err, 'handleUpdateProject', { showAlert: true });
-      throw err; // Re-throw so child can revert state
+      throw err;
     }
   };
 
@@ -230,6 +221,7 @@ const ProjectItem = forwardRef((
     let projectDataText = `Project Name: ${project.name}\n`;
     projectDataText += `Status: ${project.status}\n`;
     projectDataText += `Priority: ${project.priority}\n`;
+    projectDataText += `Job: ${project.job || 'N/A'}\n`;
     projectDataText += `Due Date: ${project.due_date ? format(new Date(project.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
     projectDataText += `Description: ${project.description || 'N/A'}\n`;
     projectDataText += `Stakeholders: ${project.stakeholders && project.stakeholders.length > 0 ? project.stakeholders.join(', ') : 'N/A'}\n`;
@@ -307,12 +299,8 @@ const ProjectItem = forwardRef((
             })
           )
         );
-        // Force reload tasks? Usually not needed if we trust the loop
       } catch (err) {
-        handleError(err, 'handleConfirmCompleteTasksAndProject', {
-          showAlert: true,
-          fallbackMessage: 'Could not complete all open tasks. Project status not changed.'
-        });
+        handleError(err, 'handleConfirmCompleteTasksAndProject', { showAlert: true });
         return;
       }
     }
@@ -322,26 +310,17 @@ const ProjectItem = forwardRef((
           status: statusToConfirm,
           updated_at: new Date().toISOString()
         });
-        // Update via parent callback
         onProjectDataChange(project.id, { ...project, status: statusToConfirm }, 'project_status_changed');
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) { }
       setStatusToConfirm(null);
     }
   };
 
   const submitQuickTask = async ({ name, dueDate, priority }) => {
-    if (!project || !project.id) {
-      throw new Error('Project is not available.');
-    }
-    if (!currentUser?.id) {
-      throw new Error('Sign in to add tasks.');
-    }
+    if (!project || !project.id) throw new Error('Project is not available.');
+    if (!currentUser?.id) throw new Error('Sign in to add tasks.');
     const trimmedName = name.trim();
-    if (!trimmedName) {
-      throw new Error('Add a short name to create the task.');
-    }
+    if (!trimmedName) throw new Error('Add a short name to create the task.');
     const createdTask = await apiClient.createTask({
       name: trimmedName,
       description: null,
@@ -402,9 +381,7 @@ const ProjectItem = forwardRef((
     }
 
     const { taskId, previousProjectId } = payload || {};
-    if (!taskId || previousProjectId === project.id) {
-      return;
-    }
+    if (!taskId || previousProjectId === project.id) return;
 
     try {
       const updatedTask = await apiClient.updateTask(taskId, { project_id: project.id });
@@ -425,22 +402,18 @@ const ProjectItem = forwardRef((
 
   const isSourceProject = dragSourceProjectId !== null && project?.id === dragSourceProjectId;
   const shouldShowDropPreview = isDropMode && !isSourceProject;
-
-  const projectCardStyle = isUnassignedProject
-    ? 'border-[#0496c7]/25 bg-white/95 shadow-[0_24px_60px_-32px_rgba(4,150,199,0.35)]'
-    : priorityStyles.cardOuterClass;
-
-  const baseShadow = shouldShowDropPreview ? 'shadow-[0_20px_50px_-32px_rgba(4,150,199,0.4)]' : 'shadow-[0_28px_60px_-32px_rgba(4,150,199,0.35)]';
-  const hoverClass = shouldShowDropPreview || isUnassignedProject ? '' : 'transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_40px_70px_-28px_rgba(4,150,199,0.45)]';
-  const paddingClass = shouldShowDropPreview ? 'p-4 sm:p-6' : 'p-4 sm:p-6';
-  const containerClassName = `relative overflow-hidden rounded-3xl border bg-white/80 ${paddingClass} ${baseShadow} ${hoverClass} ${projectCardStyle} ${isProjectCompletedOrCancelled ? 'opacity-60 saturate-75' : ''} ${isDragOverTarget ? 'ring-2 ring-indigo-300 ring-offset-2' : ''}`;
-  const totalTasksCount = tasks.length;
   const dropStatusText = isDragOverTarget ? 'Release to assign' : 'Drop here to move task';
 
   const containerProps = {
     ref,
     id: `project-item-${project.id}`,
-    className: containerClassName,
+    // Standard Card styling
+    className: cn(
+      "relative overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-all duration-300",
+      shouldShowDropPreview ? "ring-2 ring-primary border-primary opacity-90 shadow-lg" : "hover:shadow-md",
+      isDragOverTarget ? "ring-2 ring-primary ring-offset-2" : "",
+      isProjectCompletedOrCancelled ? "opacity-60 saturate-75" : ""
+    ),
     onDragEnter: handleDragEnter,
     onDragOver: handleDragOver,
     onDragLeave: handleDragLeave,
@@ -449,98 +422,89 @@ const ProjectItem = forwardRef((
   };
 
   if (shouldShowDropPreview) {
-    // Keep simplified drop preview
     return (
       <div {...containerProps}>
-        <span className={`pointer-events-none absolute inset-x-3 top-2 h-[6px] rounded-full bg-gradient-to-r ${priorityStyles.ribbonClass}`} />
-        <div className={`pointer-events-none absolute -top-10 right-0 h-32 w-32 rounded-full ${priorityStyles.glowClass} blur-3xl`} />
-        <div className="relative z-10">
-          <div className="rounded-2xl bg-white/75 p-4 sm:p-6 shadow-inner shadow-slate-200/40 transition-colors">
-            {/* Minimal Drop Content */}
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{project.name || 'Unnamed Project'}</p>
-                <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDragOverTarget ? 'text-emerald-500' : 'text-[#036586]/70'}`}>
-                  {dropStatusText}
-                </p>
-              </div>
-            </div>
+        <div className="flex flex-col items-center justify-center p-8 gap-3 min-h-[160px]">
+          <p className="text-sm font-semibold text-foreground">{project.name || 'Unnamed Project'}</p>
+          <div className="rounded-2xl border border-dashed border-border bg-primary/5 px-3 py-4 text-sm text-primary/80 text-center">
+            {dropStatusText}
           </div>
         </div>
       </div>
     );
   }
 
+  // Unassigned tasks view
   if (isUnassignedProject) {
     return (
       <div {...containerProps}>
-        <div className="rounded-3xl border border-[#0496c7]/20 bg-white/95 shadow-[0_24px_60px_-32px_rgba(4,150,199,0.35)]">
-          <div className="flex items-center justify-between px-4 py-3 sm:px-6 border-b border-[#0496c7]/15">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[#036586]">Unassigned Tasks</h3>
-            {tasks.length > 0 && completedTasksCount > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks); }}
-                className="touch-target-sm text-2xs font-semibold text-[#036586] hover:text-[#0496c7]"
-              >
-                {showCompletedTasks ? 'Hide completed' : 'Show completed'}
-              </button>
-            )}
-          </div>
-          <div className="p-4 sm:p-6">
-            {isLoadingTasks ? (
-              <div className="flex items-center justify-center rounded-2xl border border-[#0496c7]/20 bg-white/85 py-4 text-xs text-[#036586] shadow-inner shadow-[#0496c7]/10">
-                Loading tasks…
-              </div>
-            ) : tasks.length > 0 ? (
-              <TaskList
-                tasks={tasks}
-                notesByTask={notesByTask}
-                isLoading={isLoadingTasks}
-                onTaskUpdated={handleTaskUpdated}
-                showCompletedTasks={showCompletedTasks}
-                isProjectCompleted={false}
-                onTaskDragStateChange={onTaskDragStateChange}
-              />
-            ) : (
-              <div className="rounded-2xl border border-dashed border-[#0496c7]/25 bg-[#0496c7]/5 px-3 py-4 text-sm text-[#036586]/80 text-center">
-                No unassigned tasks. Add one from the flight board.
-              </div>
-            )}
-          </div>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Unassigned Tasks</h3>
+          {tasks.length > 0 && completedTasksCount > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks); }}
+              className="text-xs font-medium text-primary hover:underline hover:text-primary/80 transition-colors"
+            >
+              {showCompletedTasks ? 'Hide completed' : 'Show completed'}
+            </button>
+          )}
+        </div>
+        <div className="p-6">
+          {isLoadingTasks ? (
+            <div className="text-center py-4 text-xs text-muted-foreground animate-pulse">Loading tasks...</div>
+          ) : tasks.length > 0 ? (
+            <TaskList
+              tasks={tasks}
+              notesByTask={notesByTask}
+              isLoading={isLoadingTasks}
+              onTaskUpdated={handleTaskUpdated}
+              showCompletedTasks={showCompletedTasks}
+              isProjectCompleted={false}
+              onTaskDragStateChange={onTaskDragStateChange}
+            />
+          ) : (
+            <div className="text-center py-8 rounded-lg border-2 border-dashed border-border/50 bg-background/50">
+              <p className="text-sm text-muted-foreground">No unassigned tasks.</p>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
+  // Standard Project
   return (
     <div {...containerProps}>
-      <span className={`pointer-events-none absolute inset-x-3 top-2 h-[6px] rounded-full bg-gradient-to-r ${priorityStyles.ribbonClass}`} />
-      <div className={`pointer-events-none absolute -top-10 right-0 h-32 w-32 rounded-full ${priorityStyles.glowClass} blur-3xl`} />
+      {/* Sidebar color strip for priority/branding */}
+      <div className={cn("absolute left-0 top-0 bottom-0 w-1", priorityStyles.bgClass)} />
 
-      <ProjectHeader
-        project={project}
-        isExpanded={showTasks}
-        onToggleExpand={() => setShowTasks(!showTasks)}
-        onUpdate={handleUpdateProject}
-        onDelete={handleDeleteProject}
-        onCopy={handleCopyProjectData}
-        onToggleNotes={() => setShowProjectNotes(!showProjectNotes)}
-        showNotes={showProjectNotes}
-        notesCount={projectNotes.length}
-        isLoadingNotes={isLoadingProjectNotes}
-        onOpenWorkspace={() => setIsNoteWorkspaceOpen(true)}
-        openTasksCount={openTasksCount}
-        totalTasksCount={totalTasksCount}
-        isDragOverTarget={isDragOverTarget}
-        dropStatusText={dropStatusText}
-      />
+      <div className="pl-1">
+        <ProjectHeader
+          project={project}
+          isExpanded={showTasks}
+          onToggleExpand={() => setShowTasks(!showTasks)}
+          onUpdate={handleUpdateProject}
+          onDelete={handleDeleteProject}
+          onCopy={handleCopyProjectData}
+          onToggleNotes={() => setShowProjectNotes(!showProjectNotes)}
+          showNotes={showProjectNotes}
+          notesCount={projectNotes.length}
+          isLoadingNotes={isLoadingProjectNotes}
+          onOpenWorkspace={() => setIsNoteWorkspaceOpen(true)}
+          openTasksCount={openTasksCount}
+          totalTasksCount={totalTasksCount}
+          isDragOverTarget={isDragOverTarget}
+          dropStatusText={dropStatusText}
+        />
+      </div>
 
       {showTasks && (
-        <div className="mt-3 relative z-10">
+        <div className="px-6 pb-6 pt-2">
+
           <QuickTaskForm
             onSubmit={submitQuickTask}
             namePlaceholder="Add a task..."
-            buttonLabel="Add Task"
+            buttonLabel="Add"
             buttonIcon={PlusCircleIcon}
             priorityType="select"
             priorityOptions={[
@@ -550,79 +514,80 @@ const ProjectItem = forwardRef((
             ]}
             defaultPriority="Medium"
             defaultDueDate={getTodayISODate()}
-            className="rounded-2xl border border-[#0496c7]/20 bg-white/90 p-3 shadow-inner shadow-[#0496c7]/10"
+            className="mb-6 bg-muted/20 hover:bg-muted/30 border-none transition-colors"
           />
-        </div>
-      )}
 
-      {showTasks && (
-        <div className="border-t border-gray-200 bg-gray-50/50 relative z-10">
-          <div className="px-4 py-3 sm:px-6 flex justify-between items-center">
+          {/* Tasks List Header */}
+          <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-2">
-              <h4 className="text-xs font-semibold text-slate-600">
-                Tasks ({openTasksCount} open, {completedTasksCount} completed)
+              <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Tasks
               </h4>
-              {tasks.length > 0 && completedTasksCount > 0 && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks); }}
-                  className="touch-target-sm text-xs text-indigo-600 hover:text-indigo-800 flex items-center"
-                >
-                  {showCompletedTasks ? <EyeSlashIcon className="w-3.5 h-3.5 mr-1" /> : <EyeIcon className="w-3.5 h-3.5 mr-1" />}
-                  {showCompletedTasks ? 'Hide' : 'Show'} Completed
-                </button>
-              )}
+              <div className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                {openTasksCount} open
+              </div>
             </div>
-          </div>
-          <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-            {isLoadingTasks ? (
-              <div className="flex items-center justify-center rounded-2xl border border-[#0496c7]/25 bg-white/85 py-3 text-xs text-[#036586] shadow-inner shadow-[#0496c7]/10">
-                Loading tasks…
-              </div>
-            ) : tasks.length > 0 ? (
-              <TaskList
-                tasks={tasks}
-                notesByTask={notesByTask}
-                isLoading={isLoadingTasks}
-                onTaskUpdated={handleTaskUpdated}
-                showCompletedTasks={showCompletedTasks}
-                isProjectCompleted={isProjectCompletedOrCancelled}
-                onTaskDragStateChange={onTaskDragStateChange}
-              />
-            ) : (
-              <div className="rounded-2xl border border-dashed border-[#0496c7]/30 bg-[#0496c7]/5 px-3 py-2 text-xs text-[#036586]/80">
-                No tasks yet—use the quick add above to create one.
-              </div>
+
+            {tasks.length > 0 && completedTasksCount > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowCompletedTasks(!showCompletedTasks); }}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                {showCompletedTasks ? <EyeSlashIcon className="w-3.5 h-3.5" /> : <EyeIcon className="w-3.5 h-3.5" />}
+                {showCompletedTasks ? 'Hide Completed' : 'Show Completed'}
+              </button>
             )}
           </div>
+
+          {isLoadingTasks ? (
+            <div className="text-center py-4 text-xs text-muted-foreground animate-pulse">Loading tasks...</div>
+          ) : tasks.length > 0 ? (
+            <TaskList
+              tasks={tasks}
+              notesByTask={notesByTask}
+              isLoading={isLoadingTasks}
+              onTaskUpdated={handleTaskUpdated}
+              showCompletedTasks={showCompletedTasks}
+              isProjectCompleted={isProjectCompletedOrCancelled}
+              onTaskDragStateChange={onTaskDragStateChange}
+            />
+          ) : (
+            <div className="text-center py-6 rounded-lg border border-dashed border-border bg-muted/10">
+              <p className="text-xs text-muted-foreground">No tasks yet.</p>
+            </div>
+          )}
         </div>
       )}
 
       {/* Project Notes Section */}
       {showProjectNotes && (
-        <div id={`project-notes-section-${project.id}`} className="border-t border-gray-200 px-4 py-4 sm:px-6 relative z-10">
-          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h4 className="text-xs font-semibold text-slate-600">Project Notes</h4>
+        <div id={`project-notes-section-${project.id}`} className="border-t border-border bg-muted/10 px-6 py-5">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Project Notes</h4>
             <button
               type="button"
               onClick={() => setIsNoteWorkspaceOpen(true)}
-              className="inline-flex items-center justify-center rounded-lg border border-[#0496c7]/30 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[#036586] shadow-sm transition hover:border-[#0496c7] hover:bg-[#0496c7]/10 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400 disabled:hover:bg-transparent"
+              className="text-xs font-medium text-primary hover:underline hover:text-primary/80 transition-colors"
               disabled={isProjectCompletedOrCancelled}
             >
-              Open Notes Workspace
+              Open Workspace
             </button>
           </div>
-          <AddNoteForm
-            parentId={project.id}
-            parentType="project"
-            onNoteAdded={handleProjectNoteAdded}
-            disabled={isProjectCompletedOrCancelled}
-          />
+          <div className="mb-4">
+            <AddNoteForm
+              parentId={project.id}
+              parentType="project"
+              onNoteAdded={handleProjectNoteAdded}
+              disabled={isProjectCompletedOrCancelled}
+            />
+          </div>
+
           {isLoadingProjectNotes ? (
-            <p className="text-xs text-slate-400 py-2">Loading notes...</p>
+            <p className="text-xs text-muted-foreground py-2 animate-pulse">Loading notes...</p>
           ) : projectNotes.length > 0 ? (
             <NoteList notes={projectNotes} />
           ) : (
-            <p className="text-xs text-slate-400 italic py-2">No notes for this project yet.</p>
+            <p className="touch-target-sm text-xs text-primary hover:text-primary/80 flex items-center">No notes yet.</p>
           )}
         </div>
       )}

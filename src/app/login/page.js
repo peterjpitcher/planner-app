@@ -1,10 +1,27 @@
 'use client';
 
 import LoginForm from '@/components/Auth/LoginForm';
-import Link from 'next/link';
-import { Suspense } from 'react';
+import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
 
 function LoginContent() {
+  const { status } = useSession();
+  const searchParams = useSearchParams();
+  const rawCallbackUrl = searchParams.get('callbackUrl');
+  const callbackUrl =
+    rawCallbackUrl && rawCallbackUrl.includes('/login')
+      ? '/dashboard'
+      : (rawCallbackUrl || '/dashboard');
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    // Avoid being stuck on /login if user is already signed in.
+    window.location.href = callbackUrl;
+  }, [callbackUrl, status]);
+
+  if (status === 'authenticated') return null;
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen py-2 bg-gray-50">
       <div className="w-full max-w-md p-6 sm:p-8 space-y-8 bg-white shadow-md rounded-lg">

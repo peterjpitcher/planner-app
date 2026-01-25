@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import AppShell from '@/components/layout/AppShell';
 import JournalEditor from '@/components/journal/JournalEditor';
 import TherapyPrepModal from '@/components/journal/TherapyPrepModal';
 import { journalService } from '@/services/journalService';
 import { BookOpenIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/utils'; // Ensure utility is present
+
+const ButtonComponent = Button;
 
 export default function JournalPage() {
     const { data: session } = useSession();
@@ -16,11 +20,12 @@ export default function JournalPage() {
     const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
     const [summaryContext, setSummaryContext] = useState({ type: 'weekly', dates: null });
     const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-    const [summaryType, setSummaryType] = useState('weekly'); // 'weekly', 'monthly', 'annual', 'custom'
+    const [summaryType, setSummaryType] = useState('weekly');
     const [customDates, setCustomDates] = useState({ start: '', end: '' });
     const cleanupInFlightRef = useRef(new Set());
     const cleanupAttemptsRef = useRef(new Map());
 
+    // ... [Original formatDateLabel logic kept] ...
     const formatDateLabel = (value) => {
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) return null;
@@ -36,22 +41,15 @@ export default function JournalPage() {
         if (type === 'custom' && dates?.start && dates?.end) {
             const startLabel = formatDateLabel(dates.start);
             const endLabel = formatDateLabel(dates.end);
-            if (startLabel && endLabel) {
-                return `${startLabel} - ${endLabel}`;
-            }
+            if (startLabel && endLabel) return `${startLabel} - ${endLabel}`;
             return 'Custom range';
         }
         switch (type) {
-            case 'weekly':
-                return 'Past week';
-            case 'monthly':
-                return 'Past month';
-            case 'annual':
-                return 'Past year';
-            case 'custom':
-                return 'Custom range';
-            default:
-                return 'Recent entries';
+            case 'weekly': return 'Past week';
+            case 'monthly': return 'Past month';
+            case 'annual': return 'Past year';
+            case 'custom': return 'Custom range';
+            default: return 'Recent entries';
         }
     })();
 
@@ -108,7 +106,6 @@ export default function JournalPage() {
             requestCleanup(savedEntry.id);
             return;
         }
-
         fetchEntries();
     };
 
@@ -120,7 +117,6 @@ export default function JournalPage() {
 
     useEffect(() => {
         if (!session?.user || entries.length === 0) return;
-
         entries
             .filter((entry) => !entry.cleaned_content && ['pending', 'failed'].includes(entry.ai_status))
             .forEach((entry) => requestCleanup(entry.id));
@@ -153,34 +149,38 @@ export default function JournalPage() {
     };
 
     return (
-        <AppShell
-            user={session?.user}
-            title="Personal Journal"
-            subtitle="Your safe space to reflect. AI-powered summaries help you prepare for therapy."
-        >
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
+        <div className="space-y-8">
+            {/* Page Header */}
+            <div className="flex flex-col gap-2">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Personal Journal</h1>
+                <p className="text-muted-foreground">
+                    Your safe space to reflect. AI-powered summaries help you prepare for therapy.
+                </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start">
 
                 {/* Main Content: Editor & Entries */}
                 <div className="space-y-8">
                     <section>
-                        <h2 className="text-xl font-semibold text-[#052a3b] mb-4 flex items-center gap-2">
-                            <BookOpenIcon className="h-5 w-5" />
+                        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                            <BookOpenIcon className="h-5 w-5 text-primary" />
                             New Entry
                         </h2>
                         <JournalEditor onEntrySaved={handleEntrySaved} />
                     </section>
 
                     <section>
-                        <h2 className="text-xl font-semibold text-[#052a3b] mb-4">Recent Entries</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Entries</h2>
                         <div className="space-y-4">
                             {entries.length === 0 ? (
-                                <div className="text-center py-10 bg-white/50 rounded-2xl border border-dashed border-gray-300">
-                                    <p className="text-gray-500">No entries yet. Start writing above!</p>
+                                <div className="text-center py-10 bg-muted/20 rounded-xl border border-dashed border-muted-foreground/30">
+                                    <p className="text-muted-foreground">No entries yet. Start writing above!</p>
                                 </div>
                             ) : (
                                 entries.map((entry) => (
-                                    <div key={entry.id} className="bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-[#0496c7]/10 hover:border-[#0496c7]/30 transition-all">
-                                        <div className="text-xs font-medium text-[#0496c7] mb-2 uppercase tracking-wide">
+                                    <div key={entry.id} className="bg-card p-6 rounded-xl border border-border hover:border-primary/30 transition-all shadow-sm">
+                                        <div className="text-xs font-bold text-primary mb-2 uppercase tracking-wide">
                                             {new Date(entry.created_at).toLocaleDateString(undefined, {
                                                 weekday: 'long',
                                                 year: 'numeric',
@@ -190,7 +190,7 @@ export default function JournalPage() {
                                                 minute: '2-digit'
                                             })}
                                         </div>
-                                        <p className="text-[#052a3b] whitespace-pre-wrap leading-relaxed">
+                                        <p className="text-foreground whitespace-pre-wrap leading-relaxed">
                                             {entry.cleaned_content || entry.content}
                                         </p>
                                     </div>
@@ -201,104 +201,104 @@ export default function JournalPage() {
                 </div>
 
                 {/* Sidebar: AI Summary */}
-                <div className="space-y-6">
-                    <div className="glass-panel p-6 rounded-3xl border border-[#0496c7]/25 sticky top-8">
-                        <div className="flex items-center gap-2 mb-4 text-[#0496c7]">
-                            <SparklesIcon className="h-6 w-6" />
-                            <h2 className="font-semibold text-lg">Therapy Prep</h2>
-                        </div>
-
-                        <p className="text-sm text-[#2f617a] mb-6">
-                            Generate therapist-written discussion prompts based on your recent entries for your next session with Victoria.
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-2 mb-4 bg-white/50 p-1 rounded-lg">
-                            {['weekly', 'monthly', 'annual', 'custom'].map((type) => (
-                                <button
-                                    key={type}
-                                    onClick={() => setSummaryType(type)}
-                                    className={`py-1.5 text-xs font-medium rounded-md transition-all capitalize ${summaryType === type
-                                        ? 'bg-white shadow-sm text-[#0496c7]'
-                                        : 'text-gray-500 hover:text-[#0496c7]'
-                                        }`}
-                                >
-                                    {type}
-                                </button>
-                            ))}
-                        </div>
-
-                        {summaryType === 'custom' && (
-                            <div className="flex flex-col gap-3 mb-6 animate-in fade-in slide-in-from-top-2">
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">Start Date</label>
-                                    <input
-                                        type="date"
-                                        value={customDates.start}
-                                        onChange={(e) => setCustomDates(prev => ({ ...prev, start: e.target.value }))}
-                                        className="w-full px-3 py-2 bg-white/50 border border-gray-200 rounded-lg text-sm text-[#052a3b] focus:ring-2 focus:ring-[#0496c7]/20 outline-none"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">End Date</label>
-                                    <input
-                                        type="date"
-                                        value={customDates.end}
-                                        onChange={(e) => setCustomDates(prev => ({ ...prev, end: e.target.value }))}
-                                        className="w-full px-3 py-2 bg-white/50 border border-gray-200 rounded-lg text-sm text-[#052a3b] focus:ring-2 focus:ring-[#0496c7]/20 outline-none"
-                                    />
-                                </div>
+                <div className="sticky top-20">
+                    <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
+                        <CardContent className="p-6">
+                            <div className="flex items-center gap-2 mb-4 text-primary">
+                                <SparklesIcon className="h-6 w-6" />
+                                <h2 className="font-semibold text-lg">Therapy Prep</h2>
                             </div>
-                        )}
 
-                        <button
-                            onClick={handleGenerateSummary}
-                            disabled={
-                                isGeneratingSummary ||
-                                entries.length === 0 ||
-                                (summaryType === 'custom' && (!customDates.start || !customDates.end))
-                            }
-                            className={`
-                                w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-medium transition-all
-                                ${isGeneratingSummary || entries.length === 0 || (summaryType === 'custom' && (!customDates.start || !customDates.end))
-                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-[#0496c7] to-[#0382ac] text-white hover:shadow-lg hover:shadow-[#0496c7]/25'
-                                }
-                            `}
-                        >
-                            {isGeneratingSummary ? (
-                                <>
-                                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    <span>Analysing...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <SparklesIcon className="h-5 w-5" />
-                                    <span>Generate Prompts</span>
-                                </>
+                            <p className="text-sm text-muted-foreground mb-6">
+                                Generate therapist-written discussion prompts based on your recent entries.
+                            </p>
+
+                            <div className="grid grid-cols-2 gap-2 mb-4 bg-muted/50 p-1 rounded-lg">
+                                {['weekly', 'monthly', 'annual', 'custom'].map((type) => (
+                                    <button
+                                        key={type}
+                                        onClick={() => setSummaryType(type)}
+                                        className={cn(
+                                            "py-1.5 text-xs font-medium rounded-md transition-all capitalize",
+                                            summaryType === type
+                                                ? "bg-card shadow-sm text-primary"
+                                                : "text-muted-foreground hover:text-primary"
+                                        )}
+                                    >
+                                        {type}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {summaryType === 'custom' && (
+                                <div className="flex flex-col gap-3 mb-6 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-muted-foreground">Start Date</label>
+                                        <input
+                                            type="date"
+                                            value={customDates.start}
+                                            onChange={(e) => setCustomDates(prev => ({ ...prev, start: e.target.value }))}
+                                            className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm text-foreground focus:ring-1 focus:ring-ring outline-none"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-muted-foreground">End Date</label>
+                                        <input
+                                            type="date"
+                                            value={customDates.end}
+                                            onChange={(e) => setCustomDates(prev => ({ ...prev, end: e.target.value }))}
+                                            className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm text-foreground focus:ring-1 focus:ring-ring outline-none"
+                                        />
+                                    </div>
+                                </div>
                             )}
-                        </button>
 
-                        {summaryNotice && (
-                            <div className="mt-4 text-xs text-[#2f617a]">
-                                {summaryNotice}
-                            </div>
-                        )}
+                            <ButtonComponent
+                                onClick={handleGenerateSummary}
+                                disabled={
+                                    isGeneratingSummary ||
+                                    entries.length === 0 ||
+                                    (summaryType === 'custom' && (!customDates.start || !customDates.end))
+                                }
+                                className={cn(
+                                    "w-full",
+                                    isGeneratingSummary ? "opacity-70 cursor-wait" : ""
+                                )}
+                            >
+                                {isGeneratingSummary ? (
+                                    <>
+                                        <div className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />
+                                        <span>Analysing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <SparklesIcon className="h-4 w-4 mr-2" />
+                                        <span>Generate Prompts</span>
+                                    </>
+                                )}
+                            </ButtonComponent>
 
-                        {summaryPoints.length > 0 && (
-                            <div className="mt-4 flex items-center justify-between rounded-xl border border-[#0496c7]/10 bg-white/60 px-3 py-2 text-xs text-[#2f617a]">
-                                <span>Therapy prep ready to review.</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsSummaryModalOpen(true)}
-                                    className="font-semibold text-[#0496c7] hover:text-[#0382ac]"
-                                >
-                                    Open
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                            {summaryNotice && (
+                                <div className="mt-4 text-xs text-muted-foreground">
+                                    {summaryNotice}
+                                </div>
+                            )}
+
+                            {summaryPoints.length > 0 && (
+                                <div className="mt-4 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
+                                    <span>Therapy prep ready.</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSummaryModalOpen(true)}
+                                        className="font-semibold hover:underline"
+                                    >
+                                        Open
+                                    </button>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
-
             </div>
             <TherapyPrepModal
                 isOpen={isSummaryModalOpen}
@@ -307,6 +307,6 @@ export default function JournalPage() {
                 summaryType={summaryContext?.type}
                 periodLabel={summaryPeriodLabel}
             />
-        </AppShell>
+        </div>
     );
 }

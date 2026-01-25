@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { journalService } from '@/services/journalService';
-import Button from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Input';
 
 const DRAFT_STORAGE_KEY = 'journal_draft';

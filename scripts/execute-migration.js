@@ -8,10 +8,11 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const projectRoot = path.resolve(__dirname, '..');
 
 // Load environment variables from .env.local
 try {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(projectRoot, '.env.local');
   const envContent = fs.readFileSync(envPath, 'utf8');
   envContent.split('\n').forEach(line => {
     const [key, ...valueParts] = line.split('=');
@@ -236,8 +237,10 @@ GRANT EXECUTE ON FUNCTION exec_sql(text) TO service_role;
     console.log('\nAfter creating this function, run this script again.\n');
     
     // Save to file
-    fs.writeFileSync('create-exec-sql-function.sql', rpcSetup);
-    console.log('💾 RPC setup SQL saved to: create-exec-sql-function.sql\n');
+    const rpcSetupPath = path.join(projectRoot, 'db', 'rpc', 'create-exec-sql-function.sql');
+    fs.mkdirSync(path.dirname(rpcSetupPath), { recursive: true });
+    fs.writeFileSync(rpcSetupPath, rpcSetup);
+    console.log(`💾 RPC setup SQL saved to: ${path.relative(projectRoot, rpcSetupPath)}\n`);
   } else if (failCount === 0) {
     console.log('✨ All migrations completed successfully!\n');
   } else {
@@ -248,8 +251,8 @@ GRANT EXECUTE ON FUNCTION exec_sql(text) TO service_role;
   
   // Always output the manual migration SQL
   console.log('📌 For manual execution, the complete migration SQL is in:');
-  console.log('   - src/migrations/001_add_performance_indexes.sql');
-  console.log('   - migration-to-run.sql\n');
+  console.log('   - db/migrations/archive/001_add_performance_indexes.sql');
+  console.log('   - db/migrations/migration-to-run.sql\n');
   console.log('Copy the content to your Supabase SQL Editor and run it there.\n');
 }
 

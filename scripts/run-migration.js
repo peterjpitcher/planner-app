@@ -4,16 +4,17 @@
  * Database Migration Runner
  * This script creates the necessary indexes and RLS policies for the Planner app
  * 
- * Usage: node run-migration.js
+ * Usage: node scripts/run-migration.js
  */
 
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs').promises;
 const path = require('path');
+const projectRoot = path.resolve(__dirname, '..');
 
 // Load environment variables from .env.local
 try {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(projectRoot, '.env.local');
   const envContent = require('fs').readFileSync(envPath, 'utf8');
   envContent.split('\n').forEach(line => {
     const [key, ...valueParts] = line.split('=');
@@ -297,19 +298,24 @@ ORDER BY
     console.log('   4. Click "Run" to execute\n');
     
     // Also save to file for convenience
-    const migrationFile = 'migration-to-run.sql';
+    const migrationFile = path.join(projectRoot, 'db', 'migrations', 'migration-to-run.sql');
+    await fs.mkdir(path.dirname(migrationFile), { recursive: true });
     await fs.writeFile(migrationFile, migrationSQL);
-    console.log(`💾 Migration SQL also saved to: ${migrationFile}\n`);
+    console.log(`💾 Migration SQL also saved to: ${path.relative(projectRoot, migrationFile)}\n`);
     
   } else {
     console.log('❌ Direct SQL execution through JavaScript client is not supported.');
     console.log('   Please use the Supabase SQL Editor to run the migration.\n');
     
     // Save migration to file
-    const migrationFile = 'migration-to-run.sql';
-    const migrationContent = await fs.readFile('src/migrations/001_add_performance_indexes.sql', 'utf8');
+    const migrationFile = path.join(projectRoot, 'db', 'migrations', 'migration-to-run.sql');
+    const migrationContent = await fs.readFile(
+      path.join(projectRoot, 'db', 'migrations', 'archive', '001_add_performance_indexes.sql'),
+      'utf8'
+    );
+    await fs.mkdir(path.dirname(migrationFile), { recursive: true });
     await fs.writeFile(migrationFile, migrationContent);
-    console.log(`💾 Migration SQL saved to: ${migrationFile}`);
+    console.log(`💾 Migration SQL saved to: ${path.relative(projectRoot, migrationFile)}`);
     console.log('   Copy this file content to your Supabase SQL Editor and run it.\n');
   }
   

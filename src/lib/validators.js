@@ -78,6 +78,22 @@ export function validateTask(task) {
   if (task.priority && !Object.values(PRIORITY).includes(task.priority)) {
     errors.priority = 'Invalid priority level';
   }
+
+  const validateScoreField = (fieldName, label) => {
+    if (task[fieldName] === undefined || task[fieldName] === null || task[fieldName] === '') return;
+    const numeric = typeof task[fieldName] === 'number' ? task[fieldName] : Number(task[fieldName]);
+    if (!Number.isFinite(numeric)) {
+      errors[fieldName] = `${label} must be a number between 0 and 100`;
+      return;
+    }
+    const rounded = Math.round(numeric);
+    if (rounded < 0 || rounded > 100) {
+      errors[fieldName] = `${label} must be between 0 and 100`;
+    }
+  };
+
+  validateScoreField('importance_score', 'Importance score');
+  validateScoreField('urgency_score', 'Urgency score');
   
   // Due date validation
   if (task.due_date) {
