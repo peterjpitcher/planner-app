@@ -9,8 +9,9 @@ import AddProjectModal from '@/components/Projects/AddProjectModal';
 import SidebarFilters from '@/components/dashboard/SidebarFilters';
 import MetricsBar from '@/components/dashboard/MetricsBar';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { PlusCircle } from 'lucide-react';
-import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareDesc } from 'date-fns';
+import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareDesc, format } from 'date-fns';
 import { RocketLaunchIcon, FireIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 const ButtonComponent = Button;
@@ -153,6 +154,10 @@ export default function DashboardPage() {
   const [activeDashboardFilters, setActiveDashboardFilters] = useState(() => createDefaultDashboardFilters());
   const [isAddProjectModalOpen, setIsAddProjectModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [quickTaskName, setQuickTaskName] = useState('');
+  const [quickTaskDueDate, setQuickTaskDueDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [isAddingQuickTask, setIsAddingQuickTask] = useState(false);
+  const [quickTaskError, setQuickTaskError] = useState(null);
 
   // Fetch logic
   const fetchData = useCallback(async () => {
@@ -317,6 +322,37 @@ export default function DashboardPage() {
   const handleJobChange = useCallback((e) => setSelectedJob(e.target.value), []);
   const handleStakeholderChange = useCallback((e) => setSelectedStakeholder(e.target.value), []);
 
+  const handleQuickTaskSubmit = useCallback(async (event) => {
+    event?.preventDefault?.();
+    const trimmedName = quickTaskName.trim();
+    if (!trimmedName) {
+      setQuickTaskError('Enter a task name.');
+      return;
+    }
+    if (!quickTaskDueDate) {
+      setQuickTaskError('Pick a due date.');
+      return;
+    }
+
+    setIsAddingQuickTask(true);
+    setQuickTaskError(null);
+    try {
+      const job = selectedJob !== ALL_JOBS && selectedJob !== NO_JOB ? selectedJob : null;
+      await apiClient.createTask({
+        name: trimmedName,
+        due_date: quickTaskDueDate,
+        priority: 'Medium',
+        job,
+      });
+      setQuickTaskName('');
+      await fetchData();
+    } catch (error) {
+      setQuickTaskError(error?.message || 'Failed to create task.');
+    } finally {
+      setIsAddingQuickTask(false);
+    }
+  }, [fetchData, quickTaskDueDate, quickTaskName, selectedJob]);
+
   const uniqueJobs = useMemo(() => {
     const jobs = new Set();
     projects.forEach(project => {
@@ -437,6 +473,55 @@ export default function DashboardPage() {
 
         {/* Column 2: Filters (Sticky) */}
         <div className="w-full shrink-0 xl:sticky xl:top-20 space-y-6">
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-foreground">Quick add task</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Creates a task in <span className="font-medium text-foreground/80">Unassigned</span>. Uses your current Job filter.
+                </p>
+              </div>
+            </div>
+
+            {quickTaskError ? (
+              <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                {quickTaskError}
+              </div>
+            ) : null}
+
+            <form onSubmit={handleQuickTaskSubmit} className="mt-3 space-y-2">
+              <input
+                value={quickTaskName}
+                onChange={(e) => {
+                  setQuickTaskName(e.target.value);
+                  if (quickTaskError) setQuickTaskError(null);
+                }}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                placeholder="Task name…"
+                disabled={isAddingQuickTask}
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={quickTaskDueDate}
+                  onChange={(e) => {
+                    setQuickTaskDueDate(e.target.value);
+                    if (quickTaskError) setQuickTaskError(null);
+                  }}
+                  className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                  disabled={isAddingQuickTask}
+                />
+                <Button
+                  type="submit"
+                  isLoading={isAddingQuickTask}
+                  disabled={isAddingQuickTask || !quickTaskName.trim() || !quickTaskDueDate}
+                >
+                  Add
+                </Button>
+              </div>
+            </form>
+          </Card>
+
           <SidebarFilters
             uniqueJobs={uniqueJobs}
             selectedJob={selectedJob}
