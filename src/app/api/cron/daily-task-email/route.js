@@ -91,7 +91,8 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Missing MICROSOFT_USER_EMAIL' }, { status: 500 });
     }
 
-    const userId = await resolveDigestUserId({ supabase, email: microsoftUserEmail });
+    const digestUserEmail = (process.env.DIGEST_USER_EMAIL || microsoftUserEmail).trim();
+    const userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
     const today = getLondonDateKey();
     const { dueToday, overdue } = await fetchOutstandingTasks({ supabase, userId, todayDateKey: today });
 
