@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { format } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -107,8 +108,10 @@ function CategoryCard({ category, selectedJob, onCaptured, capturedCount = 0, re
   const [draft, setDraft] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
+  const inputRef = useRef(null);
 
   const handleSubmit = useCallback(async () => {
+    if (isSaving) return;
     const trimmed = draft.trim();
     if (!trimmed) {
       setError('Add a short task name.');
@@ -120,7 +123,7 @@ function CategoryCard({ category, selectedJob, onCaptured, capturedCount = 0, re
       const created = await apiClient.createTask({
         name: trimmed,
         description: `Capture: ${category.title}`,
-        due_date: null,
+        due_date: format(new Date(), 'yyyy-MM-dd'),
         priority: 'Medium',
         job: selectedJob === NO_JOB ? null : normalizeJob(selectedJob) || null,
       });
@@ -130,8 +133,9 @@ function CategoryCard({ category, selectedJob, onCaptured, capturedCount = 0, re
       setError(err?.message || 'Failed to add task.');
     } finally {
       setIsSaving(false);
+      setTimeout(() => inputRef.current?.focus?.(), 0);
     }
-  }, [category.id, category.title, draft, onCaptured, selectedJob]);
+  }, [category.id, category.title, draft, isSaving, onCaptured, selectedJob]);
 
   return (
     <Card className="p-4 flex flex-col gap-3">
@@ -156,12 +160,17 @@ function CategoryCard({ category, selectedJob, onCaptured, capturedCount = 0, re
         </label>
         <input
           id={`capture-${category.id}`}
+          ref={inputRef}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
             if (error) setError(null);
           }}
-          onKeyDown={(e) => (e.key === 'Enter' ? handleSubmit() : null)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            handleSubmit();
+          }}
           className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
           placeholder="Add a todo…"
           disabled={isSaving}
