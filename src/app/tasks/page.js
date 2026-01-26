@@ -1,15 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { format, parseISO } from 'date-fns';
+import { addDays, format, parseISO } from 'date-fns';
+import { ChatBubbleLeftEllipsisIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { compareTasksByWorkPriority } from '@/lib/taskScoring';
 import { TaskScoreBadge } from '@/components/Tasks/TaskScoreBadge';
+import AddNoteForm from '@/components/Notes/AddNoteForm';
+import NoteList from '@/components/Notes/NoteList';
+import ChaseTaskModal from '@/components/Tasks/ChaseTaskModal';
 
 const ALL_JOBS = 'All Jobs';
 const NO_JOB = 'No Job';
@@ -32,11 +36,39 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
   const [jobDraft, setJobDraft] = useState(isUnassigned ? (task?.job || '') : '');
   const [isSavingJob, setIsSavingJob] = useState(false);
   const [isSavingComplete, setIsSavingComplete] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [notes, setNotes] = useState([]);
+  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [isChaseModalOpen, setIsChaseModalOpen] = useState(false);
+  const noteInputRef = useRef(null);
 
   useEffect(() => {
     if (!isUnassigned) return;
     setJobDraft(task?.job || '');
   }, [isUnassigned, task?.job]);
+
+  const fetchNotes = useCallback(async () => {
+    if (!task?.id) return;
+    setIsLoadingNotes(true);
+    try {
+      const data = await apiClient.getNotes(null, task.id);
+      const sortedNotes = (data || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setNotes(sortedNotes);
+    } catch {
+      setNotes([]);
+    } finally {
+      setIsLoadingNotes(false);
+    }
+  }, [task?.id]);
+
+  useEffect(() => {
+    if (!showNotes) return;
+    fetchNotes();
+    const timeoutId = setTimeout(() => {
+      noteInputRef.current?.focus?.();
+    }, 100);
+    return () => clearTimeout(timeoutId);
+  }, [showNotes, fetchNotes]);
 
   const handleToggleComplete = useCallback(async () => {
     setIsSavingComplete(true);
@@ -51,6 +83,45 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
       setIsSavingComplete(false);
     }
   }, [task, onUpdated]);
+
+  const handleNoteAdded = useCallback((newNote) => {
+    if (!newNote) return;
+    setNotes((prev) => [newNote, ...(prev || [])]);
+    setShowNotes(false);
+  }, []);
+
+  const handleChaseConfirm = useCallback(async (daysToPush) => {
+    setIsChaseModalOpen(false);
+    if (!task?.id) return;
+
+    try {
+      const noteContent = `Chased task. Pushed due date by ${daysToPush} day${daysToPush !== 1 ? 's' : ''}.`;
+      const chasedNote = await apiClient.createNote({
+        task_id: task.id,
+        content: noteContent,
+      });
+      if (chasedNote) {
+        setNotes((prev) => [chasedNote, ...(prev || [])]);
+      }
+
+      const baseDate = new Date();
+      const newDueDate = addDays(baseDate, daysToPush);
+      const formattedNewDate = format(newDueDate, 'yyyy-MM-dd');
+
+      const updated = await apiClient.updateTask(task.id, {
+        due_date: formattedNewDate,
+        updated_at: new Date().toISOString(),
+      });
+
+      onUpdated?.(updated);
+
+      if (showNotes) {
+        fetchNotes();
+      }
+    } catch {
+      // Errors surface via global handlers elsewhere; keep UX quiet here.
+    }
+  }, [fetchNotes, onUpdated, showNotes, task?.id]);
 
   const handleJobSave = useCallback(async () => {
     if (!isUnassigned) return;
@@ -74,7 +145,8 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
   const jobLabel = effectiveJob(task) || NO_JOB;
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 items-start gap-3">
         <input
           type="checkbox"
@@ -92,6 +164,31 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
             <span className="text-xs text-muted-foreground">•</span>
             <span className="text-xs font-medium text-foreground/80">{task?.priority || 'No priority'}</span>
             <TaskScoreBadge task={task} className="ml-1" />
+
+            {!task?.is_completed && (
+              <button
+                type="button"
+                onClick={() => setIsChaseModalOpen(true)}
+                className="ml-1 inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                title="Chase task (add note & push due date)"
+              >
+                <PaperAirplaneIcon className="h-3.5 w-3.5 -rotate-45" />
+                Chase
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowNotes((prev) => !prev)}
+              disabled={isLoadingNotes}
+              className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+              aria-expanded={showNotes}
+              aria-controls={`task-notes-${task?.id}`}
+              title="Notes"
+            >
+              <ChatBubbleLeftEllipsisIcon className="h-3.5 w-3.5" />
+              Notes{notes.length > 0 ? ` (${notes.length})` : ''}
+            </button>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <button
@@ -127,6 +224,25 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
           />
         </div>
       )}
+    </div>
+
+      {showNotes && (
+        <div id={`task-notes-${task?.id}`} className="mt-3 border-t border-border/60 pt-3">
+          <AddNoteForm ref={noteInputRef} parentId={task.id} parentType="task" onNoteAdded={handleNoteAdded} />
+          {isLoadingNotes ? (
+            <p className="text-xs text-muted-foreground">Loading notes…</p>
+          ) : (
+            <NoteList notes={notes} />
+          )}
+        </div>
+      )}
+
+      <ChaseTaskModal
+        isOpen={isChaseModalOpen}
+        onClose={() => setIsChaseModalOpen(false)}
+        onConfirm={handleChaseConfirm}
+        taskName={task?.name || 'Task'}
+      />
     </div>
   );
 }

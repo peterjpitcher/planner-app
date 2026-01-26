@@ -111,6 +111,9 @@ export function compareTasksByWorkPriority(a, b, config = DEFAULT_TASK_SCORING) 
   const aScores = getTaskScores(a, config);
   const bScores = getTaskScores(b, config);
 
+  const scoreDiff = bScores.priorityScore - aScores.priorityScore;
+  if (scoreDiff !== 0) return scoreDiff;
+
   if (aScores.dueMeta.bucket !== bScores.dueMeta.bucket) {
     return bScores.dueMeta.bucket - aScores.dueMeta.bucket;
   }
@@ -119,9 +122,5 @@ export function compareTasksByWorkPriority(a, b, config = DEFAULT_TASK_SCORING) 
     return aScores.dueMeta.daysToDue - bScores.dueMeta.daysToDue;
   }
 
-  const scoreDiff = bScores.priorityScore - aScores.priorityScore;
-  if (scoreDiff !== 0) return scoreDiff;
-
   return (a?.name || '').localeCompare(b?.name || '');
 }
-

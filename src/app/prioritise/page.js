@@ -26,7 +26,7 @@ function effectiveJob(task) {
   return normalizeJob(task?.project_job || task?.projects?.job);
 }
 
-function TaskNote({ task, isDragging, onDragStart, overridePosition, onNavigateToProject }) {
+function TaskNote({ task, isDragging, isCompleting, onDragStart, onCompleteTask, overridePosition, onNavigateToProject }) {
   const importance = overridePosition?.importance ?? task?.importance_score;
   const urgency = overridePosition?.urgency ?? task?.urgency_score;
 
@@ -56,16 +56,34 @@ function TaskNote({ task, isDragging, onDragStart, overridePosition, onNavigateT
       }}
       data-task-id={task?.id}
       onPointerDown={(event) => {
+        if (event.button === 2) return;
         const interactive = event.target?.closest?.('button, a, input, textarea, select');
         if (interactive) return;
         onDragStart?.(event, task);
+      }}
+      onContextMenu={(event) => {
+        const interactive = event.target?.closest?.('button, a, input, textarea, select');
+        if (interactive) return;
+        event.preventDefault();
+        task?.id && onCompleteTask?.(task.id);
       }}
       aria-label="Drag task"
     >
       <div
         className="flex items-center justify-between rounded-t-xl border-b border-[hsl(35_60%_18%/0.12)] bg-[hsl(54_100%_88%)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider"
       >
-        <span className="truncate">{task?.priority || 'Task'}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 cursor-pointer rounded border-[hsl(35_60%_18%/0.25)] bg-white/70 text-primary focus:ring-1 focus:ring-primary/40"
+            checked={Boolean(task?.is_completed) || Boolean(isCompleting)}
+            disabled={isCompleting}
+            onChange={() => task?.id && onCompleteTask?.(task.id)}
+            aria-label="Mark task complete"
+            title="Mark complete"
+          />
+          <span className="truncate">{task?.priority || 'Task'}</span>
+        </div>
         <span className="opacity-70">{dueDateLabel}</span>
       </div>
       <div className="px-3 py-2">
@@ -112,6 +130,7 @@ export default function PrioritisePage() {
 
   const [placingTaskIds, setPlacingTaskIds] = useState(() => new Set());
   const [savingTaskIds, setSavingTaskIds] = useState(() => new Set());
+  const [completingTaskIds, setCompletingTaskIds] = useState(() => new Set());
   const [dragState, setDragState] = useState(null);
   const [saveError, setSaveError] = useState(null);
 
@@ -229,8 +248,32 @@ export default function PrioritisePage() {
     }
   }, []);
 
+  const handleCompleteTask = useCallback(async (taskId) => {
+    if (!taskId) return;
+    if (completingTaskIds.has(taskId)) return;
+    setSaveError(null);
+    setCompletingTaskIds((prev) => new Set(prev).add(taskId));
+
+    try {
+      await apiClient.updateTask(taskId, {
+        is_completed: true,
+        updated_at: new Date().toISOString(),
+      });
+      setTasks((prev) => prev.filter((task) => task.id !== taskId));
+    } catch (err) {
+      setSaveError(err?.message || 'Failed to mark task complete.');
+    } finally {
+      setCompletingTaskIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  }, [completingTaskIds]);
+
   const handleDragStart = useCallback((event, task) => {
     if (!task?.id || !boardRef.current) return;
+    if (completingTaskIds.has(task.id)) return;
     event.preventDefault();
     event.stopPropagation();
 
@@ -261,7 +304,7 @@ export default function PrioritisePage() {
       previous: { importance: previousImportance, urgency: previousUrgency },
       wasUnscored,
     });
-  }, []);
+  }, [completingTaskIds]);
 
   const handleDragMove = useCallback((event) => {
     setDragState((prev) => {
@@ -488,9 +531,11 @@ export default function PrioritisePage() {
                   key={task.id}
                   task={task}
                   isDragging={dragState?.taskId === task.id || savingTaskIds.has(task.id)}
+                  isCompleting={completingTaskIds.has(task.id)}
                   onDragStart={handleDragStart}
                   overridePosition={dragState?.taskId === task.id ? { importance: dragState.importance, urgency: dragState.urgency } : null}
                   onNavigateToProject={handleNavigateToProject}
+                  onCompleteTask={handleCompleteTask}
                 />
               ))}
             </div>
@@ -509,14 +554,22 @@ export default function PrioritisePage() {
             <div className="mt-3 max-h-[40vh] space-y-2 overflow-auto pr-1">
               {unscoredTasks.map((task) => {
                 const placing = placingTaskIds.has(task.id);
+                const completing = completingTaskIds.has(task.id);
                 return (
                   <div
                     key={task.id}
                     className="rounded-lg border border-border bg-card p-3 cursor-grab active:cursor-grabbing"
                     onPointerDown={(event) => {
+                      if (event.button === 2) return;
                       const interactive = event.target?.closest?.('button, a, input, textarea, select');
                       if (interactive) return;
                       handleDragStart(event, task);
+                    }}
+                    onContextMenu={(event) => {
+                      const interactive = event.target?.closest?.('button, a, input, textarea, select');
+                      if (interactive) return;
+                      event.preventDefault();
+                      task?.id && handleCompleteTask(task.id);
                     }}
                     aria-label="Drag task onto grid"
                   >
@@ -525,13 +578,28 @@ export default function PrioritisePage() {
                         <p className="text-sm font-semibold text-foreground truncate">{task?.name || 'Untitled task'}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{task?.project_name || 'Project'}</p>
                       </div>
-                      <span className="text-xs text-muted-foreground">Drag</span>
+                      <div className="flex flex-col items-end gap-2">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={Boolean(task?.is_completed) || completing}
+                            disabled={placing || completing}
+                            onChange={() => task?.id && handleCompleteTask(task.id)}
+                            aria-label="Mark task complete"
+                            title="Mark complete"
+                          />
+                          Done
+                        </label>
+                        <span className="text-xs text-muted-foreground">Drag</span>
+                      </div>
                     </div>
                     <Button
                       size="sm"
                       className="mt-3 w-full"
                       variant="outline"
                       isLoading={placing}
+                      disabled={placing || completing}
                       onClick={() => handlePlaceTask(task.id)}
                     >
                       Place at 50 / 50
@@ -553,6 +621,7 @@ export default function PrioritisePage() {
             <div className="mt-3 max-h-[42vh] space-y-2 overflow-auto pr-1">
               {topPriorities.map(({ task, scores }) => {
                 const dueLabel = task?.due_date ? format(parseISO(task.due_date), 'MMM d') : 'No due date';
+                const completing = completingTaskIds.has(task.id);
                 return (
                   <div key={task.id} className="rounded-lg border border-border bg-card p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -562,9 +631,22 @@ export default function PrioritisePage() {
                           {task?.project_name || 'Project'} • {dueLabel}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs font-semibold text-foreground">{Math.round(scores.priorityScore)}</p>
-                        <p className="text-[11px] text-muted-foreground">PRI</p>
+                      <div className="flex items-start gap-3 text-right">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={Boolean(task?.is_completed) || completing}
+                            disabled={completing}
+                            onChange={() => task?.id && handleCompleteTask(task.id)}
+                            aria-label="Mark task complete"
+                            title="Mark complete"
+                          />
+                        </label>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">{Math.round(scores.priorityScore)}</p>
+                          <p className="text-[11px] text-muted-foreground">PRI</p>
+                        </div>
                       </div>
                     </div>
                     <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
