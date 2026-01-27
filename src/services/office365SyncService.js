@@ -241,6 +241,38 @@ async function listTodoTasks({ accessToken, listId }) {
   throw lastError || new Error('Office365 listTodoTasks failed');
 }
 
+async function todoTaskExists({ accessToken, listId, todoTaskId }) {
+  const listIdVariants = [encodeURIComponent(listId), listId];
+  const encodedTodoTaskId = encodeURIComponent(todoTaskId);
+
+  let any404 = false;
+  let lastError = null;
+  for (const listIdValue of listIdVariants) {
+    try {
+      await office365GraphRequest({
+        accessToken,
+        method: 'GET',
+        path: `/me/todo/lists/${listIdValue}/tasks/${encodedTodoTaskId}`,
+      });
+      return true;
+    } catch (err) {
+      lastError = err;
+      const message = String(err?.message || '');
+      if (message.includes('(404)')) {
+        any404 = true;
+        continue;
+      }
+      if (message.includes('(400)') && message.includes('ParseUri')) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (any404) return false;
+  throw lastError || new Error('Office365 todoTaskExists failed');
+}
+
 async function ensureProjectList({ supabase, accessToken, userId, project, existingMap }) {
   const current = existingMap?.get(project.id) || null;
   if (!current) {
@@ -397,11 +429,9 @@ export async function syncOffice365All({ userId }) {
   const accessToken = await getValidOffice365AccessToken({ userId });
 
   const [
-    { data: connection },
     { data: projects, error: projectsError },
     { data: tasks, error: tasksError },
   ] = await Promise.all([
-    supabase.from('office365_connections').select('last_synced_at').eq('user_id', userId).maybeSingle(),
     supabase.from('projects').select('*').eq('user_id', userId),
     supabase.from('tasks').select('*').eq('user_id', userId),
   ]);
@@ -471,26 +501,26 @@ export async function syncOffice365All({ userId }) {
       if (remoteTask?.id) remoteTodoTaskIds.add(remoteTask.id);
     }
 
-    for (const remoteTask of remoteTasks) {
-      const remoteTodoId = remoteTask?.id;
-      if (!remoteTodoId) continue;
+	    for (const remoteTask of remoteTasks) {
+	      const remoteTodoId = remoteTask?.id;
+	      if (!remoteTodoId) continue;
 
       const existingMapping = taskMapByTodoTaskId.get(remoteTodoId) || null;
       if (!existingMapping) {
         const projectId = projectMapping.project_id;
         if (!projectId) continue;
 
-        const payload = {
-          user_id: userId,
-          project_id: projectId,
-          name: remoteTask.title || 'New task',
-          description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
-          due_date: fromGraphDueDateTime(remoteTask?.dueDateTime),
-          priority: toLocalPriority(remoteTask?.importance),
-          is_completed: remoteTask?.status === 'completed',
-          completed_at:
-            remoteTask?.status === 'completed'
-              ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())
+	        const payload = {
+	          user_id: userId,
+	          project_id: projectId,
+	          name: remoteTask.title || 'New task',
+	          description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
+	          due_date: fromGraphDueDateTime(remoteTask?.dueDateTime) || new Date().toISOString().slice(0, 10),
+	          priority: toLocalPriority(remoteTask?.importance),
+	          is_completed: remoteTask?.status === 'completed',
+	          completed_at:
+	            remoteTask?.status === 'completed'
+	              ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())
               : null,
           updated_at: toIsoTimestamp(remoteTask?.lastModifiedDateTime || remoteTask?.createdDateTime) || new Date().toISOString(),
         };
@@ -625,8 +655,6 @@ export async function syncOffice365All({ userId }) {
     }
   }
 
-  const lastSyncedMs = connection?.last_synced_at ? new Date(connection.last_synced_at).getTime() : 0;
-
   // Delete local tasks for items removed remotely (two-way deletes).
   for (const mapping of taskMaps || []) {
     if (!activeProjectIds.has(mapping.project_id)) continue;
@@ -634,11 +662,15 @@ export async function syncOffice365All({ userId }) {
       const localTask = localTasksById.get(mapping.task_id);
       if (!localTask) continue;
 
-      const localMs = toTimestampMs(localTask.updated_at || localTask.created_at);
-      if (lastSyncedMs && localMs > lastSyncedMs) {
-        // Local was updated since last sync; treat local as source-of-truth and recreate remotely.
-        continue;
-      }
+      const existsRemotely = await todoTaskExists({
+        accessToken,
+        listId: mapping.list_id,
+        todoTaskId: mapping.todo_task_id,
+      }).catch((err) => {
+        console.warn('Office365 pull: unable to confirm remote deletion:', err);
+        return true;
+      });
+      if (existsRemotely) continue;
 
       const { error: deleteError } = await supabase
         .from('tasks')

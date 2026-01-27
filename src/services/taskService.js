@@ -85,6 +85,10 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
     is_completed: payload?.is_completed ?? false
   };
 
+  if (!taskData.due_date) {
+    taskData.due_date = new Date().toISOString().slice(0, 10);
+  }
+
   if (!taskData.project_id) {
     taskData.project_id = await ensureUnassignedProject(supabase, userId);
   }
