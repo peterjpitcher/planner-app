@@ -63,25 +63,35 @@ function normalizeLocalTask(task) {
 }
 
 function normalizeRemoteTask(todoTask) {
-  return {
-    title: normalizeText(todoTask?.title),
-    description: normalizeText(todoTask?.body?.content),
-    dueDate: fromGraphDueDateTime(todoTask?.dueDateTime),
-    importance: todoTask?.importance || 'normal',
-    status: todoTask?.status || 'notStarted',
-  };
+  const task = todoTask || {};
+  const result = {};
+
+  if (Object.prototype.hasOwnProperty.call(task, 'title')) {
+    result.title = normalizeText(task.title);
+  }
+  if (Object.prototype.hasOwnProperty.call(task, 'body')) {
+    result.description = normalizeText(task.body?.content);
+  }
+  if (Object.prototype.hasOwnProperty.call(task, 'dueDateTime')) {
+    result.dueDate = fromGraphDueDateTime(task.dueDateTime);
+  }
+  if (Object.prototype.hasOwnProperty.call(task, 'importance')) {
+    result.importance = task.importance || 'normal';
+  }
+  if (Object.prototype.hasOwnProperty.call(task, 'status')) {
+    result.status = task.status || 'notStarted';
+  }
+
+  return result;
 }
 
 function tasksMatch(localTask, remoteTask) {
   const local = normalizeLocalTask(localTask);
   const remote = normalizeRemoteTask(remoteTask);
-  return (
-    local.title === remote.title &&
-    local.description === remote.description &&
-    local.dueDate === remote.dueDate &&
-    local.importance === remote.importance &&
-    local.status === remote.status
-  );
+  for (const [key, value] of Object.entries(remote)) {
+    if (local[key] !== value) return false;
+  }
+  return true;
 }
 
 function toTimestampMs(value) {
@@ -162,8 +172,7 @@ async function deleteTodoTask({ accessToken, listId, todoTaskId }) {
 }
 
 async function listTodoTasks({ accessToken, listId }) {
-  const encodedListId = encodeURIComponent(listId);
-  const selectFields = [
+  const selectFull = [
     'id',
     'title',
     'status',
@@ -174,30 +183,62 @@ async function listTodoTasks({ accessToken, listId }) {
     'createdDateTime',
     'lastModifiedDateTime',
   ].join(',');
+  const selectMinimal = [
+    'id',
+    'title',
+    'status',
+    'importance',
+    'dueDateTime',
+    'createdDateTime',
+    'lastModifiedDateTime',
+  ].join(',');
 
-  // Graph's request broker is sensitive to over-encoding OData query values.
-  // Keep the $select value readable (commas unescaped) to avoid 400 ParseUri errors.
-  const initialPath = `/me/todo/lists/${encodedListId}/tasks?$top=100&$select=${selectFields}`;
+  const listIdVariants = [encodeURIComponent(listId), listId];
+  const queryVariants = [
+    `?$top=100&$select=${selectFull}`,
+    `?$top=100&$select=${selectMinimal}`,
+    '?$top=100',
+    '',
+  ];
 
-  const items = [];
-  let nextUrl = null;
-  for (let i = 0; i < 50; i += 1) {
-    const page = await office365GraphRequest({
-      accessToken,
-      method: 'GET',
-      ...(nextUrl ? { url: nextUrl } : { path: initialPath }),
-    });
+  const fetchAllPages = async ({ initialPath }) => {
+    const items = [];
+    let nextUrl = null;
+    for (let i = 0; i < 50; i += 1) {
+      const page = await office365GraphRequest({
+        accessToken,
+        method: 'GET',
+        ...(nextUrl ? { url: nextUrl } : { path: initialPath }),
+      });
 
-    const pageItems = page?.value;
-    if (Array.isArray(pageItems)) {
-      items.push(...pageItems);
+      const pageItems = page?.value;
+      if (Array.isArray(pageItems)) {
+        items.push(...pageItems);
+      }
+
+      nextUrl = page?.['@odata.nextLink'] || null;
+      if (!nextUrl) break;
     }
+    return items;
+  };
 
-    nextUrl = page?.['@odata.nextLink'] || null;
-    if (!nextUrl) break;
+  let lastError = null;
+  for (const listIdValue of listIdVariants) {
+    for (const query of queryVariants) {
+      const initialPath = `/me/todo/lists/${listIdValue}/tasks${query}`;
+      try {
+        return await fetchAllPages({ initialPath });
+      } catch (err) {
+        lastError = err;
+        const message = String(err?.message || '');
+        if (!message.includes('(400)') || !message.includes('ParseUri')) {
+          throw err;
+        }
+      }
+    }
   }
 
-  return items;
+  throw lastError || new Error('Office365 listTodoTasks failed');
 }
 
 async function ensureProjectList({ supabase, accessToken, userId, project, existingMap }) {
@@ -501,24 +542,40 @@ export async function syncOffice365All({ userId }) {
       const localMs = toTimestampMs(localTask.updated_at || localTask.created_at);
       const remoteMs = toTimestampMs(remoteTask.lastModifiedDateTime || remoteTask.createdDateTime);
 
-      if (!tasksMatch(localTask, remoteTask)) {
-        if (remoteMs > localMs) {
-          const updates = {
-            name: remoteTask.title || localTask.name,
-            description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
-            due_date: fromGraphDueDateTime(remoteTask?.dueDateTime),
-            priority: toLocalPriority(remoteTask?.importance),
-            is_completed: remoteTask?.status === 'completed',
-            completed_at:
-              remoteTask?.status === 'completed'
-                ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || localTask.completed_at || new Date().toISOString())
-                : null,
-            updated_at: toIsoTimestamp(remoteTask?.lastModifiedDateTime || remoteTask?.createdDateTime) || new Date().toISOString(),
-          };
+	      if (!tasksMatch(localTask, remoteTask)) {
+	        if (remoteMs > localMs) {
+	          const updates = {
+	            updated_at: toIsoTimestamp(remoteTask?.lastModifiedDateTime || remoteTask?.createdDateTime) || new Date().toISOString(),
+	          };
 
-          const { data: updatedLocalTask, error: updateError } = await supabase
-            .from('tasks')
-            .update(updates)
+	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'title')) {
+	            updates.name = remoteTask.title || localTask.name;
+	          }
+	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'body')) {
+	            const content = typeof remoteTask?.body?.content === 'string' ? remoteTask.body.content : '';
+	            const normalized = normalizeText(content);
+	            updates.description = normalized ? normalized : null;
+	          }
+	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'dueDateTime')) {
+	            updates.due_date = fromGraphDueDateTime(remoteTask?.dueDateTime);
+	          }
+	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'importance')) {
+	            updates.priority = toLocalPriority(remoteTask?.importance);
+	          }
+	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'status')) {
+	            const isCompleted = remoteTask?.status === 'completed';
+	            updates.is_completed = isCompleted;
+	            if (isCompleted) {
+	              const completedAt = toIsoTimestamp(remoteTask?.completedDateTime?.dateTime);
+	              updates.completed_at = completedAt || localTask.completed_at || new Date().toISOString();
+	            } else {
+	              updates.completed_at = null;
+	            }
+	          }
+
+	          const { data: updatedLocalTask, error: updateError } = await supabase
+	            .from('tasks')
+	            .update(updates)
             .eq('id', localTask.id)
             .eq('user_id', userId)
             .select('*')
