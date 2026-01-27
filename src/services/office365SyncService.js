@@ -2,6 +2,11 @@ import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { office365GraphRequest } from '@/lib/office365/graph';
 import { getValidOffice365AccessToken } from '@/services/office365ConnectionService';
 
+function isProjectActive(status) {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  return normalized === 'open' || normalized === 'in progress' || normalized === 'on hold';
+}
+
 function toGraphImportance(priority) {
   switch (priority) {
     case 'High':
@@ -257,6 +262,10 @@ export async function syncOffice365All({ userId }) {
   if (projectsError) throw projectsError;
   if (tasksError) throw tasksError;
 
+  const activeProjects = (projects || []).filter((project) => isProjectActive(project.status));
+  const activeProjectIds = new Set(activeProjects.map((project) => project.id));
+  const desiredTasks = (tasks || []).filter((task) => activeProjectIds.has(task.project_id));
+
   const { data: projectMaps, error: projectMapsError } = await supabase
     .from('office365_project_lists')
     .select('*')
@@ -272,14 +281,14 @@ export async function syncOffice365All({ userId }) {
   const projectMapByProjectId = new Map((projectMaps || []).map((row) => [row.project_id, row]));
   const taskMapByTaskId = new Map((taskMaps || []).map((row) => [row.task_id, row]));
 
-  const localProjectIds = new Set((projects || []).map((p) => p.id));
-  const localTaskIds = new Set((tasks || []).map((t) => t.id));
+  const desiredProjectIds = new Set(activeProjects.map((p) => p.id));
+  const desiredTaskIds = new Set(desiredTasks.map((t) => t.id));
 
   let createdLists = 0;
   let createdTasks = 0;
   let updatedTasks = 0;
 
-  for (const project of projects || []) {
+  for (const project of activeProjects) {
     const before = projectMapByProjectId.get(project.id);
     const ensured = await ensureProjectList({
       supabase,
@@ -293,7 +302,7 @@ export async function syncOffice365All({ userId }) {
     }
   }
 
-  for (const task of tasks || []) {
+  for (const task of desiredTasks) {
     const projectMap = projectMapByProjectId.get(task.project_id);
     if (!projectMap) {
       // In case of data inconsistency, skip.
@@ -314,9 +323,9 @@ export async function syncOffice365All({ userId }) {
     else updatedTasks += 1;
   }
 
-  // Remove stale task mappings (and delete remote tasks) for local deletions.
+  // Remove stale task mappings (and delete remote tasks) for local deletions or inactive projects.
   for (const mapping of taskMaps || []) {
-    if (localTaskIds.has(mapping.task_id)) continue;
+    if (desiredTaskIds.has(mapping.task_id)) continue;
     try {
       await deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id });
     } catch (err) {
@@ -325,15 +334,16 @@ export async function syncOffice365All({ userId }) {
     await supabase.from('office365_task_items').delete().eq('id', mapping.id);
   }
 
-  // Remove stale project mappings (and delete remote lists) for local deletions.
+  // Remove stale project mappings (and delete remote lists) for local deletions or inactive projects.
   for (const mapping of projectMaps || []) {
-    if (localProjectIds.has(mapping.project_id)) continue;
+    if (desiredProjectIds.has(mapping.project_id)) continue;
     try {
       await deleteTodoList({ accessToken, listId: mapping.list_id });
     } catch (err) {
       // Ignore.
     }
     await supabase.from('office365_project_lists').delete().eq('id', mapping.id);
+    await supabase.from('office365_task_items').delete().eq('user_id', userId).eq('project_id', mapping.project_id);
   }
 
   await supabase
@@ -352,7 +362,6 @@ export async function syncOffice365All({ userId }) {
 
 export async function syncOffice365Project({ userId, projectId }) {
   const supabase = getSupabaseServiceRole();
-  const accessToken = await getValidOffice365AccessToken({ userId });
 
   const { data: project, error } = await supabase
     .from('projects')
@@ -361,6 +370,13 @@ export async function syncOffice365Project({ userId, projectId }) {
     .eq('user_id', userId)
     .single();
   if (error) throw error;
+
+  if (!isProjectActive(project.status)) {
+    await deleteOffice365Project({ userId, projectId });
+    return;
+  }
+
+  const accessToken = await getValidOffice365AccessToken({ userId });
 
   const { data: mapRows, error: mapError } = await supabase
     .from('office365_project_lists')
@@ -418,6 +434,41 @@ export async function syncOffice365Task({ userId, taskId }) {
     .single();
   if (error) throw error;
 
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('id, name, status')
+    .eq('id', task.project_id)
+    .eq('user_id', userId)
+    .single();
+
+  if (projectError) throw projectError;
+
+  if (!isProjectActive(project.status)) {
+    // Project is not eligible for sync; ensure task is removed remotely if it exists.
+    const { data: existingMapping } = await supabase
+      .from('office365_task_items')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('task_id', task.id)
+      .maybeSingle();
+
+    if (existingMapping?.id) {
+      try {
+        await deleteTodoTask({ accessToken, listId: existingMapping.list_id, todoTaskId: existingMapping.todo_task_id });
+      } catch (err) {
+        // Ignore.
+      }
+      await supabase.from('office365_task_items').delete().eq('id', existingMapping.id);
+    }
+
+    await supabase
+      .from('office365_connections')
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq('user_id', userId);
+
+    return;
+  }
+
   const { data: projectMapping, error: projectMappingError } = await supabase
     .from('office365_project_lists')
     .select('*')
@@ -430,14 +481,6 @@ export async function syncOffice365Task({ userId, taskId }) {
   let listId = projectMapping?.list_id;
   if (!listId) {
     // Ensure list exists first.
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', task.project_id)
-      .eq('user_id', userId)
-      .single();
-    if (projectError) throw projectError;
-
     const ensured = await ensureProjectList({ supabase, accessToken, userId, project, existingMap: null });
     listId = ensured.list_id;
   }
