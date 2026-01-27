@@ -41,6 +41,6 @@ export const config = {
      * - /favicon.ico (favicon file)
      * - /public/* (public files)
      */
-    "/((?!login|api/auth|api/cron|api/debug-env|api/health|_next/static|_next/image|favicon.ico|public).*)",
+    "/((?!login|api/auth|api/cron|api/debug-env|api/health|api/integrations/office365/callback|_next/static|_next/image|favicon.ico|public).*)",
   ],
 };
