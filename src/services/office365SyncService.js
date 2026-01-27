@@ -175,7 +175,9 @@ async function listTodoTasks({ accessToken, listId }) {
     'lastModifiedDateTime',
   ].join(',');
 
-  const initialPath = `/me/todo/lists/${encodedListId}/tasks?$top=100&$select=${encodeURIComponent(selectFields)}`;
+  // Graph's request broker is sensitive to over-encoding OData query values.
+  // Keep the $select value readable (commas unescaped) to avoid 400 ParseUri errors.
+  const initialPath = `/me/todo/lists/${encodedListId}/tasks?$top=100&$select=${selectFields}`;
 
   const items = [];
   let nextUrl = null;
