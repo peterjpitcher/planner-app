@@ -31,9 +31,9 @@ This document outlines all required environment variables for the Planner applic
 - **Where to Find**: Supabase Dashboard > Settings > API > anon/public key
 - **Note**: This is safe to expose in client-side code
 
-### 3. Daily Task Digest Email (Office 365)
+### 3. Office 365 Sync (Microsoft To Do)
 
-These are required to send the daily 09:30 (Europe/London) digest email via Microsoft Graph.
+These are required to connect and sync projects/tasks into an Office 365 account via Microsoft Graph (To Do).
 
 #### MICROSOFT_CLIENT_ID
 - **Description**: Azure App Registration client ID
@@ -41,19 +41,12 @@ These are required to send the daily 09:30 (Europe/London) digest email via Micr
 #### MICROSOFT_CLIENT_SECRET
 - **Description**: Azure App Registration client secret
 
-#### MICROSOFT_TENANT_ID
+#### MICROSOFT_TENANT_ID (optional)
 - **Description**: Microsoft Entra tenant ID (directory/tenant ID)
+- **Default**: `organizations`
 
-#### MICROSOFT_USER_EMAIL
-- **Description**: The mailbox to send from and to (daily digest is sent to this address)
-- **Note**: The Azure app must have Microsoft Graph `Mail.Send` **application** permission with admin consent.
-
-#### Optional Digest Variables
-- `DIGEST_USER_ID` - Explicit Supabase `auth.users.id` to fetch tasks for (skips user lookup).
-- `DIGEST_USER_EMAIL` - Email to find the Supabase user for (defaults to `MICROSOFT_USER_EMAIL`).
-- `DIGEST_DASHBOARD_URL` - Link included in the email (defaults to `NEXTAUTH_URL`).
-- `DAILY_TASK_EMAIL_WINDOW_MINUTES` - Minute window for sending (default `5`).
-- `CRON_MANUAL_TOKEN` - Allows manual triggering in production via `?token=...`.
+#### Supabase requirements
+- `SUPABASE_SERVICE_KEY` is required for this integration because tokens are stored in Supabase Vault (server-side only).
 
 ## Setting Environment Variables
 
@@ -84,10 +77,10 @@ NEXT_PUBLIC_SUPABASE_URL = [your-supabase-url]
 NEXT_PUBLIC_SUPABASE_ANON_KEY = [your-anon-key]
 SUPABASE_SERVICE_KEY = [your-service-role-key]
 
-# Daily task digest email (Office 365 / Microsoft Graph)
+# Office 365 sync (Microsoft Graph / To Do)
 MICROSOFT_CLIENT_ID = [your-azure-app-client-id]
 MICROSOFT_CLIENT_SECRET = [your-azure-app-client-secret]
-MICROSOFT_TENANT_ID = [your-tenant-id]
+MICROSOFT_TENANT_ID = organizations
 MICROSOFT_USER_EMAIL = peter@orangejelly.co.uk
 ```
 

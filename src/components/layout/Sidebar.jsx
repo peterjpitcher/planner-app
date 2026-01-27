@@ -10,6 +10,7 @@ import {
     Grid3X3,
     BookOpen,
     PieChart,
+    Plug,
     LogOut
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
@@ -21,6 +22,7 @@ const navigation = [
     { name: 'Mind Sweep', href: '/capture', icon: Grid3X3 },
     { name: 'Journal', href: '/journal', icon: BookOpen },
     { name: 'Reports', href: '/completed-report', icon: PieChart },
+    { name: 'Integrations', href: '/settings/integrations', icon: Plug },
 ];
 
 export function Sidebar() {

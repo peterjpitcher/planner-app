@@ -5,6 +5,7 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
+import { deleteOffice365Project, syncOffice365Project } from '@/services/office365SyncService';
 
 // PATCH /api/projects/[id] - Update a project
 export async function PATCH(request, { params }) {
@@ -65,6 +66,12 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
 
+    try {
+      await syncOffice365Project({ userId: session.user.id, projectId: id });
+    } catch (err) {
+      console.warn('Office365 sync failed for updated project:', err);
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('PATCH /api/projects/[id] error:', error);
@@ -111,6 +118,12 @@ export async function DELETE(request, { params }) {
     
     if (existingProject.user_id !== session.user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    try {
+      await deleteOffice365Project({ userId: session.user.id, projectId: id });
+    } catch (err) {
+      console.warn('Office365 sync failed for deleted project:', err);
     }
     
     // Delete project (cascade will handle related tasks and notes)

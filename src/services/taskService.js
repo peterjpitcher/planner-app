@@ -1,6 +1,7 @@
 import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
+import { deleteOffice365Task, syncOffice365Task } from '@/services/office365SyncService';
 
 function normalizeJob(value) {
   if (typeof value !== 'string') return null;
@@ -150,6 +151,14 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
     .update({ updated_at: new Date().toISOString() })
     .eq('id', taskData.project_id);
 
+  if (!options?.skipOffice365Sync && data?.id) {
+    try {
+      await syncOffice365Task({ userId, taskId: data.id });
+    } catch (err) {
+      console.warn('Office365 sync failed for created task:', err);
+    }
+  }
+
   return { data };
 }
 
@@ -277,6 +286,14 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
       .in('id', Array.from(touches));
   }
 
+  if (!options?.skipOffice365Sync && data?.id) {
+    try {
+      await syncOffice365Task({ userId, taskId: data.id });
+    } catch (err) {
+      console.warn('Office365 sync failed for updated task:', err);
+    }
+  }
+
   return { data };
 }
 
@@ -293,6 +310,14 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
 
   if (existingTask.user_id !== userId) {
     return { error: { status: 403, message: 'Forbidden' } };
+  }
+
+  if (!options?.skipOffice365Sync) {
+    try {
+      await deleteOffice365Task({ userId, taskId });
+    } catch (err) {
+      console.warn('Office365 sync failed for deleted task:', err);
+    }
   }
 
   const { error } = await supabase

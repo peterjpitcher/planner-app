@@ -9,7 +9,7 @@
 
 ## Operational Notes
 - Required env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`.
-- Daily digest env vars (if enabled): `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, `MICROSOFT_USER_EMAIL`.
+- Office 365 tokens are stored in Supabase Vault (server-side only); do not expose vault secret IDs to the client.
 - Keep service keys out of the client and logs. Rotate secrets if exposed.
 - When adding new Supabase tables, mirror the user-scoped RLS pattern:
   ```sql

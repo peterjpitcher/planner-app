@@ -35,7 +35,9 @@ Required for local dev and server routes:
 - `NEXTAUTH_URL` (use `http://localhost:3000` in dev; production is hard-coded to `https://planner.orangejelly.co.uk`)
 - `SUPABASE_SERVICE_KEY` (required for admin/migration scripts and server-side admin access)
 - `OPENAI_API_KEY` (required for journal summaries)
-- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, `MICROSOFT_USER_EMAIL` (required for the daily email digest cron)
+- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (required for Office 365 sync)
+- `MICROSOFT_TENANT_ID` (optional; default `organizations`)
+- `MICROSOFT_USER_EMAIL` (optional; helps prefill sign-in)
 
 Optional:
 - `NODE_ENV`, `PORT`

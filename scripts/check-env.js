@@ -61,19 +61,19 @@ const OPTIONAL_VARS = {
     default: '3000'
   },
   'MICROSOFT_CLIENT_ID': {
-    description: 'Azure App Registration client ID (daily digest email)',
+    description: 'Azure App Registration client ID (Office 365 sync)',
     example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   },
   'MICROSOFT_CLIENT_SECRET': {
-    description: 'Azure App Registration client secret (daily digest email)',
+    description: 'Azure App Registration client secret (Office 365 sync)',
     example: '***'
   },
   'MICROSOFT_TENANT_ID': {
-    description: 'Microsoft Entra tenant ID (daily digest email)',
+    description: 'Microsoft Entra tenant ID (Office 365 sync)',
     example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   },
   'MICROSOFT_USER_EMAIL': {
-    description: 'Mailbox used to send/receive digest (daily digest email)',
+    description: 'Email to prefill Microsoft sign-in (Office 365 sync)',
     example: 'peter@orangejelly.co.uk'
   }
 };
