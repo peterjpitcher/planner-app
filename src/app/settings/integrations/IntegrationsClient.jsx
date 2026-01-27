@@ -60,7 +60,9 @@ export default function IntegrationsClient() {
       if (!response.ok) {
         throw new Error(json?.error || 'Sync failed');
       }
-      setNotice(`Synced. Created lists: ${json.createdLists}, created tasks: ${json.createdTasks}.`);
+      const pushed = `Pushed: +${json.createdTasks || 0} created, +${json.updatedTasks || 0} updated.`;
+      const pulled = `Pulled: +${json.pulledCreatedTasks || 0} created, +${json.pulledUpdatedTasks || 0} updated, -${json.pulledDeletedTasks || 0} deleted.`;
+      setNotice(`Synced. Created lists: ${json.createdLists || 0}. ${pushed} ${pulled}`);
       await refreshStatus();
     } catch (err) {
       setNotice(String(err?.message || 'Sync failed'));
@@ -141,11 +143,10 @@ export default function IntegrationsClient() {
           </div>
 
           <div className="text-xs text-muted-foreground">
-            Projects are synced as task lists; tasks are synced into their project list.
+            Projects are synced as task lists; tasks are synced to/from their project list. Automatic background sync runs every 5 minutes.
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

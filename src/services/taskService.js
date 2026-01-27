@@ -260,7 +260,14 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   }
 
   if ('is_completed' in updatesToApply) {
-    updatesToApply.completed_at = updatesToApply.is_completed ? new Date().toISOString() : null;
+    const isCompleted = Boolean(updatesToApply.is_completed);
+    if (options.preserveCompletedAt) {
+      updatesToApply.completed_at = isCompleted
+        ? updatesToApply.completed_at || new Date().toISOString()
+        : null;
+    } else {
+      updatesToApply.completed_at = isCompleted ? new Date().toISOString() : null;
+    }
   }
 
   if (!options.skipTimestamp) {
