@@ -143,7 +143,7 @@ export default function IntegrationsClient() {
           </div>
 
           <div className="text-xs text-muted-foreground">
-            Projects are synced as task lists; tasks are synced to/from their project list. Automatic background sync runs every 5 minutes.
+            Projects are synced as task lists; tasks are synced to/from their project list. Automatic background sync runs every minute.
           </div>
         </CardContent>
       </Card>
