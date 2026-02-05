@@ -484,6 +484,7 @@ export async function syncOffice365All({ userId }) {
   const supabase = getSupabaseServiceRole();
   const connection = await getOffice365Connection({ userId });
   const lastSyncedMs = toTimestampMs(connection?.last_synced_at);
+  const hasLastSync = Boolean(connection?.last_synced_at);
   const accessToken = await getValidOffice365AccessToken({ userId });
 
   const [
@@ -629,12 +630,15 @@ export async function syncOffice365All({ userId }) {
       const remoteEtag = remoteTask?.['@odata.etag'] || null;
       const localMs = toTimestampMs(localTask.updated_at || localTask.created_at);
       let remoteMs = toTimestampMs(remoteTask.lastModifiedDateTime || remoteTask.createdDateTime);
-      const localChangedSinceSync = lastSyncedMs ? localMs > lastSyncedMs : false;
-      const remoteChangedSinceSync = remoteEtag && remoteEtag !== existingMapping.etag;
+      const localChangedSinceSync = hasLastSync ? localMs > lastSyncedMs : true;
+      const remoteChangedSinceSync =
+        (remoteEtag && remoteEtag !== existingMapping.etag) ||
+        (hasLastSync && remoteMs > lastSyncedMs);
 
       let remoteDetails = remoteTask;
       const shouldFetchRemoteDetails =
-        shouldFetchFullRemoteTask(remoteTask) && (remoteChangedSinceSync || remoteMs > localMs);
+        shouldFetchFullRemoteTask(remoteTask) &&
+        (remoteChangedSinceSync || remoteMs > localMs || !localChangedSinceSync);
       if (shouldFetchRemoteDetails) {
         try {
           const fetched = await fetchTodoTask({
@@ -656,16 +660,14 @@ export async function syncOffice365All({ userId }) {
         }
       }
 
-	      if (!tasksMatch(localTask, remoteDetails)) {
-          const shouldPullRemote =
-            (remoteChangedSinceSync && !localChangedSinceSync) ||
-            remoteMs > localMs ||
-            (remoteChangedSinceSync && !remoteMs);
+      if (!tasksMatch(localTask, remoteDetails)) {
+        const shouldPullRemote =
+          !localChangedSinceSync || (remoteMs && remoteMs > localMs);
 
-          if (shouldPullRemote) {
-            const updates = {
-              updated_at: toIsoTimestamp(remoteDetails?.lastModifiedDateTime || remoteDetails?.createdDateTime) || new Date().toISOString(),
-            };
+        if (shouldPullRemote) {
+          const updates = {
+            updated_at: toIsoTimestamp(remoteDetails?.lastModifiedDateTime || remoteDetails?.createdDateTime) || new Date().toISOString(),
+          };
 
             if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'title')) {
               updates.name = remoteDetails.title || localTask.name;
