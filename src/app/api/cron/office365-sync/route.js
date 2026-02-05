@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { syncOffice365All } from '@/services/office365SyncService';
 
@@ -39,6 +40,11 @@ export async function GET(request) {
   }
 
   const okCount = results.filter((r) => r.ok).length;
+
+  if (okCount > 0) {
+    revalidatePath('/tasks');
+  }
+
   return NextResponse.json({
     ok: true,
     syncedUsers: okCount,

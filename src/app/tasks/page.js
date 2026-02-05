@@ -147,84 +147,84 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
   return (
     <div className="rounded-lg border border-border bg-card p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 items-start gap-3">
-        <input
-          type="checkbox"
-          checked={Boolean(task?.is_completed)}
-          onChange={handleToggleComplete}
-          disabled={isSavingComplete}
-          className="mt-1 h-4 w-4"
-          aria-label={task?.is_completed ? 'Mark task incomplete' : 'Mark task complete'}
-        />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-sm font-semibold text-foreground truncate">{task?.name || 'Untitled task'}</p>
-            <span className="text-xs text-muted-foreground">•</span>
-            <span className="text-xs text-muted-foreground">{dueDateLabel}</span>
-            <span className="text-xs text-muted-foreground">•</span>
-            <span className="text-xs font-medium text-foreground/80">{task?.priority || 'No priority'}</span>
-            <TaskScoreBadge task={task} className="ml-1" />
+        <div className="flex min-w-0 items-start gap-3">
+          <input
+            type="checkbox"
+            checked={Boolean(task?.is_completed)}
+            onChange={handleToggleComplete}
+            disabled={isSavingComplete}
+            className="mt-1 h-4 w-4"
+            aria-label={task?.is_completed ? 'Mark task incomplete' : 'Mark task complete'}
+          />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="text-sm font-semibold text-foreground truncate">{task?.name || 'Untitled task'}</p>
+              <span className="text-xs text-muted-foreground">•</span>
+              <span className="text-xs text-muted-foreground">{dueDateLabel}</span>
+              <span className="text-xs text-muted-foreground">•</span>
+              <span className="text-xs font-medium text-foreground/80">{task?.priority || 'No priority'}</span>
+              <TaskScoreBadge task={task} className="ml-1" />
 
-            {!task?.is_completed && (
+              {!task?.is_completed && (
+                <button
+                  type="button"
+                  onClick={() => setIsChaseModalOpen(true)}
+                  className="ml-1 inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                  title="Chase task (add note & push due date)"
+                >
+                  <PaperAirplaneIcon className="h-3.5 w-3.5 -rotate-45" />
+                  Chase
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => setIsChaseModalOpen(true)}
-                className="ml-1 inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-                title="Chase task (add note & push due date)"
+                onClick={() => setShowNotes((prev) => !prev)}
+                disabled={isLoadingNotes}
+                className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+                aria-expanded={showNotes}
+                aria-controls={`task-notes-${task?.id}`}
+                title="Notes"
               >
-                <PaperAirplaneIcon className="h-3.5 w-3.5 -rotate-45" />
-                Chase
+                <ChatBubbleLeftEllipsisIcon className="h-3.5 w-3.5" />
+                Notes{notes.length > 0 ? ` (${notes.length})` : ''}
               </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setShowNotes((prev) => !prev)}
-              disabled={isLoadingNotes}
-              className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
-              aria-expanded={showNotes}
-              aria-controls={`task-notes-${task?.id}`}
-              title="Notes"
-            >
-              <ChatBubbleLeftEllipsisIcon className="h-3.5 w-3.5" />
-              Notes{notes.length > 0 ? ` (${notes.length})` : ''}
-            </button>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <button
-              type="button"
-              onClick={() => onNavigateToProject?.(task?.project_id)}
-              className="text-primary hover:underline"
-              title="Jump to project on dashboard"
-            >
-              {task?.project_name || 'Project'}
-            </button>
-            <span className="text-muted-foreground">•</span>
-            <span className="text-muted-foreground">Job:</span>
-            <span className="font-medium text-foreground/80">{jobLabel}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <button
+                type="button"
+                onClick={() => onNavigateToProject?.(task?.project_id)}
+                className="text-primary hover:underline"
+                title="Jump to project on dashboard"
+              >
+                {task?.project_name || 'Project'}
+              </button>
+              <span className="text-muted-foreground">•</span>
+              <span className="text-muted-foreground">Job:</span>
+              <span className="font-medium text-foreground/80">{jobLabel}</span>
+            </div>
           </div>
         </div>
+
+        {isUnassigned && (
+          <div className="flex items-center gap-2 sm:justify-end">
+            <label htmlFor={`job-${task.id}`} className="text-xs text-muted-foreground">
+              Job
+            </label>
+            <input
+              id={`job-${task.id}`}
+              list={datalistId}
+              value={jobDraft}
+              onChange={(e) => setJobDraft(e.target.value)}
+              onBlur={handleJobSave}
+              onKeyDown={(e) => (e.key === 'Enter' && handleJobSave())}
+              className="h-8 w-44 rounded-md border border-input bg-background px-2 text-xs"
+              placeholder="Set job…"
+              disabled={isSavingJob}
+            />
+          </div>
+        )}
       </div>
-
-      {isUnassigned && (
-        <div className="flex items-center gap-2 sm:justify-end">
-          <label htmlFor={`job-${task.id}`} className="text-xs text-muted-foreground">
-            Job
-          </label>
-          <input
-            id={`job-${task.id}`}
-            list={datalistId}
-            value={jobDraft}
-            onChange={(e) => setJobDraft(e.target.value)}
-            onBlur={handleJobSave}
-            onKeyDown={(e) => (e.key === 'Enter' && handleJobSave())}
-            className="h-8 w-44 rounded-md border border-input bg-background px-2 text-xs"
-            placeholder="Set job…"
-            disabled={isSavingJob}
-          />
-        </div>
-      )}
-    </div>
 
       {showNotes && (
         <div id={`task-notes-${task?.id}`} className="mt-3 border-t border-border/60 pt-3">
@@ -258,11 +258,11 @@ export default function TasksPage() {
   const [selectedJob, setSelectedJob] = useState(ALL_JOBS);
   const [groupByJob, setGroupByJob] = useState(false);
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (force = false) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await apiClient.getTasks(null, false, { limit: 200 });
+      const data = await apiClient.getTasks(null, false, { limit: 200, forceSync: force });
       setTasks((data || []).slice().sort(sortTasks));
     } catch (err) {
       setError(err?.message || 'Failed to load tasks.');
@@ -366,7 +366,7 @@ export default function TasksPage() {
             Day-to-day list sorted by your urgency/importance scores blended with due dates.
           </p>
         </div>
-        <Button onClick={fetchTasks} variant="outline" isLoading={isLoading}>
+        <Button onClick={() => fetchTasks(true)} variant="outline" isLoading={isLoading}>
           Refresh
         </Button>
       </div>

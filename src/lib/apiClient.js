@@ -25,7 +25,7 @@ class APIClient {
   async getProjects(includeCompleted = false) {
     const params = new URLSearchParams();
     if (includeCompleted) params.append('includeCompleted', 'true');
-    
+
     const cacheKey = `projects-${includeCompleted}`;
     return dedupedFetch(cacheKey, async () => {
       const response = await this.fetchWithAuth(`/api/projects?${params}`);
@@ -71,7 +71,8 @@ class APIClient {
     if (options?.includeOverdue === false) params.append('includeOverdue', 'false');
     if (options?.limit !== undefined) params.append('limit', String(options.limit));
     if (options?.offset !== undefined) params.append('offset', String(options.offset));
-    
+    if (options?.forceSync) params.append('forceSync', 'true');
+
     const response = await this.fetchWithAuth(`/api/tasks?${params}`);
     return response.data || [];
   }
@@ -115,7 +116,7 @@ class APIClient {
     const params = new URLSearchParams();
     if (projectId) params.append('projectId', projectId);
     if (taskId) params.append('taskId', taskId);
-    
+
     return this.fetchWithAuth(`/api/notes?${params}`);
   }
 
@@ -156,7 +157,7 @@ class APIClient {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
     });
-    
+
     return this.fetchWithAuth(`/api/completed-items?${params}`);
   }
 }
