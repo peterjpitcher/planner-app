@@ -93,6 +93,9 @@ function normalizeRemoteTask(todoTask) {
   }
   if (Object.prototype.hasOwnProperty.call(task, 'body')) {
     result.description = normalizeText(task.body?.content);
+  } else {
+    // Treat missing body as null so local description changes still propagate.
+    result.description = null;
   }
   if (Object.prototype.hasOwnProperty.call(task, 'dueDateTime')) {
     result.dueDate = fromGraphDueDateTime(task.dueDateTime);
@@ -625,12 +628,14 @@ export async function syncOffice365All({ userId }) {
 
       const remoteEtag = remoteTask?.['@odata.etag'] || null;
       const localMs = toTimestampMs(localTask.updated_at || localTask.created_at);
-      const remoteMs = toTimestampMs(remoteTask.lastModifiedDateTime || remoteTask.createdDateTime);
+      let remoteMs = toTimestampMs(remoteTask.lastModifiedDateTime || remoteTask.createdDateTime);
       const localChangedSinceSync = lastSyncedMs ? localMs > lastSyncedMs : false;
       const remoteChangedSinceSync = remoteEtag && remoteEtag !== existingMapping.etag;
 
       let remoteDetails = remoteTask;
-      if (remoteChangedSinceSync && shouldFetchFullRemoteTask(remoteTask)) {
+      const shouldFetchRemoteDetails =
+        shouldFetchFullRemoteTask(remoteTask) && (remoteChangedSinceSync || remoteMs > localMs);
+      if (shouldFetchRemoteDetails) {
         try {
           const fetched = await fetchTodoTask({
             accessToken,
@@ -639,6 +644,12 @@ export async function syncOffice365All({ userId }) {
           });
           if (fetched) {
             remoteDetails = fetched;
+            const refreshedRemoteMs = toTimestampMs(
+              remoteDetails.lastModifiedDateTime || remoteDetails.createdDateTime,
+            );
+            if (refreshedRemoteMs) {
+              remoteMs = refreshedRemoteMs;
+            }
           }
         } catch (err) {
           console.warn('Office365 pull: failed to fetch full task details:', err);
@@ -872,10 +883,32 @@ export async function syncOffice365All({ userId }) {
       continue;
     }
 
-    if (tasksMatch(task, remoteTask)) continue;
-
     const localMs = toTimestampMs(task.updated_at || task.created_at);
-    const remoteMs = toTimestampMs(remoteTask.lastModifiedDateTime || remoteTask.createdDateTime);
+    const localChangedSinceSync = lastSyncedMs ? localMs > lastSyncedMs : true;
+
+    let remoteDetails = remoteTask;
+    if (remoteDetails && localChangedSinceSync && shouldFetchFullRemoteTask(remoteDetails)) {
+      try {
+        const fetched = await fetchTodoTask({
+          accessToken,
+          listId,
+          todoTaskId: mapping.todo_task_id,
+        });
+        if (fetched) {
+          remoteDetails = fetched;
+        }
+      } catch (err) {
+        console.warn('Office365 push: failed to fetch full task details:', err);
+      }
+    }
+
+    if (tasksMatch(task, remoteDetails)) continue;
+
+    if (!localChangedSinceSync) {
+      continue;
+    }
+
+    const remoteMs = toTimestampMs(remoteDetails?.lastModifiedDateTime || remoteDetails?.createdDateTime);
     if (remoteMs > localMs) {
       continue;
     }

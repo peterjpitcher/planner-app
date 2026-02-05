@@ -8,7 +8,9 @@ function isProduction() {
 
 export async function GET(request) {
   const vercelCronHeader = request.headers.get('x-vercel-cron');
-  if (isProduction() && !vercelCronHeader) {
+  const userAgent = request.headers.get('user-agent') || '';
+  const isVercelCron = userAgent.includes('vercel-cron');
+  if (isProduction() && !vercelCronHeader && !isVercelCron) {
     console.warn('Office365 cron: missing x-vercel-cron header; continuing anyway.');
   }
 
