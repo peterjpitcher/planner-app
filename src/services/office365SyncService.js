@@ -2,6 +2,28 @@ import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { office365GraphRequest } from '@/lib/office365/graph';
 import { getOffice365Connection, getValidOffice365AccessToken } from '@/services/office365ConnectionService';
 
+const TODO_TASK_SELECT_FULL = [
+  'id',
+  'title',
+  'status',
+  'importance',
+  'dueDateTime',
+  'completedDateTime',
+  'body',
+  'createdDateTime',
+  'lastModifiedDateTime',
+].join(',');
+
+const TODO_TASK_SELECT_MINIMAL = [
+  'id',
+  'title',
+  'status',
+  'importance',
+  'dueDateTime',
+  'createdDateTime',
+  'lastModifiedDateTime',
+].join(',');
+
 function isProjectActive(status) {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
   return normalized === 'open' || normalized === 'in progress' || normalized === 'on hold';
@@ -175,31 +197,10 @@ async function deleteTodoTask({ accessToken, listId, todoTaskId }) {
 }
 
 async function listTodoTasks({ accessToken, listId }) {
-  const selectFull = [
-    'id',
-    'title',
-    'status',
-    'importance',
-    'dueDateTime',
-    'completedDateTime',
-    'body',
-    'createdDateTime',
-    'lastModifiedDateTime',
-  ].join(',');
-  const selectMinimal = [
-    'id',
-    'title',
-    'status',
-    'importance',
-    'dueDateTime',
-    'createdDateTime',
-    'lastModifiedDateTime',
-  ].join(',');
-
   const listIdVariants = [encodeURIComponent(listId), listId];
   const queryVariants = [
-    `?$top=100&$select=${selectFull}`,
-    `?$top=100&$select=${selectMinimal}`,
+    `?$top=100&$select=${TODO_TASK_SELECT_FULL}`,
+    `?$top=100&$select=${TODO_TASK_SELECT_MINIMAL}`,
     '?$top=100',
     '',
   ];
@@ -242,6 +243,55 @@ async function listTodoTasks({ accessToken, listId }) {
   }
 
   throw lastError || new Error('Office365 listTodoTasks failed');
+}
+
+async function fetchTodoTask({ accessToken, listId, todoTaskId }) {
+  const listIdVariants = [encodeURIComponent(listId), listId];
+  const encodedTodoTaskId = encodeURIComponent(todoTaskId);
+  const queryVariants = [
+    `?$select=${TODO_TASK_SELECT_FULL}`,
+    `?$select=${TODO_TASK_SELECT_MINIMAL}`,
+    '',
+  ];
+
+  let lastError = null;
+  for (const listIdValue of listIdVariants) {
+    for (const query of queryVariants) {
+      const path = `/me/todo/lists/${listIdValue}/tasks/${encodedTodoTaskId}${query}`;
+      try {
+        return await office365GraphRequest({
+          accessToken,
+          method: 'GET',
+          path,
+        });
+      } catch (err) {
+        lastError = err;
+        const message = String(err?.message || '');
+        if (message.includes('(400)') && message.includes('ParseUri')) {
+          continue;
+        }
+        if (message.includes('(404)')) {
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  throw lastError || new Error('Office365 fetchTodoTask failed');
+}
+
+function hasTaskField(task, field) {
+  return Object.prototype.hasOwnProperty.call(task || {}, field);
+}
+
+function shouldFetchFullRemoteTask(remoteTask) {
+  if (!remoteTask) return false;
+  return (
+    !hasTaskField(remoteTask, 'body') ||
+    !hasTaskField(remoteTask, 'completedDateTime') ||
+    !hasTaskField(remoteTask, 'dueDateTime')
+  );
 }
 
 async function todoTaskExists({ accessToken, listId, todoTaskId }) {
@@ -429,6 +479,8 @@ async function ensureTaskItem({
 
 export async function syncOffice365All({ userId }) {
   const supabase = getSupabaseServiceRole();
+  const connection = await getOffice365Connection({ userId });
+  const lastSyncedMs = toTimestampMs(connection?.last_synced_at);
   const accessToken = await getValidOffice365AccessToken({ userId });
 
   const [
@@ -574,75 +626,98 @@ export async function syncOffice365All({ userId }) {
       const remoteEtag = remoteTask?.['@odata.etag'] || null;
       const localMs = toTimestampMs(localTask.updated_at || localTask.created_at);
       const remoteMs = toTimestampMs(remoteTask.lastModifiedDateTime || remoteTask.createdDateTime);
+      const localChangedSinceSync = lastSyncedMs ? localMs > lastSyncedMs : false;
+      const remoteChangedSinceSync = remoteEtag && remoteEtag !== existingMapping.etag;
 
-	      if (!tasksMatch(localTask, remoteTask)) {
-	        if (remoteMs > localMs) {
-	          const updates = {
-	            updated_at: toIsoTimestamp(remoteTask?.lastModifiedDateTime || remoteTask?.createdDateTime) || new Date().toISOString(),
-	          };
+      let remoteDetails = remoteTask;
+      if (remoteChangedSinceSync && shouldFetchFullRemoteTask(remoteTask)) {
+        try {
+          const fetched = await fetchTodoTask({
+            accessToken,
+            listId,
+            todoTaskId: remoteTodoId,
+          });
+          if (fetched) {
+            remoteDetails = fetched;
+          }
+        } catch (err) {
+          console.warn('Office365 pull: failed to fetch full task details:', err);
+        }
+      }
 
-	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'title')) {
-	            updates.name = remoteTask.title || localTask.name;
-	          }
-	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'body')) {
-	            const content = typeof remoteTask?.body?.content === 'string' ? remoteTask.body.content : '';
-	            const normalized = normalizeText(content);
-	            updates.description = normalized ? normalized : null;
-	          }
-	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'dueDateTime')) {
-	            updates.due_date = fromGraphDueDateTime(remoteTask?.dueDateTime);
-	          }
-	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'importance')) {
-	            updates.priority = toLocalPriority(remoteTask?.importance);
-	          }
-	          if (Object.prototype.hasOwnProperty.call(remoteTask || {}, 'status')) {
-	            const isCompleted = remoteTask?.status === 'completed';
-	            updates.is_completed = isCompleted;
-	            if (isCompleted) {
-	              const completedAt = toIsoTimestamp(remoteTask?.completedDateTime?.dateTime);
-	              updates.completed_at = completedAt || localTask.completed_at || new Date().toISOString();
-	            } else {
-	              updates.completed_at = null;
-	            }
-	          }
+	      if (!tasksMatch(localTask, remoteDetails)) {
+          const shouldPullRemote =
+            (remoteChangedSinceSync && !localChangedSinceSync) ||
+            remoteMs > localMs ||
+            (remoteChangedSinceSync && !remoteMs);
 
-	          const { data: updatedLocalTask, error: updateError } = await supabase
-	            .from('tasks')
-	            .update(updates)
-            .eq('id', localTask.id)
-            .eq('user_id', userId)
-            .select('*')
-            .single();
+          if (shouldPullRemote) {
+            const updates = {
+              updated_at: toIsoTimestamp(remoteDetails?.lastModifiedDateTime || remoteDetails?.createdDateTime) || new Date().toISOString(),
+            };
 
-          if (updateError) {
-            console.warn('Office365 pull: failed to update local task:', updateError);
-          } else {
-            localTasksById.set(localTask.id, updatedLocalTask);
-            pulledUpdatedTasks += 1;
-
-            await supabase
-              .from('projects')
-              .update({ updated_at: new Date().toISOString() })
-              .eq('id', updatedLocalTask.project_id);
-
-            if (remoteEtag && remoteEtag !== existingMapping.etag) {
-              const { data: updatedMapping, error: mappingUpdateError } = await supabase
-                .from('office365_task_items')
-                .update({ etag: remoteEtag, updated_at: new Date().toISOString() })
-                .eq('id', existingMapping.id)
-                .select('*')
-                .single();
-
-              if (!mappingUpdateError && updatedMapping) {
-                taskMapByTaskId.set(updatedMapping.task_id, updatedMapping);
-                taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+            if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'title')) {
+              updates.name = remoteDetails.title || localTask.name;
+            }
+            if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'body')) {
+              const content = typeof remoteDetails?.body?.content === 'string' ? remoteDetails.body.content : '';
+              const normalized = normalizeText(content);
+              updates.description = normalized ? normalized : null;
+            }
+            if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'dueDateTime')) {
+              updates.due_date = fromGraphDueDateTime(remoteDetails?.dueDateTime);
+            }
+            if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'importance')) {
+              updates.priority = toLocalPriority(remoteDetails?.importance);
+            }
+            if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'status')) {
+              const isCompleted = remoteDetails?.status === 'completed';
+              updates.is_completed = isCompleted;
+              if (isCompleted) {
+                const completedAt = toIsoTimestamp(remoteDetails?.completedDateTime?.dateTime);
+                updates.completed_at = completedAt || localTask.completed_at || new Date().toISOString();
+              } else {
+                updates.completed_at = null;
               }
             }
-          }
 
-          continue;
-        }
-      } else if (remoteEtag && remoteEtag !== existingMapping.etag) {
+            const { data: updatedLocalTask, error: updateError } = await supabase
+              .from('tasks')
+              .update(updates)
+              .eq('id', localTask.id)
+              .eq('user_id', userId)
+              .select('*')
+              .single();
+
+            if (updateError) {
+              console.warn('Office365 pull: failed to update local task:', updateError);
+            } else {
+              localTasksById.set(localTask.id, updatedLocalTask);
+              pulledUpdatedTasks += 1;
+
+              await supabase
+                .from('projects')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', updatedLocalTask.project_id);
+
+              if (remoteEtag && remoteEtag !== existingMapping.etag) {
+                const { data: updatedMapping, error: mappingUpdateError } = await supabase
+                  .from('office365_task_items')
+                  .update({ etag: remoteEtag, updated_at: new Date().toISOString() })
+                  .eq('id', existingMapping.id)
+                  .select('*')
+                  .single();
+
+                if (!mappingUpdateError && updatedMapping) {
+                  taskMapByTaskId.set(updatedMapping.task_id, updatedMapping);
+                  taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+                }
+              }
+            }
+
+            continue;
+          }
+	      } else if (remoteEtag && remoteEtag !== existingMapping.etag) {
         const { data: updatedMapping, error: mappingUpdateError } = await supabase
           .from('office365_task_items')
           .update({ etag: remoteEtag, updated_at: new Date().toISOString() })
