@@ -8,7 +8,7 @@ import {
   ClipboardDocumentIcon, TrashIcon
 } from '@heroicons/react/24/outline';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
-import { quickPickOptions } from '@/lib/dateUtils';
+import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
 import { getPriorityClasses, getDueDateStatus, getStatusClasses } from '@/lib/projectHelpers';
 
 export default function ProjectHeader({
@@ -38,7 +38,7 @@ export default function ProjectHeader({
   const [currentDescription, setCurrentDescription] = useState(project.description || '');
 
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
-  const [currentDueDate, setCurrentDueDate] = useState(project.due_date ? format(new Date(project.due_date), 'yyyy-MM-dd') : '');
+  const [currentDueDate, setCurrentDueDate] = useState(project.due_date ? toDateInputValue(project.due_date) : '');
 
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [currentPriority, setCurrentPriority] = useState(project.priority);
@@ -55,7 +55,7 @@ export default function ProjectHeader({
   useEffect(() => {
     setCurrentName(project.name);
     setCurrentDescription(project.description || '');
-    setCurrentDueDate(project.due_date ? format(new Date(project.due_date), 'yyyy-MM-dd') : '');
+    setCurrentDueDate(project.due_date ? toDateInputValue(project.due_date) : '');
     setCurrentPriority(project.priority);
     setCurrentJob(project.job || '');
     setCurrentStakeholdersText(project.stakeholders ? project.stakeholders.join(', ') : '');
@@ -302,7 +302,7 @@ export default function ProjectHeader({
                     type="date"
                     value={currentDueDate}
                     onChange={(e) => setCurrentDueDate(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleDueDateSubmit() || e.key === 'Escape' && (setCurrentDueDate(project.due_date ? format(new Date(project.due_date), 'yyyy-MM-dd') : ''), setIsEditingDueDate(false))}
+                    onKeyDown={(e) => e.key === 'Enter' && handleDueDateSubmit() || e.key === 'Escape' && (setCurrentDueDate(project.due_date ? toDateInputValue(project.due_date) : ''), setIsEditingDueDate(false))}
                     onBlur={() => handleDueDateSubmit()}
                     className="w-auto rounded-md border border-input bg-background px-2 py-1 text-xs shadow-md focus:outline-none focus:ring-1 focus:ring-ring"
                     autoFocus

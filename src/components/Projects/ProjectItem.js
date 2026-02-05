@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, forwardRef } from 'react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { EyeIcon, EyeSlashIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
@@ -222,7 +222,7 @@ const ProjectItem = forwardRef((
     projectDataText += `Status: ${project.status}\n`;
     projectDataText += `Priority: ${project.priority}\n`;
     projectDataText += `Job: ${project.job || 'N/A'}\n`;
-    projectDataText += `Due Date: ${project.due_date ? format(new Date(project.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
+    projectDataText += `Due Date: ${project.due_date ? format(parseISO(project.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
     projectDataText += `Description: ${project.description || 'N/A'}\n`;
     projectDataText += `Stakeholders: ${project.stakeholders && project.stakeholders.length > 0 ? project.stakeholders.join(', ') : 'N/A'}\n`;
 
@@ -252,7 +252,7 @@ const ProjectItem = forwardRef((
         tasksWithNotes.forEach(taskItem => {
           projectDataText += `  - Task: ${taskItem.name}\n`;
           projectDataText += `    Description: ${taskItem.description || 'N/A'}\n`;
-          projectDataText += `    Due Date: ${taskItem.due_date ? format(new Date(taskItem.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
+          projectDataText += `    Due Date: ${taskItem.due_date ? format(parseISO(taskItem.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
           projectDataText += `    Priority: ${taskItem.priority || 'N/A'}\n`;
           projectDataText += `    Completed: ${taskItem.is_completed ? 'Yes' : 'No'}\n`;
           if (taskItem.completed_at && taskItem.is_completed) {

@@ -1,6 +1,6 @@
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { office365GraphRequest } from '@/lib/office365/graph';
-import { getValidOffice365AccessToken } from '@/services/office365ConnectionService';
+import { getOffice365Connection, getValidOffice365AccessToken } from '@/services/office365ConnectionService';
 
 function isProjectActive(status) {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
@@ -74,6 +74,9 @@ function normalizeRemoteTask(todoTask) {
   }
   if (Object.prototype.hasOwnProperty.call(task, 'dueDateTime')) {
     result.dueDate = fromGraphDueDateTime(task.dueDateTime);
+  } else {
+    // If Graph omits dueDateTime, treat it as null so we can push local due dates.
+    result.dueDate = null;
   }
   if (Object.prototype.hasOwnProperty.call(task, 'importance')) {
     result.importance = task.importance || 'normal';
@@ -877,6 +880,32 @@ export async function syncOffice365All({ userId }) {
     totalProjects: projects?.length || 0,
     totalTasks: tasks?.length || 0,
   };
+}
+
+export async function maybeAutoSyncOffice365({
+  userId,
+  minIntervalMinutes = 2,
+  reason,
+} = {}) {
+  if (!userId) return { skipped: 'missing-user' };
+
+  const connection = await getOffice365Connection({ userId });
+  if (!connection?.sync_enabled) return { skipped: 'not-connected' };
+
+  const lastSyncedAt = connection.last_synced_at ? new Date(connection.last_synced_at).getTime() : 0;
+  const minutesSince = lastSyncedAt ? (Date.now() - lastSyncedAt) / 60000 : Number.POSITIVE_INFINITY;
+  if (Number.isFinite(minIntervalMinutes) && minIntervalMinutes > 0 && minutesSince < minIntervalMinutes) {
+    return { skipped: 'recent', minutesSince };
+  }
+
+  try {
+    const result = await syncOffice365All({ userId });
+    return { synced: true, ...result };
+  } catch (err) {
+    const label = reason ? ` (${reason})` : '';
+    console.warn(`Office365 auto-sync failed${label}:`, err);
+    return { synced: false, error: String(err?.message || err) };
+  }
 }
 
 export async function syncOffice365Project({ userId, projectId }) {

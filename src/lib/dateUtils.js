@@ -52,6 +52,19 @@ export const quickPickOptions = [
   },
 ];
 
+export function toDateInputValue(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : format(value, 'yyyy-MM-dd');
+  }
+  const stringValue = String(value);
+  let parsed = parseISO(stringValue);
+  if (Number.isNaN(parsed.getTime())) {
+    parsed = new Date(stringValue);
+  }
+  return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'yyyy-MM-dd');
+}
+
 /**
  * Get the status of a due date
  * @param {string|Date} dueDate - The due date to check

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
-import { quickPickOptions } from '@/lib/dateUtils';
+import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
@@ -77,7 +77,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
   const [isEditingTaskDescription, setIsEditingTaskDescription] = useState(false);
   const [currentTaskDescription, setCurrentTaskDescription] = useState(task ? task.description || '' : '');
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
-  const [currentDueDate, setCurrentDueDate] = useState(task && task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
+  const [currentDueDate, setCurrentDueDate] = useState(task && task.due_date ? toDateInputValue(task.due_date) : '');
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [currentPriority, setCurrentPriority] = useState(task ? task.priority || '' : '');
   const noteInputRef = useRef(null); // Ref for the note input
@@ -98,7 +98,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
         setCurrentTaskDescription(task.description || '');
       }
       if (!isEditingDueDate) {
-        setCurrentDueDate(task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '');
+        setCurrentDueDate(task.due_date ? toDateInputValue(task.due_date) : '');
       }
       if (!isEditingPriority) {
         setCurrentPriority(task.priority || '');
@@ -255,7 +255,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       return;
     }
     const processedValue = isDate ? (currentValue ? currentValue : null) : (currentValue || '').trim();
-    const processedOriginalValue = isDate ? (originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : null) : (originalValue || '').trim();
+    const processedOriginalValue = isDate ? (originalValue ? toDateInputValue(originalValue) : null) : (originalValue || '').trim();
 
     if (processedValue === processedOriginalValue) {
       editSetter(false);
@@ -272,7 +272,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       const data = await apiClient.updateTask(task.id, updateObject);
       if (data) {
         if (onTaskUpdated) onTaskUpdated(data); // Pass the updated task object
-        setter(isDate && data[field] ? format(new Date(data[field]), 'yyyy-MM-dd') : data[field]);
+        setter(isDate ? toDateInputValue(data[field]) : data[field]);
       } else {
         const errorMessage = `Failed to update task ${field}. No data returned.`;
         handleError(new Error(errorMessage), 'createUpdateHandler', { showAlert: true, fallbackMessage: errorMessage });
@@ -284,7 +284,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
         showAlert: true,
         fallbackMessage: `Failed to update task ${field}: ${errorMessage}`
       });
-      setter(isDate && originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : (originalValue || (isDate ? '' : '')));
+      setter(isDate ? toDateInputValue(originalValue) : (originalValue || ''));
     } finally {
       editSetter(false);
       setIsUpdatingTask(false);
@@ -310,7 +310,7 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
       updateHandler();
     }
     if (e.key === 'Escape') {
-      setter(isDate && originalValue ? format(new Date(originalValue), 'yyyy-MM-dd') : (originalValue || (isDate ? '' : '')));
+      setter(isDate ? toDateInputValue(originalValue) : (originalValue || ''));
       editSetter(false);
     }
   };

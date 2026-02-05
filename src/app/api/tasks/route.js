@@ -4,6 +4,7 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { createTask, updateTask, deleteTask } from '@/services/taskService';
+import { maybeAutoSyncOffice365 } from '@/services/office365SyncService';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
 // GET /api/tasks - Fetch tasks with support for upcoming range
@@ -27,6 +28,19 @@ export async function GET(request) {
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const autoSyncMinutes = Number(process.env.OFFICE365_AUTO_SYNC_MINUTES || 2);
+    if (Number.isFinite(autoSyncMinutes) && autoSyncMinutes > 0) {
+      try {
+        await maybeAutoSyncOffice365({
+          userId: session.user.id,
+          minIntervalMinutes: autoSyncMinutes,
+          reason: 'tasks-get',
+        });
+      } catch (err) {
+        console.warn('Office365 auto-sync failed (tasks-get):', err);
+      }
     }
     
     const supabase = getSupabaseServer(session.accessToken);

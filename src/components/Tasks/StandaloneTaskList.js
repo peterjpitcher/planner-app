@@ -156,7 +156,7 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
       });
 
       // 2. Calculate New Date
-      const baseDate = task.due_date ? new Date(task.due_date) : new Date();
+      const baseDate = task.due_date ? parseISO(task.due_date) : new Date();
       const newDueDate = addDays(baseDate, daysToPush);
       const formattedNewDate = format(newDueDate, 'yyyy-MM-dd');
 
