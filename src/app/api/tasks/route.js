@@ -30,6 +30,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { searchParams } = new URL(request.url);
     const autoSyncMinutes = Number(process.env.OFFICE365_AUTO_SYNC_MINUTES || 2);
     const forceSync = searchParams.get('forceSync') === 'true';
 
@@ -46,7 +47,6 @@ export async function GET(request) {
     }
 
     const supabase = getSupabaseServer(session.accessToken);
-    const { searchParams } = new URL(request.url);
 
     // Parse query parameters
     const projectId = searchParams.get('projectId');
