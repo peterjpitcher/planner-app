@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { addDays, format, parseISO } from 'date-fns';
 import { ChatBubbleLeftEllipsisIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { apiClient } from '@/lib/apiClient';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
@@ -249,6 +250,7 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
 
 export default function TasksPage() {
   const { data: session, status } = useSession();
+  const supabase = useSupabase();
   const router = useRouter();
   const { setTargetProjectId } = useTargetProject();
 
@@ -258,17 +260,20 @@ export default function TasksPage() {
   const [selectedJob, setSelectedJob] = useState(ALL_JOBS);
   const [groupByJob, setGroupByJob] = useState(false);
 
-  const fetchTasks = useCallback(async (force = false) => {
-    setIsLoading(true);
+  // force: boolean - bypass cache/debounce
+  // options: { silent: boolean } - if true, don't show loading spinner
+  const fetchTasks = useCallback(async (force = false, { silent = false } = {}) => {
+    if (!silent) setIsLoading(true);
     setError(null);
     try {
       const data = await apiClient.getTasks(null, false, { limit: 200, forceSync: force });
       setTasks((data || []).slice().sort(sortTasks));
     } catch (err) {
-      setError(err?.message || 'Failed to load tasks.');
-      setTasks([]);
+      if (!silent) setError(err?.message || 'Failed to load tasks.');
+      // If silent refresh fails, we might not want to clear tasks, effectively keeping stale data is better than empty
+      if (!silent) setTasks([]);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -279,6 +284,34 @@ export default function TasksPage() {
   useEffect(() => {
     if (status === 'authenticated') fetchTasks();
   }, [status, fetchTasks]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!supabase || status !== 'authenticated') return;
+
+    const channel = supabase
+      .channel('tasks-page-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks',
+          // RLS ensures we only receive our own tasks, but we can filter by user_id if needed
+          // filter: `user_id=eq.${session?.user?.id}`, 
+        },
+        (payload) => {
+          // console.log('Realtime task update:', payload);
+          // Trigger a silent refresh to get the full data (including joins) and resort
+          fetchTasks(false, { silent: true });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, status, fetchTasks]);
 
   const availableJobs = useMemo(() => {
     const values = new Set();
