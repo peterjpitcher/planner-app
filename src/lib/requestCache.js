@@ -43,6 +43,16 @@ export function clearCache(key) {
   pendingRequests.delete(key);
 }
 
+// Clear cache entries by key prefix
+export function clearCacheByPrefix(prefix) {
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+  for (const key of pendingRequests.keys()) {
+    if (key.startsWith(prefix)) pendingRequests.delete(key);
+  }
+}
+
 // Clear all caches
 export function clearAllCache() {
   cache.clear();

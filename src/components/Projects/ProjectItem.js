@@ -27,6 +27,8 @@ const ProjectItem = forwardRef((
     tasks: propTasks,
     notes: propNotes,
     notesByTask,
+    onTaskNoteAdded,
+    onProjectNoteAdded,
     onProjectDataChange,
     onProjectDeleted,
     areAllTasksExpanded,
@@ -207,18 +209,40 @@ const ProjectItem = forwardRef((
 
   const handleProjectNoteAdded = (newNote) => {
     setProjectNotes(prevNotes => [newNote, ...prevNotes]);
+    if (onProjectNoteAdded && project?.id) {
+      onProjectNoteAdded(project.id, newNote);
+    }
     if (onProjectDataChange) onProjectDataChange(project.id, { updated_at: new Date().toISOString() }, 'project_details_changed');
   };
 
-  const formatNoteForCopy = (note) => {
+  const formatFieldValue = (value) => {
+    if (value === null || value === undefined || value === '') return 'N/A';
+    if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : 'N/A';
+    if (value instanceof Date) return format(value, 'EEEE, MMM do, yyyy h:mm a');
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
+  const formatNoteForCopy = (note, indent = '  ') => {
     if (!note) return '';
-    return `  - Note (${format(new Date(note.created_at), 'EEEE, MMM do, yyyy h:mm a')}): ${note.content}`;
+    const createdAt = note.created_at ? format(new Date(note.created_at), 'EEEE, MMM do, yyyy h:mm a') : 'N/A';
+    const lines = [
+      `${indent}- Note`,
+      `${indent}  Id: ${note.id || 'N/A'}`,
+      `${indent}  Created At: ${createdAt}`,
+      `${indent}  Content: ${note.content || 'N/A'}`,
+      `${indent}  Project ID: ${note.project_id || 'N/A'}`,
+      `${indent}  Task ID: ${note.task_id || 'N/A'}`,
+      `${indent}  User ID: ${note.user_id || 'N/A'}`
+    ];
+    return lines.join('\n');
   };
 
   const handleCopyProjectData = async () => {
     if (!project) return;
     setCopyStatus('Copying...');
-    let projectDataText = `Project Name: ${project.name}\n`;
+    let projectDataText = `Project Summary:\n`;
+    projectDataText += `Name: ${project.name}\n`;
     projectDataText += `Status: ${project.status}\n`;
     projectDataText += `Priority: ${project.priority}\n`;
     projectDataText += `Job: ${project.job || 'N/A'}\n`;
@@ -226,11 +250,20 @@ const ProjectItem = forwardRef((
     projectDataText += `Description: ${project.description || 'N/A'}\n`;
     projectDataText += `Stakeholders: ${project.stakeholders && project.stakeholders.length > 0 ? project.stakeholders.join(', ') : 'N/A'}\n`;
 
+    projectDataText += `\nProject Fields:\n`;
+    Object.keys(project)
+      .sort()
+      .forEach((key) => {
+        projectDataText += `  ${key}: ${formatFieldValue(project[key])}\n`;
+      });
+
     if (projectNotes.length > 0) {
       projectDataText += `\nProject Notes:\n`;
       projectNotes.forEach(note => {
-        projectDataText += `${formatNoteForCopy(note)}\n`;
+        projectDataText += `${formatNoteForCopy(note, '  ')}\n`;
       });
+    } else {
+      projectDataText += `\nProject Notes:\n  None\n`;
     }
 
     projectDataText += `\nTasks:\n`;
@@ -250,19 +283,21 @@ const ProjectItem = forwardRef((
 
       if (tasksWithNotes && tasksWithNotes.length > 0) {
         tasksWithNotes.forEach(taskItem => {
-          projectDataText += `  - Task: ${taskItem.name}\n`;
-          projectDataText += `    Description: ${taskItem.description || 'N/A'}\n`;
-          projectDataText += `    Due Date: ${taskItem.due_date ? format(parseISO(taskItem.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
-          projectDataText += `    Priority: ${taskItem.priority || 'N/A'}\n`;
-          projectDataText += `    Completed: ${taskItem.is_completed ? 'Yes' : 'No'}\n`;
-          if (taskItem.completed_at && taskItem.is_completed) {
-            projectDataText += `    Completed At: ${format(new Date(taskItem.completed_at), 'EEEE, MMM do, yyyy h:mm a')}\n`;
-          }
-          if (taskItem.notes && taskItem.notes.length > 0) {
-            projectDataText += `    Task Notes:\n`;
-            taskItem.notes.forEach(note => {
-              projectDataText += `    ${formatNoteForCopy(note)}\n`;
+          projectDataText += `  - Task: ${taskItem.name || 'Untitled task'}\n`;
+          const { notes: taskNotes, ...taskFields } = taskItem || {};
+          projectDataText += `    Fields:\n`;
+          Object.keys(taskFields || {})
+            .sort()
+            .forEach((key) => {
+              projectDataText += `      ${key}: ${formatFieldValue(taskFields[key])}\n`;
             });
+          if (taskNotes && taskNotes.length > 0) {
+            projectDataText += `    Notes:\n`;
+            taskNotes.forEach(note => {
+              projectDataText += `${formatNoteForCopy(note, '      ')}\n`;
+            });
+          } else {
+            projectDataText += `    Notes: None\n`;
           }
           projectDataText += `\n`;
         });
@@ -547,6 +582,7 @@ const ProjectItem = forwardRef((
               notesByTask={notesByTask}
               isLoading={isLoadingTasks}
               onTaskUpdated={handleTaskUpdated}
+              onTaskNoteAdded={onTaskNoteAdded}
               showCompletedTasks={showCompletedTasks}
               isProjectCompleted={isProjectCompletedOrCancelled}
               onTaskDragStateChange={onTaskDragStateChange}
@@ -621,6 +657,8 @@ export default React.memo(ProjectItem, (prev, next) => {
   return prev.project === next.project &&
     prev.areAllTasksExpanded === next.areAllTasksExpanded &&
     prev.tasks === next.tasks &&
+    prev.notes === next.notes &&
+    prev.notesByTask === next.notesByTask &&
     prev.isDropMode === next.isDropMode &&
     prev.dragSourceProjectId === next.dragSourceProjectId;
 });

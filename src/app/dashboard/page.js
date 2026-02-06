@@ -307,6 +307,24 @@ export default function DashboardPage() {
     fetchData();
   }, [fetchData]);
 
+  const handleTaskNoteAdded = useCallback((taskId, note) => {
+    if (!taskId || !note) return;
+    setNotesByTask(prev => {
+      const existing = prev?.[taskId] || [];
+      if (existing.some(n => n.id === note.id)) return prev;
+      return { ...prev, [taskId]: [note, ...existing] };
+    });
+  }, []);
+
+  const handleProjectNoteAdded = useCallback((projectId, note) => {
+    if (!projectId || !note) return;
+    setProjectNotes(prev => {
+      const existing = prev?.[projectId] || [];
+      if (existing.some(n => n.id === note.id)) return prev;
+      return { ...prev, [projectId]: [note, ...existing] };
+    });
+  }, []);
+
   const handleTaskDragStateChange = useCallback((isDragging, sourceProjectId = null) => {
     setTaskDragState({ active: isDragging, sourceProjectId: sourceProjectId || null });
   }, []);
@@ -457,12 +475,14 @@ export default function DashboardPage() {
           <ProjectList
             projects={searchedProjects}
             tasksByProject={filteredTasksByProject}
-            notesByProject={projectNotes}
+            projectNotes={projectNotes}
             notesByTask={notesByTask}
             isLoading={isLoadingData}
             onProjectDataChange={handleProjectDataChange}
             onProjectDeleted={handleProjectDeleted}
             onTaskUpdate={handleTaskUpdate}
+            onTaskNoteAdded={handleTaskNoteAdded}
+            onProjectNoteAdded={handleProjectNoteAdded}
             onTaskDragStateChange={handleTaskDragStateChange}
             isTaskDragActive={taskDragState.active}
             dragSourceProjectId={taskDragState.sourceProjectId}

@@ -65,7 +65,7 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   return { text, classes, fullDate: fullDateText };
 };
 
-function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange }) {
+function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskNoteAdded, onTaskDragStateChange }) {
   // All useState hooks
   const [isCompleted, setIsCompleted] = useState(task ? task.is_completed : false);
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
@@ -172,9 +172,13 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskDragStateChange
     : 'never';
 
   const handleNoteAdded = (newNote) => {
+    if (!newNote) return;
     // Optimistically add new note to the top (as it's newest)
     setNotes(prevNotes => [newNote, ...prevNotes]);
     setShowNotes(false); // Collapse notes section after adding
+    if (onTaskNoteAdded && task?.id) {
+      onTaskNoteAdded(task.id, newNote);
+    }
     // No need to call fetchNotes() here if optimistic update is sufficient
     // and order is handled by insertion point and initial fetch order.
   };
@@ -569,6 +573,7 @@ export default React.memo(TaskItem, (prevProps, nextProps) => {
     prevProps.task.priority === nextProps.task.priority &&
     prevProps.task.due_date === nextProps.task.due_date &&
     prevProps.task.importance_score === nextProps.task.importance_score &&
-    prevProps.task.urgency_score === nextProps.task.urgency_score
+    prevProps.task.urgency_score === nextProps.task.urgency_score &&
+    prevProps.notes === nextProps.notes
   );
 }); 

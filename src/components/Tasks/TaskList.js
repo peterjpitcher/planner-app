@@ -2,7 +2,7 @@
 
 import TaskItem from './TaskItem';
 
-export default function TaskList({ tasks, notesByTask, onTaskUpdated, showCompletedTasks, onTaskDragStateChange }) {
+export default function TaskList({ tasks, notesByTask, onTaskUpdated, onTaskNoteAdded, showCompletedTasks, onTaskDragStateChange }) {
   if (!tasks) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-border bg-card py-3 text-xs text-muted-foreground shadow-sm">
@@ -36,6 +36,7 @@ export default function TaskList({ tasks, notesByTask, onTaskUpdated, showComple
           task={task}
           notes={notesByTask?.[task.id] || []}
           onTaskUpdated={onTaskUpdated}
+          onTaskNoteAdded={onTaskNoteAdded}
           onTaskDragStateChange={onTaskDragStateChange}
         />
       ))}

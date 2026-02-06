@@ -1,7 +1,7 @@
 // API client for all data operations
 // This replaces direct Supabase calls for better security and reliability
 
-import { dedupedFetch, clearCache } from './requestCache';
+import { dedupedFetch, clearCache, clearCacheByPrefix } from './requestCache';
 
 class APIClient {
   async fetchWithAuth(url, options = {}) {
@@ -121,10 +121,14 @@ class APIClient {
   }
 
   async createNote(noteData) {
-    return this.fetchWithAuth('/api/notes', {
+    const result = await this.fetchWithAuth('/api/notes', {
       method: 'POST',
       body: JSON.stringify(noteData),
     });
+    // Invalidate note-related batch caches to avoid stale UI
+    clearCacheByPrefix('notes-batch-');
+    clearCacheByPrefix('project-notes-batch-');
+    return result;
   }
 
   // Batch fetch notes for multiple tasks

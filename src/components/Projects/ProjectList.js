@@ -12,6 +12,8 @@ export default function ProjectList({
   tasksByProject,
   notesByTask,
   projectNotes,
+  onTaskNoteAdded,
+  onProjectNoteAdded,
   onProjectDataChange,
   onProjectDeleted,
   onProjectUpdated,
@@ -127,6 +129,8 @@ export default function ProjectList({
                 tasks={tasksByProject?.[unassignedProject.id] || []}
                 notesByTask={notesByTask}
                 notes={projectNotes?.[unassignedProject.id] || []}
+                onTaskNoteAdded={onTaskNoteAdded}
+                onProjectNoteAdded={onProjectNoteAdded}
                 onProjectDataChange={onProjectDataChange}
                 onProjectDeleted={onProjectDeleted}
                 onProjectUpdated={onProjectUpdated}
@@ -144,6 +148,8 @@ export default function ProjectList({
                 tasks={tasksByProject?.[project.id] || []}
                 notesByTask={notesByTask}
                 notes={projectNotes?.[project.id] || []}
+                onTaskNoteAdded={onTaskNoteAdded}
+                onProjectNoteAdded={onProjectNoteAdded}
                 onProjectDataChange={onProjectDataChange} 
                 onProjectDeleted={onProjectDeleted} 
                 onProjectUpdated={onProjectUpdated}
