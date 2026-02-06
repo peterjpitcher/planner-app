@@ -20,6 +20,13 @@ export function clampScore(value) {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
+export function getPriorityLabel(priorityScore) {
+  const normalizedScore = clampScore(priorityScore);
+  if (normalizedScore >= 67) return 'High';
+  if (normalizedScore >= 34) return 'Medium';
+  return 'Low';
+}
+
 export function getTaskScoreInputs(task) {
   const hasManualScores = typeof task?.importance_score === 'number' && typeof task?.urgency_score === 'number';
   const importance = clampScore(

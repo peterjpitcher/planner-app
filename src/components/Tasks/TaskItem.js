@@ -487,10 +487,9 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskNoteAdded, onTa
             <div
               className={`flex items-center rounded p-0.5 ${isCompleted ? 'pointer-events-none' : 'cursor-pointer hover:bg-gray-100/50'}`}
               onClick={() => { if (!isCompleted) setIsEditingPriority(true); }}
-              title={`Priority: ${currentPriority || 'N/A'}`}
+              title={`Priority setting: ${currentPriority || 'N/A'}`}
             >
-              {priorityStyles.icon}
-              <span className={`ml-0.5 text-xs ${priorityStyles.textClass} ${isCompleted ? 'text-gray-500' : ''}`}>{currentPriority || 'No Priority'}</span>
+              <TaskScoreBadge task={task} className="border-gray-200 bg-white/70 text-gray-700" />
             </div>
           )}
 
@@ -515,9 +514,6 @@ function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskNoteAdded, onTa
               {dueDateStatusToDisplay.text}
             </span>
           )}
-
-          <TaskScoreBadge task={task} className="border-gray-200 bg-white/70 text-gray-700" />
-
           <button
             onClick={() => setShowNotes(!showNotes)}
             className="icon-button relative flex items-center text-gray-400 hover:text-indigo-600"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { getTaskScores } from '@/lib/taskScoring';
+import { getPriorityLabel, getTaskScores } from '@/lib/taskScoring';
 import { cn } from '@/lib/utils';
 
 export function TaskScoreBadge({ task, className, config }) {
@@ -13,27 +13,24 @@ export function TaskScoreBadge({ task, className, config }) {
     task?.due_date,
   ]);
 
-  const scoreRounded = Math.round(scores.priorityScore);
-  const breakdown = `PRI ${scoreRounded} • IMP ${scores.importance} • URG ${scores.urgency} • PRESS ${scores.duePressure}`;
+  const priorityLabel = getPriorityLabel(scores.priorityScore);
+  const toneClass = priorityLabel === 'High'
+    ? 'border-red-200 bg-red-50 text-red-700'
+    : priorityLabel === 'Medium'
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700';
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground",
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        toneClass,
         !scores.hasManualScores ? "opacity-75" : "",
         className
       )}
-      title={breakdown + (scores.hasManualScores ? '' : ' (auto)')}
+      title={`Priority: ${priorityLabel}${scores.hasManualScores ? '' : ' (auto)'}`}
     >
-      <span className="text-muted-foreground">PRI</span>
-      <span>{scoreRounded}</span>
-      <span className="text-muted-foreground">IMP</span>
-      <span>{scores.importance}</span>
-      <span className="text-muted-foreground">URG</span>
-      <span>{scores.urgency}</span>
-      <span className="text-muted-foreground">PRESS</span>
-      <span>{scores.duePressure}</span>
-      {!scores.hasManualScores ? <span className="ml-1 text-muted-foreground">(auto)</span> : null}
+      <span>{priorityLabel}</span>
     </span>
   );
 }

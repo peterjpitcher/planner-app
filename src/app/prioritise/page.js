@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { TaskScoreBadge } from '@/components/Tasks/TaskScoreBadge';
-import { compareTasksByWorkPriority, DEFAULT_TASK_SCORING, getTaskScores } from '@/lib/taskScoring';
+import { compareTasksByWorkPriority, DEFAULT_TASK_SCORING } from '@/lib/taskScoring';
 
 const ALL_JOBS = 'All Jobs';
 const NO_JOB = 'No Job';
@@ -82,7 +82,10 @@ function TaskNote({ task, isDragging, isCompleting, onDragStart, onCompleteTask,
             aria-label="Mark task complete"
             title="Mark complete"
           />
-          <span className="truncate">{task?.priority || 'Task'}</span>
+          <TaskScoreBadge
+            task={task}
+            className="max-w-[7rem] truncate border-[hsl(35_60%_18%/0.12)] bg-[hsl(54_100%_88%)] text-[hsl(35_60%_18%)]"
+          />
         </div>
         <span className="opacity-70">{dueDateLabel}</span>
       </div>
@@ -102,12 +105,6 @@ function TaskNote({ task, isDragging, isCompleting, onDragStart, onCompleteTask,
               {jobLabel}
             </span>
           ) : null}
-        </div>
-        <div className="mt-2">
-          <TaskScoreBadge
-            task={task}
-            className="border-[hsl(35_60%_18%/0.12)] bg-[hsl(54_100%_88%)] text-[hsl(35_60%_18%)]"
-          />
         </div>
       </div>
     </div>
@@ -205,14 +202,9 @@ export default function PrioritisePage() {
   );
 
   const topPriorities = useMemo(() => {
-    const ranked = [...filteredTasks]
+    return [...filteredTasks]
       .sort((a, b) => compareTasksByWorkPriority(a, b, DEFAULT_TASK_SCORING))
       .slice(0, 12);
-
-    return ranked.map((task) => ({
-      task,
-      scores: getTaskScores(task, DEFAULT_TASK_SCORING),
-    }));
   }, [filteredTasks]);
 
   const handleNavigateToProject = useCallback((projectId) => {
@@ -602,7 +594,7 @@ export default function PrioritisePage() {
                       disabled={placing || completing}
                       onClick={() => handlePlaceTask(task.id)}
                     >
-                      Place at 50 / 50
+                      Set to Medium
                     </Button>
                   </div>
                 );
@@ -616,10 +608,10 @@ export default function PrioritisePage() {
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-foreground">Top priorities</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Weighted blend: importance + urgency + due pressure (horizon {DEFAULT_TASK_SCORING.horizonDays} days).
+              Priority is shown as simple labels: High, Medium, or Low.
             </p>
             <div className="mt-3 max-h-[42vh] space-y-2 overflow-auto pr-1">
-              {topPriorities.map(({ task, scores }) => {
+              {topPriorities.map((task) => {
                 const dueLabel = task?.due_date ? format(parseISO(task.due_date), 'MMM d') : 'No due date';
                 const completing = completingTaskIds.has(task.id);
                 return (
@@ -643,16 +635,8 @@ export default function PrioritisePage() {
                             title="Mark complete"
                           />
                         </label>
-                        <div>
-                          <p className="text-xs font-semibold text-foreground">{Math.round(scores.priorityScore)}</p>
-                          <p className="text-[11px] text-muted-foreground">PRI</p>
-                        </div>
+                        <TaskScoreBadge task={task} />
                       </div>
-                    </div>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
-                      <span>IMP {scores.importance}</span>
-                      <span>URG {scores.urgency}</span>
-                      <span>PRESS {scores.duePressure}</span>
                     </div>
                   </div>
                 );

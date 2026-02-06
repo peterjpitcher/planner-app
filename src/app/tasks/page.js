@@ -163,8 +163,7 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
               <span className="text-xs text-muted-foreground">•</span>
               <span className="text-xs text-muted-foreground">{dueDateLabel}</span>
               <span className="text-xs text-muted-foreground">•</span>
-              <span className="text-xs font-medium text-foreground/80">{task?.priority || 'No priority'}</span>
-              <TaskScoreBadge task={task} className="ml-1" />
+              <TaskScoreBadge task={task} />
 
               {!task?.is_completed && (
                 <button
@@ -396,7 +395,7 @@ export default function TasksPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Tasks</h1>
           <p className="text-muted-foreground mt-1">
-            Day-to-day list sorted by your urgency/importance scores blended with due dates.
+            Day-to-day list sorted by due date and your simple High/Medium/Low priority labels.
           </p>
         </div>
         <Button onClick={() => fetchTasks(true)} variant="outline" isLoading={isLoading}>

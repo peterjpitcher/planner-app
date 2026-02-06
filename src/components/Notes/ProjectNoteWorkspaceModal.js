@@ -6,6 +6,7 @@ import { VALIDATION } from '@/lib/constants';
 import { apiClient } from '@/lib/apiClient';
 import NoteList from './NoteList';
 import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
+import { TaskScoreBadge } from '@/components/Tasks/TaskScoreBadge';
 import { format } from 'date-fns';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -291,11 +292,7 @@ export default function ProjectNoteWorkspaceModal({
                                   <p className="text-sm font-semibold text-slate-800">{task.name}</p>
                                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                     <span>{formatDueDateLabel(task.due_date)}</span>
-                                    {task.priority && (
-                                      <span className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-[#036586]">
-                                        {task.priority}
-                                      </span>
-                                    )}
+                                    <TaskScoreBadge task={task} />
                                   </div>
                                   {completingTaskId === task.id && (
                                     <p className="mt-1 text-[0.65rem] font-medium uppercase tracking-wide text-emerald-600">
