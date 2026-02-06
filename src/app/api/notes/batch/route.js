@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
@@ -22,9 +21,9 @@ export async function POST(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -44,9 +43,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Too many items requested (max 200)' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     
-    let query = supabase.from('notes').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('notes')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
 
     if (hasTaskIds) {
       query = query.in('task_id', taskIds);

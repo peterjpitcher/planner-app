@@ -1,18 +1,21 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
 
 // POST /api/admin/migrate - Run database migrations
 export async function POST(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session } = await getAuthContext(request, { requireAccessToken: false });
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    if (!isDevelopment() && !isAdminSession(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServiceRole();
     
     // Migration statements - breaking down into smaller chunks for better error handling
     const migrations = [
@@ -279,13 +282,17 @@ export async function POST(request) {
 // GET /api/admin/migrate - Check migration status
 export async function GET(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session } = await getAuthContext(request, { requireAccessToken: false });
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    if (!isDevelopment() && !isAdminSession(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServiceRole();
     
     // Check if indexes exist by querying pg_indexes
     const { data: indexes, error: indexError } = await supabase.rpc('get_indexes', {

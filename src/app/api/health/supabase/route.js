@@ -1,13 +1,30 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
 
 // GET /api/health/supabase - Supabase database health check
-export async function GET() {
+async function authorizeHealth(request) {
+  const secret = process.env.HEALTHCHECK_SECRET;
+  const provided = request?.headers?.get('x-healthcheck-secret');
+  if (secret) {
+    return provided === secret;
+  }
+  if (isDevelopment()) return true;
+  const { session } = await getAuthContext(request, { requireAccessToken: false });
+  return Boolean(session?.user?.id && isAdminSession(session));
+}
+
+export async function GET(request) {
   const startTime = Date.now();
   
   try {
+    const authorized = await authorizeHealth(request);
+    if (!authorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Create Supabase client (will use service key if available)
-    const supabase = getSupabaseServer();
+    const supabase = getSupabaseServiceRole();
     
     // Perform a simple query to check database connectivity
     // Using raw SQL for minimal overhead

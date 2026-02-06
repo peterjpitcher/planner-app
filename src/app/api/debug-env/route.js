@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
 
 export async function GET(request) {
-  const session = await getServerSession(authOptions);
+  const { session } = await getAuthContext(request, { requireAccessToken: false });
   
-  // Only show in development or for authenticated users
-  if (process.env.NODE_ENV !== 'development' && !session) {
+  // Only show in development or for admin users
+  if (!isDevelopment() && !isAdminSession(session)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   
@@ -15,7 +14,7 @@ export async function GET(request) {
       NODE_ENV: process.env.NODE_ENV,
       NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'NOT SET',
       VERCEL_URL: process.env.VERCEL_URL || 'NOT SET',
-      computedAuthUrl: authOptions.url || 'NOT SET',
+      computedAuthUrl: process.env.NEXTAUTH_URL || 'NOT SET',
     },
     session: session ? {
       user: session.user?.email,

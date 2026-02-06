@@ -170,14 +170,13 @@ export const authOptions = {
       
       // CRITICAL: Always return a properly structured session with user data from token
       if (token) {
-        // Ensure we return a complete session structure
+        // Ensure we return a complete session structure without exposing tokens to the client
         return {
           user: {
             id: token.id || token.sub, // Use sub as fallback
             email: token.email || '',
           },
-          accessToken: token.accessToken,
-          // Do not expose refreshToken to the client.
+          // Do not expose access or refresh tokens to the client.
           expires: session?.expires || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         };
       }

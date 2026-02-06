@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
@@ -22,16 +21,16 @@ export async function PATCH(request, { params }) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const { id } = await params;
     const body = await request.json();
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
 
     const { data, error } = await updateTask({
       supabase,
@@ -70,14 +69,14 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const { id } = await params;
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
 
     const { data, error } = await deleteTask({
       supabase,

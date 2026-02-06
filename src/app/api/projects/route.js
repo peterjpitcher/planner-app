@@ -1,11 +1,36 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { deleteOffice365Project, syncOffice365Project } from '@/services/office365SyncService';
+
+const PROJECT_UPDATE_FIELDS = [
+  'name',
+  'description',
+  'priority',
+  'status',
+  'due_date',
+  'stakeholders',
+  'job',
+];
+
+function pickProjectUpdates(payload) {
+  const updates = {};
+  PROJECT_UPDATE_FIELDS.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+      updates[field] = payload[field];
+    }
+  });
+  return updates;
+}
+
+function stripUndefined(payload) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined)
+  );
+}
 
 // GET /api/projects - Fetch user's projects
 export async function GET(request) {
@@ -24,21 +49,24 @@ export async function GET(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     const { searchParams } = new URL(request.url);
     const includeCompleted = searchParams.get('includeCompleted') === 'true';
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200);
-    const offset = parseInt(searchParams.get('offset') || '0');
+    const parsedLimit = parseInt(searchParams.get('limit') || '50', 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 50;
+    const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
+    const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
     
     let query = supabase
       .from('projects')
       .select('*', { count: 'exact' })
+      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     
@@ -84,9 +112,9 @@ export async function POST(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -105,7 +133,7 @@ export async function POST(request) {
       }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     const { data, error } = await supabase
       .from('projects')
       .insert(projectData)
@@ -132,25 +160,30 @@ export async function POST(request) {
 // PATCH /api/projects - Update a project
 export async function PATCH(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const body = await request.json();
-    const { id, ...updates } = body;
+    const { id } = body;
     
     if (!id) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
+
+    const updates = stripUndefined(pickProjectUpdates(body));
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase
       .from('projects')
-      .select('user_id')
+      .select('id, user_id, name, description, priority, status, due_date, stakeholders, job')
       .eq('id', id)
       .single();
     
@@ -162,10 +195,16 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     
+    const candidate = { ...existingProject, ...updates };
+    const validation = validateProject(candidate);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: 'Validation failed', details: validation.errors }, { status: 400 });
+    }
+
     // Update project
     const { data, error } = await supabase
       .from('projects')
-      .update(updates)
+      .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single();
@@ -190,9 +229,9 @@ export async function PATCH(request) {
 // DELETE /api/projects - Delete a project
 export async function DELETE(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -203,7 +242,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase

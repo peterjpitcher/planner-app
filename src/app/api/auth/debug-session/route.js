@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../[...nextauth]/route';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
 
 export async function GET(request) {
   try {
-    // Get the session using the same authOptions
-    const session = await getServerSession(authOptions);
+    const { session } = await getAuthContext(request, { requireAccessToken: false });
+    if (!isDevelopment() && !isAdminSession(session)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     
     // Log server-side for debugging
     console.log('Debug endpoint - session:', session);

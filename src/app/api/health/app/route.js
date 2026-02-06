@@ -1,12 +1,29 @@
 import { NextResponse } from 'next/server';
 import os from 'os';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
 
 // Track server start time
 const serverStartTime = Date.now();
 
 // GET /api/health/app - Application health check
-export async function GET() {
+async function authorizeHealth(request) {
+  const secret = process.env.HEALTHCHECK_SECRET;
+  const provided = request?.headers?.get('x-healthcheck-secret');
+  if (secret) {
+    return provided === secret;
+  }
+  if (isDevelopment()) return true;
+  const { session } = await getAuthContext(request, { requireAccessToken: false });
+  return Boolean(session?.user?.id && isAdminSession(session));
+}
+
+export async function GET(request) {
   try {
+    const authorized = await authorizeHealth(request);
+    if (!authorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const uptimeMs = Date.now() - serverStartTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
     const uptimeMinutes = Math.floor(uptimeSeconds / 60);

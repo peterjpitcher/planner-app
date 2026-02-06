@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getSession } from 'next-auth/react';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../[...nextauth]/route';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
 
 export async function GET(request) {
   try {
-    // Try getting session server-side
-    const serverSession = await getServerSession(authOptions);
+    const { session } = await getAuthContext(request, { requireAccessToken: false });
+    if (!isDevelopment() && !isAdminSession(session)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     
     // Get cookies from request
     const cookies = request.headers.get('cookie') || 'none';
@@ -15,7 +15,7 @@ export async function GET(request) {
     
     return NextResponse.json({
       status: 'ok',
-      serverSession,
+      serverSession: session || null,
       cookies: {
         raw: cookies.substring(0, 200) + '...', // Truncate for security
         hasSessionToken: !!sessionToken,

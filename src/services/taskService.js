@@ -3,6 +3,30 @@ import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { deleteOffice365Task, syncOffice365Task } from '@/services/office365SyncService';
 
+const TASK_UPDATE_FIELDS = new Set([
+  'name',
+  'description',
+  'due_date',
+  'priority',
+  'is_completed',
+  'completed_at',
+  'project_id',
+  'job',
+  'importance_score',
+  'urgency_score',
+  'updated_at',
+]);
+
+function filterTaskUpdates(updates = {}) {
+  const filtered = {};
+  Object.entries(updates).forEach(([key, value]) => {
+    if (TASK_UPDATE_FIELDS.has(key)) {
+      filtered[key] = value;
+    }
+  });
+  return filtered;
+}
+
 function normalizeJob(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -169,7 +193,7 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
 export async function updateTask({ supabase, userId, taskId, updates, options = {} }) {
   const { data: existingTask, error: fetchError } = await supabase
     .from('tasks')
-    .select('user_id, project_id, job')
+    .select('id, user_id, project_id, job, name, description, due_date, priority, importance_score, urgency_score, is_completed, completed_at')
     .eq('id', taskId)
     .single();
 
@@ -181,7 +205,10 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     return { error: { status: 403, message: 'Forbidden' } };
   }
 
-  const updatesToApply = { ...updates };
+  const updatesToApply = filterTaskUpdates(updates);
+  if (Object.keys(updatesToApply).length === 0) {
+    return { error: { status: 400, message: 'No valid fields to update' } };
+  }
   const userProvidedJob = Object.prototype.hasOwnProperty.call(updatesToApply, 'job');
   const userProvidedProjectId = Object.prototype.hasOwnProperty.call(updatesToApply, 'project_id');
 
@@ -276,6 +303,12 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
 
   if (!options.skipTimestamp) {
     updatesToApply.updated_at = new Date().toISOString();
+  }
+
+  const validationTarget = { ...existingTask, ...updatesToApply };
+  const validation = validateTask(validationTarget);
+  if (!validation.isValid) {
+    return { error: { status: 400, message: 'Validation failed', details: validation.errors } };
   }
 
   const { data, error } = await supabase

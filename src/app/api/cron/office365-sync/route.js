@@ -11,8 +11,14 @@ export async function GET(request) {
   const vercelCronHeader = request.headers.get('x-vercel-cron');
   const userAgent = request.headers.get('user-agent') || '';
   const isVercelCron = userAgent.includes('vercel-cron');
-  if (isProduction() && !vercelCronHeader && !isVercelCron) {
-    console.warn('Office365 cron: missing x-vercel-cron header; continuing anyway.');
+  const cronSecret = process.env.CRON_SECRET;
+  const providedSecret = request.headers.get('x-cron-secret');
+  if (cronSecret) {
+    if (providedSecret !== cronSecret) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  } else if (isProduction() && !vercelCronHeader && !isVercelCron) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const supabase = getSupabaseServiceRole();

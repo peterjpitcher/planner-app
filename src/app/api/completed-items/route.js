@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
@@ -7,13 +6,13 @@ import { NextResponse } from 'next/server';
 // GET /api/completed-items - Fetch completed tasks and projects
 export async function GET(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -64,6 +63,7 @@ export async function GET(request) {
         .from('notes')
         .select('*')
         .in('task_id', taskIds)
+        .eq('user_id', session.user.id)
         .order('created_at', { ascending: true });
         
       if (tNotesError) {
@@ -78,6 +78,7 @@ export async function GET(request) {
         .from('notes')
         .select('*')
         .in('project_id', projectIds)
+        .eq('user_id', session.user.id)
         .order('created_at', { ascending: true });
         
       if (pNotesError) {

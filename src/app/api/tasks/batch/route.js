@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
@@ -22,9 +21,9 @@ export async function POST(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -40,7 +39,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Too many projects requested (max 50)' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     
     // Fetch all tasks for the given project IDs
     const { data, error } = await supabase

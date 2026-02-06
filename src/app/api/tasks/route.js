@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
@@ -24,9 +23,9 @@ export async function GET(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
 
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -46,16 +45,19 @@ export async function GET(request) {
       }
     }
 
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
 
     // Parse query parameters
     const projectId = searchParams.get('projectId');
     const includeCompleted = searchParams.get('includeCompleted') === 'true';
     const range = searchParams.get('range'); // 'upcoming' or undefined
-    const days = parseInt(searchParams.get('days') || '14', 10);
+    const parsedDays = parseInt(searchParams.get('days') || '14', 10);
+    const days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(parsedDays, 365) : 14;
     const includeOverdue = searchParams.get('includeOverdue') !== 'false'; // default true
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 200);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const parsedLimit = parseInt(searchParams.get('limit') || '100', 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 100;
+    const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
+    const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
 
     // Build base query
     let query = supabase
@@ -157,14 +159,14 @@ export async function POST(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
 
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     const { data, error } = await createTask({
       supabase,
       userId: session.user.id,
@@ -188,9 +190,9 @@ export async function POST(request) {
 // PATCH /api/tasks - Update a task
 export async function PATCH(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
 
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -201,7 +203,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
 
     const { data, error } = await updateTask({
       supabase,
@@ -223,9 +225,9 @@ export async function PATCH(request) {
 // DELETE /api/tasks - Delete a task
 export async function DELETE(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
 
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -236,7 +238,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
 
     const { data, error } = await deleteTask({
       supabase,

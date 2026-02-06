@@ -5,24 +5,27 @@ import { createClient } from '@supabase/supabase-js';
  * @param {string} accessToken - The user's access token from NextAuth session
  * @returns {Object} Configured Supabase client
  */
-export function getSupabaseServer(accessToken) {
+export function getSupabaseServer(accessToken, options = {}) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const { useServiceRole = false } = options;
 
   if (!supabaseUrl) {
     throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
   }
 
-  // Prefer service key for server-side operations
-  const supabaseKey = supabaseServiceKey || supabaseAnonKey;
+  // Prefer anon key unless service role is explicitly requested
+  const supabaseKey = useServiceRole ? supabaseServiceKey : supabaseAnonKey;
   
   if (!supabaseKey) {
-    throw new Error('Missing Supabase key (SUPABASE_SERVICE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+    throw new Error(useServiceRole
+      ? 'Missing SUPABASE_SERVICE_KEY environment variable'
+      : 'Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable');
   }
 
   // Configure client options
-  const options = {
+  const clientOptions = {
     auth: {
       persistSession: false, // Server-side should never persist sessions
       autoRefreshToken: false, // Server-side should not auto-refresh tokens
@@ -30,15 +33,15 @@ export function getSupabaseServer(accessToken) {
   };
 
   // If using anon key and we have an access token, set the authorization header
-  if (!supabaseServiceKey && accessToken) {
-    options.global = {
+  if (!useServiceRole && accessToken) {
+    clientOptions.global = {
       headers: {
         Authorization: `Bearer ${accessToken}`
       }
     };
   }
 
-  return createClient(supabaseUrl, supabaseKey, options);
+  return createClient(supabaseUrl, supabaseKey, clientOptions);
 }
 
 /**

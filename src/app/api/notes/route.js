@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
@@ -22,13 +21,13 @@ export async function GET(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
     const taskId = searchParams.get('taskId');
@@ -36,6 +35,7 @@ export async function GET(request) {
     let query = supabase
       .from('notes')
       .select('*')
+      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
     
     if (projectId) {
@@ -77,9 +77,9 @@ export async function POST(request) {
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -100,7 +100,7 @@ export async function POST(request) {
       created_at: new Date().toISOString()
     };
     
-    const supabase = getSupabaseServer(session.accessToken);
+    const supabase = getSupabaseServer(accessToken);
     
     // If note is for a task, verify the task belongs to the user
     if (noteData.task_id) {

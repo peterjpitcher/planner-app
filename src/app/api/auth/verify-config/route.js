@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../[...nextauth]/route';
+import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer';
 
 export async function GET(request) {
   try {
-    // Check if user is authenticated (optional - remove if you want public access)
-    const session = await getServerSession(authOptions);
+    const { session } = await getAuthContext(request, { requireAccessToken: false });
+    if (!isDevelopment() && !isAdminSession(session)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     
     // Create a safe config object that masks sensitive values
     const config = {

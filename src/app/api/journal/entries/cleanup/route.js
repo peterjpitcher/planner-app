@@ -1,6 +1,5 @@
 import { OpenAI } from 'openai';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
@@ -93,9 +92,9 @@ async function attemptCleanup(openai, content) {
 
 export async function POST(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, accessToken } = await getAuthContext(request);
 
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -107,7 +106,6 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Valid entryId is required' }, { status: 400 });
     }
 
-    const accessToken = session.accessToken || session?.user?.accessToken;
     const supabase = getSupabaseServer(accessToken);
 
     const { data: entry, error: fetchError } = await supabase
