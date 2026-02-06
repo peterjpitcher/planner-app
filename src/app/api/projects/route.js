@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
@@ -49,13 +49,13 @@ export async function GET(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const { searchParams } = new URL(request.url);
     const includeCompleted = searchParams.get('includeCompleted') === 'true';
     const parsedLimit = parseInt(searchParams.get('limit') || '50', 10);
@@ -112,9 +112,9 @@ export async function POST(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -133,7 +133,7 @@ export async function POST(request) {
       }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const { data, error } = await supabase
       .from('projects')
       .insert(projectData)
@@ -160,9 +160,9 @@ export async function POST(request) {
 // PATCH /api/projects - Update a project
 export async function PATCH(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -178,7 +178,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase
@@ -229,9 +229,9 @@ export async function PATCH(request) {
 // DELETE /api/projects - Delete a project
 export async function DELETE(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -242,7 +242,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase

@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
@@ -21,13 +21,13 @@ export async function GET(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
     const taskId = searchParams.get('taskId');
@@ -77,9 +77,9 @@ export async function POST(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -100,7 +100,7 @@ export async function POST(request) {
       created_at: new Date().toISOString()
     };
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     
     // If note is for a task, verify the task belongs to the user
     if (noteData.task_id) {

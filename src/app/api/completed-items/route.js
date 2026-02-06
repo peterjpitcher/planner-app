@@ -1,18 +1,18 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 
 // GET /api/completed-items - Fetch completed tasks and projects
 export async function GET(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');

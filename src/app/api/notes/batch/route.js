@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
@@ -21,9 +21,9 @@ export async function POST(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -43,7 +43,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Too many items requested (max 200)' }, { status: 400 });
     }
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     
     let query = supabase.from('notes')
       .select('*')

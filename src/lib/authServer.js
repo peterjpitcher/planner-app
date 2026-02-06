@@ -21,7 +21,7 @@ export function isDevelopment() {
   return process.env.NODE_ENV === 'development';
 }
 
-export async function getAuthContext(request, { requireAccessToken = true } = {}) {
+export async function getAuthContext(request, { requireAccessToken = false } = {}) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return { session: null, accessToken: null };

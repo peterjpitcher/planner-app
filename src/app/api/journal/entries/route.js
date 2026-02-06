@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
@@ -25,9 +25,9 @@ export async function POST(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -42,7 +42,7 @@ export async function POST(request) {
 
     const initialAiStatus = process.env.OPENAI_API_KEY ? 'pending' : 'skipped';
 
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const insertPayload = {
       user_id: session.user.id,
       content: rawContent,
@@ -100,13 +100,13 @@ export async function POST(request) {
 // GET /api/journal/entries - Fetch journal entries
 export async function GET(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const { data, error } = await supabase
       .from('journal_entries')
       .select('*')

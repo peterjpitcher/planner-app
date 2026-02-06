@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { createTask, updateTask, deleteTask } from '@/services/taskService';
@@ -23,9 +23,9 @@ export async function GET(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -45,7 +45,7 @@ export async function GET(request) {
       }
     }
 
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
 
     // Parse query parameters
     const projectId = searchParams.get('projectId');
@@ -159,14 +159,14 @@ export async function POST(request) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     const { data, error } = await createTask({
       supabase,
       userId: session.user.id,
@@ -190,9 +190,9 @@ export async function POST(request) {
 // PATCH /api/tasks - Update a task
 export async function PATCH(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -203,7 +203,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
 
     const { data, error } = await updateTask({
       supabase,
@@ -225,9 +225,9 @@ export async function PATCH(request) {
 // DELETE /api/tasks - Delete a task
 export async function DELETE(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -238,7 +238,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
 
     const { data, error } = await deleteTask({
       supabase,

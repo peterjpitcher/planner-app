@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { updateTask, deleteTask } from '@/services/taskService';
@@ -21,16 +21,16 @@ export async function PATCH(request, { params }) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const { id } = await params;
     const body = await request.json();
     
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
 
     const { data, error } = await updateTask({
       supabase,
@@ -69,14 +69,14 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const { id } = await params;
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
 
     const { data, error } = await deleteTask({
       supabase,

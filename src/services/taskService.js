@@ -195,6 +195,7 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     .from('tasks')
     .select('id, user_id, project_id, job, name, description, due_date, priority, importance_score, urgency_score, is_completed, completed_at')
     .eq('id', taskId)
+    .eq('user_id', userId)
     .single();
 
   if (fetchError || !existingTask) {
@@ -315,6 +316,7 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     .from('tasks')
     .update(updatesToApply)
     .eq('id', taskId)
+    .eq('user_id', userId)
     .select()
     .single();
 
@@ -346,6 +348,7 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
     .from('tasks')
     .select('user_id, project_id')
     .eq('id', taskId)
+    .eq('user_id', userId)
     .single();
 
   if (fetchError || !existingTask) {
@@ -367,7 +370,8 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
   const { error } = await supabase
     .from('tasks')
     .delete()
-    .eq('id', taskId);
+    .eq('id', taskId)
+    .eq('user_id', userId);
 
   if (error) {
     const errorMessage = handleSupabaseError(error, 'delete');
@@ -404,6 +408,7 @@ export async function verifyTaskOwnership({ supabase, userId, taskId }) {
     .from('tasks')
     .select('user_id, project_id')
     .eq('id', taskId)
+    .eq('user_id', userId)
     .single();
 
   if (error || !data) {

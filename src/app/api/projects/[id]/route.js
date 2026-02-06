@@ -1,5 +1,5 @@
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
@@ -49,9 +49,9 @@ export async function PATCH(request, { params }) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -62,7 +62,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
     
-  const supabase = getSupabaseServer(accessToken);
+  const supabase = getSupabaseServiceRole();
   
   // Verify ownership
   const { data: existingProject, error: fetchError } = await supabase
@@ -131,14 +131,14 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
     
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const { id } = await params;
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
     
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase

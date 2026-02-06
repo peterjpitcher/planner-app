@@ -1,6 +1,6 @@
 import { OpenAI } from 'openai';
 import { getAuthContext } from '@/lib/authServer';
-import { getSupabaseServer } from '@/lib/supabaseServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 
@@ -92,9 +92,9 @@ async function attemptCleanup(openai, content) {
 
 export async function POST(request) {
   try {
-    const { session, accessToken } = await getAuthContext(request);
+    const { session } = await getAuthContext(request);
 
-    if (!session?.user?.id || !accessToken) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -106,7 +106,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Valid entryId is required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServer(accessToken);
+    const supabase = getSupabaseServiceRole();
 
     const { data: entry, error: fetchError } = await supabase
       .from('journal_entries')
