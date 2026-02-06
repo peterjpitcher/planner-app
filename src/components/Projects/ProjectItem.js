@@ -20,6 +20,14 @@ import { cn } from '@/lib/utils'; // Standard utility
 import { compareTasksByWorkPriority } from '@/lib/taskScoring';
 
 const getTodayISODate = () => format(new Date(), 'yyyy-MM-dd');
+const chunkArray = (items, size) => {
+  if (!Array.isArray(items) || size <= 0) return [];
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+};
 
 const ProjectItem = forwardRef((
   {
@@ -257,9 +265,21 @@ const ProjectItem = forwardRef((
         projectDataText += `  ${key}: ${formatFieldValue(project[key])}\n`;
       });
 
-    if (projectNotes.length > 0) {
+    let projectNotesForCopy = [];
+    try {
+      const projectNotesMap = await apiClient.getProjectNotesBatch([project.id]);
+      projectNotesForCopy = projectNotesMap?.[project.id] || [];
+    } catch (err) {
+      const errorMessage = handleSupabaseError(err, 'fetch');
+      projectDataText += `\nProject Notes:\n  Error fetching project notes: ${errorMessage}\n`;
+      setCopyStatus('Error!');
+      setTimeout(() => setCopyStatus('Copy'), 2000);
+      return;
+    }
+
+    if (projectNotesForCopy.length > 0) {
       projectDataText += `\nProject Notes:\n`;
-      projectNotes.forEach(note => {
+      projectNotesForCopy.forEach(note => {
         projectDataText += `${formatNoteForCopy(note, '  ')}\n`;
       });
     } else {
@@ -269,22 +289,26 @@ const ProjectItem = forwardRef((
     projectDataText += `\nTasks:\n`;
 
     try {
-      const tasksWithDetails = await apiClient.getTasks(project.id);
-      const tasksWithNotes = await Promise.all(
-        tasksWithDetails.map(async (task) => {
-          try {
-            const notes = await apiClient.getNotes(null, task.id);
-            return { ...task, notes: notes || [] };
-          } catch (err) {
-            return { ...task, notes: [] };
-          }
-        })
-      );
+      const tasksByProject = await apiClient.getTasksBatch([project.id]);
+      const tasksForCopy = tasksByProject?.[project.id] || [];
+      const taskIds = tasksForCopy.map(task => task?.id).filter(Boolean);
+      const noteBatches = taskIds.length > 0
+        ? await Promise.all(
+          chunkArray(taskIds, 200).map(ids => apiClient.getNotesBatch(ids))
+        )
+        : [];
+      const notesByTaskForCopy = noteBatches.reduce((acc, batch) => {
+        Object.entries(batch || {}).forEach(([taskId, notes]) => {
+          acc[taskId] = notes || [];
+        });
+        return acc;
+      }, {});
 
-      if (tasksWithNotes && tasksWithNotes.length > 0) {
-        tasksWithNotes.forEach(taskItem => {
+      if (tasksForCopy && tasksForCopy.length > 0) {
+        tasksForCopy.forEach(taskItem => {
           projectDataText += `  - Task: ${taskItem.name || 'Untitled task'}\n`;
-          const { notes: taskNotes, ...taskFields } = taskItem || {};
+          const taskNotes = notesByTaskForCopy?.[taskItem.id] || [];
+          const { notes: _ignoredNotes, ...taskFields } = taskItem || {};
           projectDataText += `    Fields:\n`;
           Object.keys(taskFields || {})
             .sort()
