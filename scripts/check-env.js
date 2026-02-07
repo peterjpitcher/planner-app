@@ -75,6 +75,30 @@ const OPTIONAL_VARS = {
   'MICROSOFT_USER_EMAIL': {
     description: 'Email to prefill Microsoft sign-in (Office 365 sync)',
     example: 'peter@orangejelly.co.uk'
+  },
+  'DAILY_TASK_EMAIL_FROM': {
+    description: 'From/sender mailbox for daily digest emails (falls back to MICROSOFT_USER_EMAIL)',
+    example: 'peter@orangejelly.co.uk'
+  },
+  'DAILY_TASK_EMAIL_TO': {
+    description: 'Recipient mailbox for daily digest emails (falls back to MICROSOFT_USER_EMAIL)',
+    example: 'peter@orangejelly.co.uk'
+  },
+  'DIGEST_USER_EMAIL': {
+    description: 'Supabase user email to load tasks for the digest',
+    example: 'peter@orangejelly.co.uk'
+  },
+  'DIGEST_USER_ID': {
+    description: 'Optional explicit Supabase user id for digest task lookup (overrides DIGEST_USER_EMAIL)',
+    example: '00000000-0000-0000-0000-000000000000'
+  },
+  'DAILY_TASK_EMAIL_TIME_ZONE': {
+    description: 'IANA timezone used to decide when 8:00 send window applies',
+    example: 'Europe/London'
+  },
+  'DIGEST_DASHBOARD_URL': {
+    description: 'Optional dashboard link included in digest email',
+    example: 'https://planner.orangejelly.co.uk/dashboard'
   }
 };
 
