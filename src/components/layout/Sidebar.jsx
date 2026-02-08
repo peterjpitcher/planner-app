@@ -11,7 +11,8 @@ import {
     BookOpen,
     PieChart,
     Plug,
-    LogOut
+    LogOut,
+    X
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 
@@ -25,13 +26,20 @@ const navigation = [
     { name: 'Integrations', href: '/settings/integrations', icon: Plug },
 ];
 
-export function Sidebar() {
+export function Sidebar({ isMobileMenuOpen = false, onCloseMobileMenu }) {
     const pathname = usePathname();
 
     return (
-        <div className="flex flex-col w-[240px] bg-[hsl(var(--sidebar-background))] border-r border-[hsl(var(--sidebar-border))] min-h-screen fixed left-0 top-0 z-40">
+        <aside
+            id="app-navigation"
+            aria-label="Main navigation"
+            className={cn(
+                "fixed left-0 top-0 z-50 flex min-h-screen w-[280px] max-w-[85vw] flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-background))] transition-transform duration-200 ease-out lg:z-40 lg:w-[240px] lg:max-w-none",
+                isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+            )}
+        >
             {/* Brand Header */}
-            <div className="flex items-center h-14 px-4 border-b border-[hsl(var(--sidebar-border))]">
+            <div className="flex h-14 items-center justify-between border-b border-[hsl(var(--sidebar-border))] px-4">
                 <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
                         <span className="text-primary-foreground font-bold text-xs">P</span>
@@ -40,6 +48,14 @@ export function Sidebar() {
                         Planner 2.0
                     </span>
                 </div>
+                <button
+                    type="button"
+                    onClick={onCloseMobileMenu}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-[hsl(var(--sidebar-foreground))] opacity-80 hover:bg-[hsl(var(--sidebar-accent))] hover:opacity-100 lg:hidden"
+                    aria-label="Close navigation menu"
+                >
+                    <X className="h-5 w-5" />
+                </button>
             </div>
 
             {/* Main Navigation */}
@@ -53,8 +69,9 @@ export function Sidebar() {
                         <Link
                             key={item.name}
                             href={item.href}
+                            onClick={onCloseMobileMenu}
                             className={cn(
-                                "group flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150",
+                                "group flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
                                 isActive
                                     ? "bg-[hsl(var(--sidebar-accent))] text-white"
                                     : "text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))] hover:text-white"
@@ -70,13 +87,16 @@ export function Sidebar() {
             {/* Footer Actions */}
             <div className="p-2 border-t border-[hsl(var(--sidebar-border))]">
                 <button
-                    onClick={() => signOut()}
-                    className="w-full flex items-center gap-3 px-3 py-2 mt-1 rounded-md text-sm font-medium text-[hsl(var(--danger))] hover:bg-[hsl(var(--sidebar-accent))] transition-all duration-150"
+                    onClick={() => {
+                        onCloseMobileMenu?.();
+                        signOut();
+                    }}
+                    className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-[hsl(var(--danger))] transition-all duration-150 hover:bg-[hsl(var(--sidebar-accent))]"
                 >
                     <LogOut className="w-4 h-4" />
                     Sign out
                 </button>
             </div>
-        </div>
+        </aside>
     );
 }

@@ -1,15 +1,22 @@
 'use client';
 
-import { Search, Bell, Menu } from 'lucide-react';
+import { Search, Bell, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export function Header({ className }) {
+export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu }) {
     return (
-        <header className={cn("h-14 bg-white border-b border-border flex items-center justify-between px-4 fixed top-0 right-0 left-[240px] z-30", className)}>
+        <header className={cn("fixed top-0 right-0 left-0 z-30 flex h-14 items-center justify-between border-b border-border bg-white px-3 sm:px-4 lg:left-[240px]", className)}>
             {/* Left: Breadcrumbs / Page Title (Placeholder) */}
             <div className="flex items-center gap-4">
-                <button className="lg:hidden p-2 -ml-2 text-muted-foreground hover:text-foreground">
-                    <Menu className="w-5 h-5" />
+                <button
+                    type="button"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground lg:hidden"
+                    onClick={onToggleMobileMenu}
+                    aria-expanded={isMobileMenuOpen}
+                    aria-controls="app-navigation"
+                    aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                >
+                    {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
                 </button>
                 <div className="hidden md:flex items-center text-sm font-medium text-muted-foreground">
                     <span className="text-foreground">Dashboard</span>
@@ -17,19 +24,19 @@ export function Header({ className }) {
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
                 {/* Search */}
-                <div className="relative">
+                <div className="relative hidden sm:block">
                     <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
                     <input
                         type="text"
                         placeholder="Search..."
-                        className="h-9 w-64 pl-9 pr-4 rounded-md bg-secondary/50 border-0 text-sm focus:ring-1 focus:ring-ring focus:bg-white transition-all placeholder:text-muted-foreground"
+                        className="h-9 w-44 rounded-md border-0 bg-secondary/50 pl-9 pr-4 text-sm transition-all placeholder:text-muted-foreground focus:bg-white focus:ring-1 focus:ring-ring md:w-64"
                     />
                 </div>
 
                 {/* Notifications */}
-                <button className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-secondary text-muted-foreground transition-colors relative">
+                <button className="relative flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary">
                     <Bell className="w-4 h-4" />
                     <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-primary border border-white"></span>
                 </button>
