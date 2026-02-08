@@ -1,11 +1,11 @@
 'use client';
 
-import { EyeIcon, EyeSlashIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon, CalendarDaysIcon, ClockIcon, ExclamationTriangleIcon, InboxIcon } from '@heroicons/react/24/outline';
+import { EyeIcon, EyeSlashIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon, CalendarDaysIcon, ClockIcon, ExclamationTriangleIcon, InboxIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { Switch } from '@headlessui/react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 
-const filterOrder = ['overdue', 'noTasks', 'untouched', 'noDueDate'];
+const filterOrder = ['overdue', 'noTasks', 'noActiveTasks', 'untouched', 'noDueDate'];
 
 const filterMeta = {
   overdue: {
@@ -17,6 +17,11 @@ const filterMeta = {
     label: 'Projects without tasks',
     description: 'Projects needing next steps.',
     icon: InboxIcon,
+  },
+  noActiveTasks: {
+    label: 'No active tasks',
+    description: 'Projects with only completed tasks (or none).',
+    icon: CheckCircleIcon,
   },
   untouched: {
     label: 'Inactives (14d)',
@@ -32,14 +37,14 @@ const filterMeta = {
 
 function ToggleRow({ label, helper, icon: Icon, enabled, onChange }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-border bg-card p-3 shadow-sm transition-colors hover:bg-muted/30">
+    <div className="flex items-center justify-between rounded-md border border-border bg-card p-2.5 shadow-sm transition-colors hover:bg-muted/30">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Icon className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{label}</p>
-          {helper && <p className="text-xs text-muted-foreground">{helper}</p>}
+          <p className="text-xs font-semibold text-foreground">{label}</p>
+          {helper && <p className="text-[11px] leading-tight text-muted-foreground">{helper}</p>}
         </div>
       </div>
       <Switch
@@ -69,8 +74,9 @@ function FilterCard({ id, isActive, count, onToggle }) {
     <button
       type="button"
       onClick={() => onToggle(id)}
+      title={meta.description}
       className={cn(
-        "group relative w-full overflow-hidden rounded-lg border p-3 text-left transition-all",
+        "group relative w-full overflow-hidden rounded-md border p-2.5 text-left transition-all",
         isActive
           ? "border-primary bg-primary/5 shadow-sm"
           : "border-border bg-card hover:bg-muted/50 hover:border-primary/50"
@@ -79,21 +85,20 @@ function FilterCard({ id, isActive, count, onToggle }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+            "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
             isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
           )}>
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
           </span>
           <div>
-            <p className={cn("text-sm font-semibold tracking-tight", isActive ? "text-primary" : "text-foreground")}>
+            <p className={cn("text-xs font-semibold tracking-tight", isActive ? "text-primary" : "text-foreground")}>
               {meta.label}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
           </div>
         </div>
         <span
           className={cn(
-            "flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors",
+            "flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold transition-colors",
             isActive ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
           )}
         >
@@ -121,16 +126,16 @@ export default function SidebarFilters({
 }) {
   return (
     <Card className="border-none shadow-none bg-transparent">
-      <div className="space-y-8">
+      <div className="space-y-5">
         {/* Jobs Section */}
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Jobs</p>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Jobs</p>
           <div className="relative">
             <select
               id="job-filter"
               value={selectedJob}
               onChange={onJobChange}
-              className="w-full appearance-none rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
+              className="w-full appearance-none rounded-md border border-input bg-card px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
             >
               <option value="All Jobs">All jobs</option>
               <option value="No Job">No job</option>
@@ -150,13 +155,13 @@ export default function SidebarFilters({
 
         {/* Stakeholders Section */}
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Stakeholders</p>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Stakeholders</p>
           <div className="relative">
             <select
               id="stakeholder-filter"
               value={selectedStakeholder}
               onChange={onStakeholderChange}
-              className="w-full appearance-none rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
+              className="w-full appearance-none rounded-md border border-input bg-card px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
             >
               <option value="All Stakeholders">All stakeholders</option>
               {uniqueStakeholders.map((stakeholder) => (
@@ -175,8 +180,8 @@ export default function SidebarFilters({
 
         {/* Workspace Controls */}
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">View Options</p>
-          <div className="space-y-2">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">View Options</p>
+          <div className="space-y-1.5">
             <ToggleRow
               label={showCompletedProjects ? 'Hide completed' : 'Show completed'}
               helper="Toggle visibility of finished work"
@@ -196,8 +201,8 @@ export default function SidebarFilters({
 
         {/* Priority Filters */}
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Priority Filters</p>
-          <div className="space-y-2">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Priority Filters</p>
+          <div className="space-y-1.5">
             {filterOrder.map((filterKey) => {
               const ids = projectAnalysis[filterKey] || [];
               return (

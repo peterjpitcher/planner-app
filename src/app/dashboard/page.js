@@ -53,6 +53,7 @@ const sortTasksByDateDescThenPriority = (a, b) => {
 const createDefaultDashboardFilters = () => ({
   overdue: false,
   noTasks: false,
+  noActiveTasks: false,
   untouched: false,
   noDueDate: false,
 });
@@ -77,7 +78,7 @@ const DASHBOARD_FILTER_TYPES = {
 };
 
 const hasAnyActiveFocusFilter = (filters = {}) => Boolean(
-  filters.overdue || filters.noTasks || filters.untouched || filters.noDueDate
+  filters.overdue || filters.noTasks || filters.noActiveTasks || filters.untouched || filters.noDueDate
 );
 
 function filterDashboardItems({
@@ -89,7 +90,7 @@ function filterDashboardItems({
   projectAnalysis = {},
 }) {
   const normalizedType = type === DASHBOARD_FILTER_TYPES.TASK ? DASHBOARD_FILTER_TYPES.TASK : DASHBOARD_FILTER_TYPES.PROJECT;
-  const { overdue = [], noTasks = [], untouched = [], noDueDate = [] } = projectAnalysis || {};
+  const { overdue = [], noTasks = [], noActiveTasks = [], untouched = [], noDueDate = [] } = projectAnalysis || {};
 
   const applyProjectFilters = (inputProjects) => {
     let filtered = [...inputProjects];
@@ -102,6 +103,10 @@ function filterDashboardItems({
     }
     if (activeDashboardFilters.noTasks) {
       const ids = new Set(noTasks);
+      filtered = filtered.filter(project => ids.has(project.id));
+    }
+    if (activeDashboardFilters.noActiveTasks) {
+      const ids = new Set(noActiveTasks);
       filtered = filtered.filter(project => ids.has(project.id));
     }
     if (activeDashboardFilters.untouched) {
@@ -243,11 +248,13 @@ export default function DashboardPage() {
   const twoWeeksAgo = useMemo(() => subWeeks(new Date(), 2), []);
 
   const projectAnalysis = useMemo(() => {
-    const overdue = [], noTasks = [], untouched = [], noDueDate = [];
+    const overdue = [], noTasks = [], noActiveTasks = [], untouched = [], noDueDate = [];
     projects.forEach(p => {
       if (p.due_date && isPast(parseISO(p.due_date)) && p.status !== 'Completed' && p.status !== 'Cancelled') overdue.push(p.id);
       const tasksForProject = allUserTasks.filter(t => t.project_id === p.id);
       if (tasksForProject.length === 0) noTasks.push(p.id);
+      const activeTasksForProject = tasksForProject.filter(t => !t.is_completed);
+      if (activeTasksForProject.length === 0) noActiveTasks.push(p.id);
       const projectLastUpdated = parseISO(p.updated_at);
       let projectIsUntouched = projectLastUpdated < twoWeeksAgo;
       if (projectIsUntouched && tasksForProject.length > 0) {
@@ -258,7 +265,7 @@ export default function DashboardPage() {
       if (!projectOrTaskHasNoDueDate && tasksForProject.some(t => !t.due_date)) projectOrTaskHasNoDueDate = true;
       if (projectOrTaskHasNoDueDate) noDueDate.push(p.id);
     });
-    return { overdue, noTasks, untouched, noDueDate };
+    return { overdue, noTasks, noActiveTasks, untouched, noDueDate };
   }, [projects, allUserTasks, twoWeeksAgo]);
 
   const baseFilteredProjects = useMemo(() => filterDashboardItems({
@@ -520,35 +527,35 @@ export default function DashboardPage() {
         </div>
 
         {/* Column 2: Filters (Sticky) */}
-        <div className="w-full shrink-0 xl:sticky xl:top-20 space-y-6">
-          <Card className="p-4">
+        <div className="w-full shrink-0 space-y-4 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-2">
+          <Card className="p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-foreground">Quick add task</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Creates a task in <span className="font-medium text-foreground/80">Unassigned</span>. Uses your current Job filter.
+                <h2 className="text-xs font-semibold text-foreground">Quick add task</h2>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Creates in <span className="font-medium text-foreground/80">Unassigned</span>.
                 </p>
               </div>
             </div>
 
             {quickTaskError ? (
-              <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+              <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
                 {quickTaskError}
               </div>
             ) : null}
 
-            <form onSubmit={handleQuickTaskSubmit} className="mt-3 space-y-2">
+            <form onSubmit={handleQuickTaskSubmit} className="mt-2 space-y-1.5">
               <input
                 value={quickTaskName}
                 onChange={(e) => {
                   setQuickTaskName(e.target.value);
                   if (quickTaskError) setQuickTaskError(null);
                 }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs"
                 placeholder="Task name…"
                 disabled={isAddingQuickTask}
               />
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input
                   type="date"
                   value={quickTaskDueDate}
@@ -556,11 +563,12 @@ export default function DashboardPage() {
                     setQuickTaskDueDate(e.target.value);
                     if (quickTaskError) setQuickTaskError(null);
                   }}
-                  className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-xs"
                   disabled={isAddingQuickTask}
                 />
                 <Button
                   type="submit"
+                  size="sm"
                   isLoading={isAddingQuickTask}
                   disabled={isAddingQuickTask || !quickTaskName.trim() || !quickTaskDueDate}
                 >
