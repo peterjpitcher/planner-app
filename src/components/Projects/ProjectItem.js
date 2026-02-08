@@ -460,7 +460,9 @@ const ProjectItem = forwardRef((
     }
   };
 
-  const shouldShowDropPreview = isDropMode;
+  // Keep the source project rendered while dragging so the drag handle remains mounted
+  // and drag end events can reliably clear drop mode.
+  const shouldShowDropPreview = isDropMode && !isSourceProject;
   const dropStatusText = isDragOverTarget ? 'Release to assign' : 'Drop here to move task';
   const dropPreviewStatusText = isSourceProject
     ? 'Current project'
@@ -475,7 +477,6 @@ const ProjectItem = forwardRef((
       shouldShowDropPreview
         ? "border-primary/40 shadow-md"
         : "hover:shadow-md",
-      shouldShowDropPreview && isSourceProject ? "border-border opacity-75" : "",
       isDragOverTarget ? "ring-2 ring-primary ring-offset-2" : "",
       isProjectCompletedOrCancelled ? "opacity-60 saturate-75" : ""
     ),

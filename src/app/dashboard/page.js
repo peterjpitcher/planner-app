@@ -214,6 +214,31 @@ export default function DashboardPage() {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
+  useEffect(() => {
+    if (!taskDragState.active) return undefined;
+
+    const resetDragState = () => {
+      setTaskDragState({ active: false, sourceProjectId: null });
+    };
+    const handleKeyUp = (event) => {
+      if (event.key === 'Escape') {
+        resetDragState();
+      }
+    };
+    const fallbackTimerId = window.setTimeout(resetDragState, 15000);
+
+    window.addEventListener('dragend', resetDragState);
+    window.addEventListener('drop', resetDragState);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.clearTimeout(fallbackTimerId);
+      window.removeEventListener('dragend', resetDragState);
+      window.removeEventListener('drop', resetDragState);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [taskDragState.active]);
+
   // Derived State
   const twoWeeksAgo = useMemo(() => subWeeks(new Date(), 2), []);
 
@@ -326,7 +351,10 @@ export default function DashboardPage() {
   }, []);
 
   const handleTaskDragStateChange = useCallback((isDragging, sourceProjectId = null) => {
-    setTaskDragState({ active: isDragging, sourceProjectId: sourceProjectId || null });
+    setTaskDragState({
+      active: Boolean(isDragging),
+      sourceProjectId: isDragging ? (sourceProjectId || null) : null,
+    });
   }, []);
 
   const handleProjectUpdate = useCallback((updatedProject) => {
