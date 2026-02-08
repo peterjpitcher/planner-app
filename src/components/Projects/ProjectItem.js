@@ -70,6 +70,7 @@ const ProjectItem = forwardRef((
   const { setTargetProjectId } = useTargetProject();
   const isUnassignedProject = project?.name?.toLowerCase() === 'unassigned';
   const isProjectCompletedOrCancelled = project?.status === 'Completed' || project?.status === 'Cancelled';
+  const isSourceProject = dragSourceProjectId !== null && project?.id === dragSourceProjectId;
 
   useEffect(() => {
     if (areAllTasksExpanded !== undefined) {
@@ -398,13 +399,13 @@ const ProjectItem = forwardRef((
   };
 
   const handleDragEnter = (event) => {
-    if (!project?.id || !canAcceptTaskDrag(event)) return;
+    if (!project?.id || isSourceProject || !canAcceptTaskDrag(event)) return;
     event.preventDefault();
     setIsDragOverTarget(true);
   };
 
   const handleDragOver = (event) => {
-    if (!project?.id || !canAcceptTaskDrag(event)) return;
+    if (!project?.id || isSourceProject || !canAcceptTaskDrag(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   };
@@ -416,7 +417,7 @@ const ProjectItem = forwardRef((
   };
 
   const handleDrop = async (event) => {
-    if (!project?.id || !canAcceptTaskDrag(event)) return;
+    if (!project?.id || isSourceProject || !canAcceptTaskDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     setIsDragOverTarget(false);
@@ -459,9 +460,11 @@ const ProjectItem = forwardRef((
     }
   };
 
-  const isSourceProject = dragSourceProjectId !== null && project?.id === dragSourceProjectId;
-  const shouldShowDropPreview = isDropMode && !isSourceProject;
+  const shouldShowDropPreview = isDropMode;
   const dropStatusText = isDragOverTarget ? 'Release to assign' : 'Drop here to move task';
+  const dropPreviewStatusText = isSourceProject
+    ? 'Current project'
+    : (isDragOverTarget ? 'Release to assign' : 'Drop to move');
 
   const containerProps = {
     ref,
@@ -469,7 +472,10 @@ const ProjectItem = forwardRef((
     // Standard Card styling
     className: cn(
       "relative overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-all duration-300",
-      shouldShowDropPreview ? "ring-2 ring-primary border-primary opacity-90 shadow-lg" : "hover:shadow-md",
+      shouldShowDropPreview
+        ? "border-primary/40 shadow-md"
+        : "hover:shadow-md",
+      shouldShowDropPreview && isSourceProject ? "border-border opacity-75" : "",
       isDragOverTarget ? "ring-2 ring-primary ring-offset-2" : "",
       isProjectCompletedOrCancelled ? "opacity-60 saturate-75" : ""
     ),
@@ -483,11 +489,19 @@ const ProjectItem = forwardRef((
   if (shouldShowDropPreview) {
     return (
       <div {...containerProps}>
-        <div className="flex flex-col items-center justify-center p-8 gap-3 min-h-[160px]">
-          <p className="text-sm font-semibold text-foreground">{project.name || 'Unnamed Project'}</p>
-          <div className="rounded-2xl border border-dashed border-border bg-primary/5 px-3 py-4 text-sm text-primary/80 text-center">
-            {dropStatusText}
-          </div>
+        <div className={cn(
+          "flex min-h-[44px] items-center gap-3 px-4 py-2",
+          isDragOverTarget ? "bg-primary/5" : ""
+        )}>
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground" title={project.name}>
+            {project.name || 'Unnamed Project'}
+          </p>
+          <span className={cn(
+            "whitespace-nowrap text-[11px] font-medium uppercase tracking-[0.08em]",
+            isSourceProject ? "text-muted-foreground" : "text-primary/80"
+          )}>
+            {dropPreviewStatusText}
+          </span>
         </div>
       </div>
     );

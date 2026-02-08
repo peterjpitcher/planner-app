@@ -115,7 +115,7 @@ export default function ProjectList({
     //     return null;
     //   })}
     // </div>
-    <div className={isTaskDragActive ? 'space-y-3' : 'space-y-5'}>
+    <div className={isTaskDragActive ? 'space-y-2' : 'space-y-5'}>
       {(() => {
         const unassignedProject = projects.find(project => project?.name?.toLowerCase() === 'unassigned');
         const otherProjects = projects.filter(project => project?.name?.toLowerCase() !== 'unassigned');
