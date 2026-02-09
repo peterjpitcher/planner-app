@@ -134,6 +134,72 @@ function toIsoTimestamp(value) {
   return new Date(ms).toISOString();
 }
 
+function makeTodoTaskKey({ listId, todoTaskId }) {
+  if (!listId || !todoTaskId) return null;
+  return `${listId}::${todoTaskId}`;
+}
+
+function isUniqueConstraintError(error) {
+  const code = String(error?.code || '');
+  if (code === '23505') return true;
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('duplicate key') || message.includes('unique constraint');
+}
+
+async function dedupeTaskMappings({ supabase, userId, taskMaps }) {
+  const maps = Array.isArray(taskMaps) ? taskMaps : [];
+  const mappingsByRemoteKey = new Map();
+
+  for (const mapping of maps) {
+    const key = makeTodoTaskKey({ listId: mapping?.list_id, todoTaskId: mapping?.todo_task_id });
+    if (!key) continue;
+    if (!mappingsByRemoteKey.has(key)) mappingsByRemoteKey.set(key, []);
+    mappingsByRemoteKey.get(key).push(mapping);
+  }
+
+  let removedDuplicateMappings = 0;
+
+  for (const rows of mappingsByRemoteKey.values()) {
+    if (rows.length <= 1) continue;
+
+    rows.sort((a, b) => {
+      const aMs = toTimestampMs(a?.updated_at || a?.created_at);
+      const bMs = toTimestampMs(b?.updated_at || b?.created_at);
+      return bMs - aMs;
+    });
+
+    for (const duplicate of rows.slice(1)) {
+      const { error } = await supabase
+        .from('office365_task_items')
+        .delete()
+        .eq('id', duplicate.id)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.warn('Office365 sync: failed to remove duplicate task mapping:', error);
+        continue;
+      }
+
+      removedDuplicateMappings += 1;
+    }
+  }
+
+  if (!removedDuplicateMappings) {
+    return { taskMaps: maps, removedDuplicateMappings: 0 };
+  }
+
+  const { data: refreshedMaps, error: refreshedMapsError } = await supabase
+    .from('office365_task_items')
+    .select('*')
+    .eq('user_id', userId);
+  if (refreshedMapsError) throw refreshedMapsError;
+
+  return {
+    taskMaps: refreshedMaps || [],
+    removedDuplicateMappings,
+  };
+}
+
 function buildTodoTaskPayload(task) {
   const dueDateTime = toGraphDueDateTime(task.due_date);
   const payload = {
@@ -508,15 +574,26 @@ export async function syncOffice365All({ userId }) {
     .eq('user_id', userId);
   if (projectMapsError) throw projectMapsError;
 
-  const { data: taskMaps, error: taskMapsError } = await supabase
+  const { data: rawTaskMaps, error: taskMapsError } = await supabase
     .from('office365_task_items')
     .select('*')
     .eq('user_id', userId);
   if (taskMapsError) throw taskMapsError;
 
+  const { taskMaps, removedDuplicateMappings } = await dedupeTaskMappings({
+    supabase,
+    userId,
+    taskMaps: rawTaskMaps,
+  });
+
   const projectMapByProjectId = new Map((projectMaps || []).map((row) => [row.project_id, row]));
   const taskMapByTaskId = new Map((taskMaps || []).map((row) => [row.task_id, row]));
-  const taskMapByTodoTaskId = new Map((taskMaps || []).map((row) => [row.todo_task_id, row]));
+  const taskMapByTodoTaskKey = new Map();
+  for (const mapping of taskMaps || []) {
+    const key = makeTodoTaskKey({ listId: mapping.list_id, todoTaskId: mapping.todo_task_id });
+    if (!key) continue;
+    taskMapByTodoTaskKey.set(key, mapping);
+  }
 
   const desiredProjectIds = new Set(activeProjects.map((p) => p.id));
   const desiredTaskIds = new Set(desiredTasks.map((t) => t.id));
@@ -543,7 +620,7 @@ export async function syncOffice365All({ userId }) {
   }
 
   const remoteTasksByListId = new Map();
-  const remoteTodoTaskIds = new Set();
+  const remoteTodoTaskKeys = new Set();
   const localTasksById = new Map((tasks || []).map((task) => [task.id, task]));
 
   const activeProjectMappings = activeProjects
@@ -557,29 +634,32 @@ export async function syncOffice365All({ userId }) {
     const remoteTasks = await listTodoTasks({ accessToken, listId });
     remoteTasksByListId.set(listId, remoteTasks);
     for (const remoteTask of remoteTasks) {
-      if (remoteTask?.id) remoteTodoTaskIds.add(remoteTask.id);
+      const remoteTodoKey = makeTodoTaskKey({ listId, todoTaskId: remoteTask?.id });
+      if (remoteTodoKey) remoteTodoTaskKeys.add(remoteTodoKey);
     }
 
-	    for (const remoteTask of remoteTasks) {
-	      const remoteTodoId = remoteTask?.id;
-	      if (!remoteTodoId) continue;
+    for (const remoteTask of remoteTasks) {
+      const remoteTodoId = remoteTask?.id;
+      if (!remoteTodoId) continue;
+      const remoteTodoKey = makeTodoTaskKey({ listId, todoTaskId: remoteTodoId });
+      if (!remoteTodoKey) continue;
 
-      const existingMapping = taskMapByTodoTaskId.get(remoteTodoId) || null;
+      const existingMapping = taskMapByTodoTaskKey.get(remoteTodoKey) || null;
       if (!existingMapping) {
         const projectId = projectMapping.project_id;
         if (!projectId) continue;
 
-	        const payload = {
-	          user_id: userId,
-	          project_id: projectId,
-	          name: remoteTask.title || 'New task',
-	          description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
-	          due_date: fromGraphDueDateTime(remoteTask?.dueDateTime) || new Date().toISOString().slice(0, 10),
-	          priority: toLocalPriority(remoteTask?.importance),
-	          is_completed: remoteTask?.status === 'completed',
-	          completed_at:
-	            remoteTask?.status === 'completed'
-	              ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())
+        const payload = {
+          user_id: userId,
+          project_id: projectId,
+          name: remoteTask.title || 'New task',
+          description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
+          due_date: fromGraphDueDateTime(remoteTask?.dueDateTime) || new Date().toISOString().slice(0, 10),
+          priority: toLocalPriority(remoteTask?.importance),
+          is_completed: remoteTask?.status === 'completed',
+          completed_at:
+            remoteTask?.status === 'completed'
+              ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())
               : null,
           updated_at: toIsoTimestamp(remoteTask?.lastModifiedDateTime || remoteTask?.createdDateTime) || new Date().toISOString(),
         };
@@ -607,12 +687,44 @@ export async function syncOffice365All({ userId }) {
           .select('*')
           .single();
         if (mappingError) {
+          if (isUniqueConstraintError(mappingError)) {
+            const { data: existingRemoteMapping, error: existingRemoteMappingError } = await supabase
+              .from('office365_task_items')
+              .select('*')
+              .eq('user_id', userId)
+              .eq('list_id', listId)
+              .eq('todo_task_id', remoteTodoId)
+              .maybeSingle();
+
+            if (!existingRemoteMappingError && existingRemoteMapping) {
+              const { error: deleteCreatedTaskError } = await supabase
+                .from('tasks')
+                .delete()
+                .eq('id', createdTask.id)
+                .eq('user_id', userId);
+
+              if (deleteCreatedTaskError) {
+                console.warn('Office365 pull: failed to clean up raced local task:', deleteCreatedTaskError);
+              }
+
+              taskMapByTaskId.set(existingRemoteMapping.task_id, existingRemoteMapping);
+              const existingRemoteKey = makeTodoTaskKey({
+                listId: existingRemoteMapping.list_id,
+                todoTaskId: existingRemoteMapping.todo_task_id,
+              });
+              if (existingRemoteKey) {
+                taskMapByTodoTaskKey.set(existingRemoteKey, existingRemoteMapping);
+              }
+              continue;
+            }
+          }
+
           console.warn('Office365 pull: failed to create mapping:', mappingError);
           continue;
         }
 
         taskMapByTaskId.set(createdTask.id, mappingRow);
-        taskMapByTodoTaskId.set(remoteTodoId, mappingRow);
+        taskMapByTodoTaskKey.set(remoteTodoKey, mappingRow);
         localTasksById.set(createdTask.id, createdTask);
         pulledCreatedTasks += 1;
 
@@ -723,7 +835,13 @@ export async function syncOffice365All({ userId }) {
 
                 if (!mappingUpdateError && updatedMapping) {
                   taskMapByTaskId.set(updatedMapping.task_id, updatedMapping);
-                  taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+                  const updatedMappingKey = makeTodoTaskKey({
+                    listId: updatedMapping.list_id,
+                    todoTaskId: updatedMapping.todo_task_id,
+                  });
+                  if (updatedMappingKey) {
+                    taskMapByTodoTaskKey.set(updatedMappingKey, updatedMapping);
+                  }
                 }
               }
             }
@@ -740,7 +858,13 @@ export async function syncOffice365All({ userId }) {
 
         if (!mappingUpdateError && updatedMapping) {
           taskMapByTaskId.set(updatedMapping.task_id, updatedMapping);
-          taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+          const updatedMappingKey = makeTodoTaskKey({
+            listId: updatedMapping.list_id,
+            todoTaskId: updatedMapping.todo_task_id,
+          });
+          if (updatedMappingKey) {
+            taskMapByTodoTaskKey.set(updatedMappingKey, updatedMapping);
+          }
         }
       }
     }
@@ -749,7 +873,11 @@ export async function syncOffice365All({ userId }) {
   // Delete local tasks for items removed remotely (two-way deletes).
   for (const mapping of taskMaps || []) {
     if (!activeProjectIds.has(mapping.project_id)) continue;
-    if (!remoteTodoTaskIds.has(mapping.todo_task_id)) {
+    const mappingRemoteKey = makeTodoTaskKey({
+      listId: mapping.list_id,
+      todoTaskId: mapping.todo_task_id,
+    });
+    if (!mappingRemoteKey || !remoteTodoTaskKeys.has(mappingRemoteKey)) {
       const localTask = localTasksById.get(mapping.task_id);
       if (!localTask) continue;
 
@@ -828,7 +956,13 @@ export async function syncOffice365All({ userId }) {
       if (mappingError) throw mappingError;
 
       taskMapByTaskId.set(task.id, updatedMapping);
-      taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+      const updatedMappingKey = makeTodoTaskKey({
+        listId: updatedMapping.list_id,
+        todoTaskId: updatedMapping.todo_task_id,
+      });
+      if (updatedMappingKey) {
+        taskMapByTodoTaskKey.set(updatedMappingKey, updatedMapping);
+      }
       pushedCreatedTasks += 1;
       continue;
     }
@@ -854,7 +988,10 @@ export async function syncOffice365All({ userId }) {
       if (mappingError) throw mappingError;
 
       taskMapByTaskId.set(task.id, mappingRow);
-      taskMapByTodoTaskId.set(todoTaskId, mappingRow);
+      const mappingRowKey = makeTodoTaskKey({ listId: mappingRow.list_id, todoTaskId: mappingRow.todo_task_id });
+      if (mappingRowKey) {
+        taskMapByTodoTaskKey.set(mappingRowKey, mappingRow);
+      }
       pushedCreatedTasks += 1;
       continue;
     }
@@ -880,7 +1017,13 @@ export async function syncOffice365All({ userId }) {
       if (mappingError) throw mappingError;
 
       taskMapByTaskId.set(task.id, updatedMapping);
-      taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+      const updatedMappingKey = makeTodoTaskKey({
+        listId: updatedMapping.list_id,
+        todoTaskId: updatedMapping.todo_task_id,
+      });
+      if (updatedMappingKey) {
+        taskMapByTodoTaskKey.set(updatedMappingKey, updatedMapping);
+      }
       pushedCreatedTasks += 1;
       continue;
     }
@@ -938,7 +1081,13 @@ export async function syncOffice365All({ userId }) {
 
       if (!mappingUpdateError && updatedMapping) {
         taskMapByTaskId.set(task.id, updatedMapping);
-        taskMapByTodoTaskId.set(updatedMapping.todo_task_id, updatedMapping);
+        const updatedMappingKey = makeTodoTaskKey({
+          listId: updatedMapping.list_id,
+          todoTaskId: updatedMapping.todo_task_id,
+        });
+        if (updatedMappingKey) {
+          taskMapByTodoTaskKey.set(updatedMappingKey, updatedMapping);
+        }
       }
 
       pushedUpdatedTasks += 1;
@@ -987,6 +1136,7 @@ export async function syncOffice365All({ userId }) {
     pulledCreatedTasks,
     pulledUpdatedTasks,
     pulledDeletedTasks,
+    dedupedTaskMappings: removedDuplicateMappings,
     totalProjects: projects?.length || 0,
     totalTasks: tasks?.length || 0,
   };
