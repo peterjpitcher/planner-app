@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, compareAsc, compareDesc, endOfWeek } from 'date-fns';
+import { format, parseISO, startOfDay, differenceInDays, isToday, isTomorrow, isPast, isSameDay, addDays, endOfDay, isWithinInterval, formatDistanceToNowStrict, endOfWeek } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { PencilIcon, Bars3Icon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { FireIcon as SolidFireIcon, ExclamationTriangleIcon as SolidExclamationTriangleIcon, CheckCircleIcon as SolidCheckIcon, ClockIcon as SolidClockIcon } from '@heroicons/react/20/solid';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 import ChaseTaskModal from './ChaseTaskModal';
+import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 
 // Simplified helper for due date status (can be shared or passed if more complex)
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
@@ -59,15 +60,6 @@ const getStandaloneTaskPriorityStyling = (priority) => {
     default:
       return { icon: <SolidClockIcon className="h-4 w-4 text-[#2f617a]" />, textClass: 'text-[#2f617a]', cardOuterClass: 'border-slate-200/70 bg-white/85 shadow-[0_20px_45px_-30px_rgba(4,150,199,0.25)]', badgeClass: 'bg-[#0496c7]/15 text-[#036586]', glowClass: 'bg-[#0496c7]/18', ribbonClass: 'from-[#0496c7]/18 via-[#5bd2c1]/12 to-transparent' };
   }
-};
-
-const getPriorityValue = (priority) => {
-    switch (priority) {
-      case 'High': return 3;
-      case 'Medium': return 2;
-      case 'Low': return 1;
-      default: return 0; // No priority or undefined
-    }
 };
 
 function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange }) {
@@ -156,7 +148,8 @@ function StandaloneTaskItem({ task, project, onTaskUpdated, onDragStateChange })
       });
 
       // 2. Calculate New Date
-      const baseDate = task.due_date ? parseISO(task.due_date) : new Date();
+      // Product rule: "Chase" always pushes forward from today.
+      const baseDate = new Date();
       const newDueDate = addDays(baseDate, daysToPush);
       const formattedNewDate = format(newDueDate, 'yyyy-MM-dd');
 
@@ -396,26 +389,7 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
 
     const filteredTasks = allUserTasks.filter(task => !task.is_completed);
 
-    // Sort tasks first by priority (descending), then by due date (ascending)
-    const sortedTasks = filteredTasks.sort((a, b) => {
-      const priorityA = getPriorityValue(a.priority);
-      const priorityB = getPriorityValue(b.priority);
-
-      if (priorityA !== priorityB) {
-        return priorityB - priorityA; // Higher priority value first
-      }
-
-      // If priorities are the same, sort by due date (ascending, nulls last)
-      const dateA = a.due_date ? parseISO(a.due_date) : null;
-      const dateB = b.due_date ? parseISO(b.due_date) : null;
-
-      if (dateA && dateB) {
-        return compareAsc(dateA, dateB);
-      }
-      if (dateA) return -1; // dateA is not null, dateB is null, so A comes first
-      if (dateB) return 1;  // dateB is not null, dateA is null, so B comes first
-      return 0; // Both are null
-    });
+    const sortedTasks = filteredTasks.sort(compareTasksByDueDateAsc);
 
     const groups = {
       overdue: [],
@@ -447,8 +421,8 @@ export default function StandaloneTaskList({ allUserTasks, projects, onTaskUpdat
       }
     });
 
-    // The tasks within each group are already sorted by priority then due_date
-    // because the initial `sortedTasks` array was sorted this way before grouping.
+    // The tasks within each group are already sorted oldest first by due date
+    // because the initial `sortedTasks` array was sorted before grouping.
     // No need to re-sort each group individually if the overall list is pre-sorted correctly.
 
     return groups;

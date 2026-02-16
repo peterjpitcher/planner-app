@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/Card';
 import { PlusCircle } from 'lucide-react';
 import { differenceInCalendarDays, isPast, parseISO, subWeeks, compareDesc, format } from 'date-fns';
 import { RocketLaunchIcon, FireIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 
 const ButtonComponent = Button;
 
@@ -37,18 +38,7 @@ const sortProjectsByPriorityThenDateDesc = (a, b) => {
   return compareDesc(dateA, dateB);
 };
 
-const sortTasksByDateDescThenPriority = (a, b) => {
-  const dateA = a.due_date ? parseISO(a.due_date) : null;
-  const dateB = b.due_date ? parseISO(b.due_date) : null;
-  if (dateA === null && dateB === null) {
-    return getPriorityValue(b.priority) - getPriorityValue(a.priority);
-  }
-  if (dateA === null) return 1;
-  if (dateB === null) return -1;
-  const dateComparison = compareDesc(dateA, dateB);
-  if (dateComparison !== 0) return dateComparison;
-  return getPriorityValue(b.priority) - getPriorityValue(a.priority);
-};
+const sortTasksByDateAsc = (a, b) => compareTasksByDueDateAsc(a, b);
 
 const createDefaultDashboardFilters = () => ({
   overdue: false,
@@ -182,7 +172,7 @@ export default function DashboardPage() {
 
         const allTasks = [];
         Object.values(batchedTasks || {}).forEach(tasks => allTasks.push(...tasks));
-        setAllUserTasks(allTasks.sort(sortTasksByDateDescThenPriority));
+        setAllUserTasks(allTasks.sort(sortTasksByDateAsc));
 
         if (allTasks.length > 0) {
           const taskIds = allTasks.map(t => t.id);

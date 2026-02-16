@@ -47,7 +47,9 @@ export async function POST(request) {
       .select('*')
       .in('project_id', projectIds)
       .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
     
     if (error) {
       const errorMessage = handleSupabaseError(error, 'fetch');

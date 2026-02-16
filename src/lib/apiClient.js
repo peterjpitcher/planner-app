@@ -101,7 +101,7 @@ class APIClient {
 
   // Batch fetch tasks for multiple projects
   async getTasksBatch(projectIds) {
-    const cacheKey = `tasks-batch-${projectIds.sort().join(',')}`;
+    const cacheKey = `tasks-batch-${[...projectIds].sort().join(',')}`;
     return dedupedFetch(cacheKey, async () => {
       const response = await this.fetchWithAuth('/api/tasks/batch', {
         method: 'POST',
@@ -133,7 +133,7 @@ class APIClient {
 
   // Batch fetch notes for multiple tasks
   async getNotesBatch(taskIds) {
-    const cacheKey = `notes-batch-${taskIds.sort().join(',')}`;
+    const cacheKey = `notes-batch-${[...taskIds].sort().join(',')}`;
     return dedupedFetch(cacheKey, async () => {
       const response = await this.fetchWithAuth('/api/notes/batch', {
         method: 'POST',
@@ -145,7 +145,7 @@ class APIClient {
 
   // Batch fetch notes for multiple projects
   async getProjectNotesBatch(projectIds) {
-    const cacheKey = `project-notes-batch-${projectIds.sort().join(',')}`;
+    const cacheKey = `project-notes-batch-${[...projectIds].sort().join(',')}`;
     return dedupedFetch(cacheKey, async () => {
       const response = await this.fetchWithAuth('/api/notes/batch', {
         method: 'POST',

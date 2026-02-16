@@ -17,7 +17,7 @@ import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 import { getPriorityClasses } from '@/lib/projectHelpers';
 import { cn } from '@/lib/utils'; // Standard utility
-import { compareTasksByWorkPriority } from '@/lib/taskScoring';
+import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 
 const getTodayISODate = () => format(new Date(), 'yyyy-MM-dd');
 const chunkArray = (items, size) => {
@@ -28,6 +28,13 @@ const chunkArray = (items, size) => {
   }
   return chunks;
 };
+
+const compareProjectTasks = (a, b) => {
+  if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+  return compareTasksByDueDateAsc(a, b);
+};
+
+const sortProjectTasks = (taskList = []) => [...taskList].sort(compareProjectTasks);
 
 const ProjectItem = forwardRef((
   {
@@ -81,11 +88,7 @@ const ProjectItem = forwardRef((
   // Update tasks when propTasks changes
   useEffect(() => {
     if (propTasks) {
-      const sortedTasks = [...propTasks].sort((a, b) => {
-        if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-        return compareTasksByWorkPriority(a, b);
-      });
-      setTasks(sortedTasks);
+      setTasks(sortProjectTasks(propTasks));
     }
   }, [propTasks]);
 
@@ -160,20 +163,13 @@ const ProjectItem = forwardRef((
   };
 
   const handleTaskAdded = (newTask) => {
-    const newTasks = [newTask, ...tasks].sort((a, b) => {
-      if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-      return 0;
-    });
+    const newTasks = sortProjectTasks([newTask, ...tasks]);
     setTasks(newTasks);
     onProjectDataChange(project.id, { ...project, updated_at: new Date().toISOString() }, 'task_added', { task: newTask });
   };
 
   const handleTaskUpdated = (updatedTask) => {
-    const updatedTasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t)
-      .sort((a, b) => {
-        if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-        return 0;
-      });
+    const updatedTasks = sortProjectTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
     setTasks(updatedTasks);
 
     if (onProjectDataChange && project && updatedTask) {

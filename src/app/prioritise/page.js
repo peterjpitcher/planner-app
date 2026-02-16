@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { TaskScoreBadge } from '@/components/Tasks/TaskScoreBadge';
 import { compareTasksByWorkPriority, DEFAULT_TASK_SCORING } from '@/lib/taskScoring';
+import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 
 const ALL_JOBS = 'All Jobs';
 const NO_JOB = 'No Job';
@@ -204,7 +205,8 @@ export default function PrioritisePage() {
   const topPriorities = useMemo(() => {
     return [...filteredTasks]
       .sort((a, b) => compareTasksByWorkPriority(a, b, DEFAULT_TASK_SCORING))
-      .slice(0, 12);
+      .slice(0, 12)
+      .sort(compareTasksByDueDateAsc);
   }, [filteredTasks]);
 
   const handleNavigateToProject = useCallback((projectId) => {

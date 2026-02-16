@@ -10,8 +10,9 @@ import { useSupabase } from '@/contexts/SupabaseContext';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
-import { compareTasksByWorkPriority } from '@/lib/taskScoring';
+import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 import { TaskScoreBadge } from '@/components/Tasks/TaskScoreBadge';
+import { toDateInputValue } from '@/lib/dateUtils';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
 import NoteList from '@/components/Notes/NoteList';
 import ChaseTaskModal from '@/components/Tasks/ChaseTaskModal';
@@ -22,7 +23,7 @@ const NO_JOB = 'No Job';
 const normalizeJob = (value) => (typeof value === 'string' ? value.trim() : '');
 const isUnassignedProjectName = (name) => typeof name === 'string' && name.trim().toLowerCase() === 'unassigned';
 
-const sortTasks = (a, b) => compareTasksByWorkPriority(a, b);
+const sortTasks = (a, b) => compareTasksByDueDateAsc(a, b);
 
 function effectiveJob(task) {
   const projectName = task?.project_name || task?.projects?.name;
@@ -37,6 +38,9 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
   const [jobDraft, setJobDraft] = useState(isUnassigned ? (task?.job || '') : '');
   const [isSavingJob, setIsSavingJob] = useState(false);
   const [isSavingComplete, setIsSavingComplete] = useState(false);
+  const [dueDateDraft, setDueDateDraft] = useState(toDateInputValue(task?.due_date));
+  const [isEditingDueDate, setIsEditingDueDate] = useState(false);
+  const [isSavingDueDate, setIsSavingDueDate] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [notes, setNotes] = useState([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
@@ -47,6 +51,11 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
     if (!isUnassigned) return;
     setJobDraft(task?.job || '');
   }, [isUnassigned, task?.job]);
+
+  useEffect(() => {
+    if (isEditingDueDate) return;
+    setDueDateDraft(toDateInputValue(task?.due_date));
+  }, [isEditingDueDate, task?.due_date]);
 
   const fetchNotes = useCallback(async () => {
     if (!task?.id) return;
@@ -142,6 +151,32 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
     }
   }, [isUnassigned, jobDraft, task?.id, task?.job, onUpdated]);
 
+  const handleDueDateSave = useCallback(async () => {
+    const nextDueDate = dueDateDraft || null;
+    const currentDueDate = toDateInputValue(task?.due_date) || null;
+    if (nextDueDate === currentDueDate) {
+      setIsEditingDueDate(false);
+      return;
+    }
+
+    setIsSavingDueDate(true);
+    try {
+      const updated = await apiClient.updateTask(task.id, {
+        due_date: nextDueDate,
+        updated_at: new Date().toISOString(),
+      });
+      onUpdated?.(updated);
+    } finally {
+      setIsSavingDueDate(false);
+      setIsEditingDueDate(false);
+    }
+  }, [dueDateDraft, onUpdated, task?.due_date, task?.id]);
+
+  const handleDueDateCancel = useCallback(() => {
+    setDueDateDraft(toDateInputValue(task?.due_date));
+    setIsEditingDueDate(false);
+  }, [task?.due_date]);
+
   const dueDateLabel = task?.due_date ? format(parseISO(task.due_date), 'MMM d, yyyy') : 'No due date';
   const jobLabel = effectiveJob(task) || NO_JOB;
 
@@ -161,7 +196,37 @@ function TaskRow({ task, datalistId, onUpdated, onNavigateToProject }) {
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold text-foreground truncate">{task?.name || 'Untitled task'}</p>
               <span className="text-xs text-muted-foreground">•</span>
-              <span className="text-xs text-muted-foreground">{dueDateLabel}</span>
+              {isEditingDueDate ? (
+                <input
+                  type="date"
+                  value={dueDateDraft}
+                  onChange={(e) => setDueDateDraft(e.target.value)}
+                  onBlur={handleDueDateSave}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleDueDateSave();
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleDueDateCancel();
+                    }
+                  }}
+                  className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                  aria-label="Task due date"
+                  disabled={isSavingDueDate}
+                  autoFocus
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingDueDate(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  title="Edit due date"
+                >
+                  {dueDateLabel}
+                </button>
+              )}
               <span className="text-xs text-muted-foreground">•</span>
               <TaskScoreBadge task={task} />
 

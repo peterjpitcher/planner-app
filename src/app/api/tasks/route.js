@@ -6,6 +6,13 @@ import { createTask, updateTask, deleteTask } from '@/services/taskService';
 import { maybeAutoSyncOffice365 } from '@/services/office365SyncService';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // GET /api/tasks - Fetch tasks with support for upcoming range
 export async function GET(request) {
   try {
@@ -78,30 +85,31 @@ export async function GET(request) {
     // Apply upcoming range filter
     if (range === 'upcoming') {
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayISO = today.toISOString();
-
-      const endDate = new Date();
+      const endDate = new Date(today);
       endDate.setDate(endDate.getDate() + days);
-      endDate.setHours(23, 59, 59, 999);
-      const endDateISO = endDate.toISOString();
+      const todayDateKey = toDateKey(today);
+      const endDateKey = toDateKey(endDate);
 
       // Build date filter conditions
       if (includeOverdue) {
         // Include all tasks with due_date <= endDate (includes overdue)
-        query = query.lte('due_date', endDateISO);
+        query = query.lte('due_date', endDateKey);
       } else {
         // Only include tasks from today onwards
-        query = query.gte('due_date', todayISO).lte('due_date', endDateISO);
+        query = query.gte('due_date', todayDateKey).lte('due_date', endDateKey);
       }
 
-      // Sort by due_date first for upcoming view
-      query = query.order('due_date', { ascending: true, nullsFirst: false })
-        .order('priority', { ascending: false }) // High -> Medium -> Low
-        .order('created_at', { ascending: false });
+      // Oldest due dates first, with stable oldest-created tie break.
+      query = query
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
     } else {
-      // Default sorting for non-upcoming views
-      query = query.order('created_at', { ascending: false });
+      // Keep date ordering consistent across all task views.
+      query = query
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
     }
 
     // Apply pagination
