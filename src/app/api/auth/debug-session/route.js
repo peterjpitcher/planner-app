@@ -4,14 +4,10 @@ import { getAuthContext, isAdminSession, isDevelopment } from '@/lib/authServer'
 export async function GET(request) {
   try {
     const { session } = await getAuthContext(request, { requireAccessToken: false });
-    if (!isDevelopment() && !isAdminSession(session)) {
+    if (!isDevelopment() || !isAdminSession(session)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // Log server-side for debugging
-    console.log('Debug endpoint - session:', session);
-    console.log('Debug endpoint - session.user:', session?.user);
-    
+
     return NextResponse.json({
       status: 'ok',
       sessionExists: !!session,

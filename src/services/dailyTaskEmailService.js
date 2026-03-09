@@ -1,11 +1,5 @@
 import { LONDON_TIME_ZONE, getLondonDateKey } from '@/lib/timezone';
 
-const PRIORITY_ORDER = {
-  High: 0,
-  Medium: 1,
-  Low: 2,
-};
-
 function normalizeDueDate(value) {
   if (!value) return null;
   if (typeof value === 'string') return value.slice(0, 10);
@@ -49,11 +43,13 @@ function taskSort(a, b) {
 
   if (dueA !== dueB) return dueA.localeCompare(dueB);
 
-  const priA = PRIORITY_ORDER[a?.priority] ?? 99;
-  const priB = PRIORITY_ORDER[b?.priority] ?? 99;
-  if (priA !== priB) return priA - priB;
+  // Use created_at as tie-breaker (consistent with main task sort)
+  const createdA = a.created_at ? Date.parse(a.created_at) : 0;
+  const createdB = b.created_at ? Date.parse(b.created_at) : 0;
+  if (createdA !== createdB) return createdA - createdB;
 
-  return String(a?.name || '').localeCompare(String(b?.name || ''));
+  // name as final tie-breaker
+  return (a.name || '').localeCompare(b.name || '');
 }
 
 function getProjectName(task) {
@@ -104,7 +100,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
 
   const { data, error } = await supabase
     .from('tasks')
-    .select('id, name, due_date, priority, project_id, projects(name)')
+    .select('id, name, due_date, priority, project_id, created_at, projects(name)')
     .eq('user_id', userId)
     .eq('is_completed', false)
     .not('due_date', 'is', null)

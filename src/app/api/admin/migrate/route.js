@@ -11,7 +11,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!isDevelopment() && !isAdminSession(session)) {
+    if (!isDevelopment() || !isAdminSession(session)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     
@@ -288,7 +288,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!isDevelopment() && !isAdminSession(session)) {
+    if (!isDevelopment() || !isAdminSession(session)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     

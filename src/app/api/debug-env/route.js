@@ -5,7 +5,7 @@ export async function GET(request) {
   const { session } = await getAuthContext(request, { requireAccessToken: false });
   
   // Only show in development or for admin users
-  if (!isDevelopment() && !isAdminSession(session)) {
+  if (!isDevelopment() || !isAdminSession(session)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   

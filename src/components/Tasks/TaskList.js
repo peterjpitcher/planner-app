@@ -1,6 +1,7 @@
 'use client';
 
 import TaskItem from './TaskItem';
+import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 
 export default function TaskList({ tasks, notesByTask, onTaskUpdated, onTaskNoteAdded, showCompletedTasks, onTaskDragStateChange }) {
   if (!tasks) {
@@ -11,7 +12,11 @@ export default function TaskList({ tasks, notesByTask, onTaskUpdated, onTaskNote
     );
   }
 
-  const filteredTasks = showCompletedTasks ? tasks : tasks.filter(task => !task.is_completed);
+  const sortedTasks = [...tasks].sort((a, b) => {
+    if (a?.is_completed !== b?.is_completed) return a?.is_completed ? 1 : -1;
+    return compareTasksByDueDateAsc(a, b);
+  });
+  const filteredTasks = showCompletedTasks ? sortedTasks : sortedTasks.filter(task => !task.is_completed);
 
   if (filteredTasks.length === 0) {
     if (tasks.length > 0 && !showCompletedTasks) { // All tasks are completed and hidden

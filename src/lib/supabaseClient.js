@@ -13,8 +13,6 @@ if (!supabaseAnonKey) {
   throw new Error("Missing env.NEXT_PUBLIC_SUPABASE_ANON_KEY");
 }
 
-console.log('Supabase Client initialized with URL:', supabaseUrl);
-
 const createSupabaseClient = () => createClient(supabaseUrl, supabaseAnonKey);
 
 // Use a global variable to store the client in development to prevent multiple instances during HMR

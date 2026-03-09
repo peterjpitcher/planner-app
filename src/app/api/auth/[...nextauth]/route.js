@@ -22,23 +22,15 @@ const createSupabaseClient = () => {
 
 // Determine the correct URL for callbacks
 const getUrl = () => {
-  // In production, ALWAYS use the production domain
   if (process.env.NODE_ENV === 'production') {
-    // Force production URL regardless of environment variable
-    return 'https://planner.orangejelly.co.uk';
+    return process.env.NEXTAUTH_URL_PRODUCTION || process.env.NEXTAUTH_URL || 'https://planner.orangejelly.co.uk';
   }
-  // In development, use localhost
   return process.env.NEXTAUTH_URL || 'http://localhost:3000';
 };
 
 const authUrl = getUrl();
 
 // Configuration logging disabled for cleaner output
-
-// Override NEXTAUTH_URL environment variable in production
-if (process.env.NODE_ENV === 'production') {
-  process.env.NEXTAUTH_URL = 'https://planner.orangejelly.co.uk';
-}
 
 // Ensure NEXTAUTH_URL matches the actual port in development
 if (process.env.NODE_ENV === 'development' && process.env.PORT) {

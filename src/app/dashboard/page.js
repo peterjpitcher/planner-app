@@ -166,13 +166,19 @@ export default function DashboardPage() {
       if (finalSortedProjects.length > 0) {
         const projectIds = finalSortedProjects.map(p => p.id);
         const batchedTasks = await apiClient.getTasksBatch(projectIds);
-        setTasksByProject(batchedTasks || {});
+        const sortedTasksByProject = Object.fromEntries(
+          Object.entries(batchedTasks || {}).map(([projectId, projectTasks]) => ([
+            projectId,
+            [...(projectTasks || [])].sort(sortTasksByDateAsc),
+          ]))
+        );
+        setTasksByProject(sortedTasksByProject);
         const batchedProjectNotes = await apiClient.getProjectNotesBatch(projectIds);
         setProjectNotes(batchedProjectNotes || {});
 
         const allTasks = [];
-        Object.values(batchedTasks || {}).forEach(tasks => allTasks.push(...tasks));
-        setAllUserTasks(allTasks.sort(sortTasksByDateAsc));
+        Object.values(sortedTasksByProject).forEach((tasks) => allTasks.push(...tasks));
+        setAllUserTasks([...allTasks].sort(sortTasksByDateAsc));
 
         if (allTasks.length > 0) {
           const taskIds = allTasks.map(t => t.id);

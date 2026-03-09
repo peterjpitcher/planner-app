@@ -1,5 +1,8 @@
-// Simple in-memory rate limiter for API routes
-// In production, consider using Redis or a similar solution
+// Simple in-memory rate limiter for API routes.
+// NOTE: In serverless environments (Vercel), each function instance has its own
+// in-memory state. This limiter is effective within a single instance but cannot
+// enforce limits across concurrent instances. For production-grade rate limiting,
+// replace the Map with a shared store (e.g. Upstash Redis).
 
 const rateLimit = new Map();
 
@@ -40,17 +43,13 @@ export function checkRateLimit(identifier, maxRequests = 10, windowMs = 60000) {
 }
 
 // Helper to get client identifier from request
-export function getClientIdentifier(request) {
+export function getClientIdentifier(request, userId = null) {
+  if (userId) return `user:${userId}`;
+
   // Try to get IP from various headers (considering proxies)
   const forwarded = request.headers.get('x-forwarded-for');
   const realIp = request.headers.get('x-real-ip');
   const cfConnectingIp = request.headers.get('cf-connecting-ip');
-  
-  // Use the first available IP
-  const ip = forwarded?.split(',')[0] || realIp || cfConnectingIp || 'unknown';
-  
-  // You could also include user ID if authenticated
-  // const userId = session?.user?.id || 'anonymous';
-  
-  return ip;
+
+  return forwarded?.split(',')[0]?.trim() || realIp || cfConnectingIp || 'unknown';
 }

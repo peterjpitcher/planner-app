@@ -42,13 +42,6 @@ export const DATE_FORMATS = {
   TIME: 'h:mm a'
 };
 
-// Task Status
-export const TASK_STATUS = {
-  PENDING: 'pending',
-  IN_PROGRESS: 'in_progress',
-  COMPLETED: 'completed'
-};
-
 // Note Types
 export const NOTE_TYPE = {
   PROJECT: 'project',

@@ -189,7 +189,7 @@ export default function PrioritisePage() {
       if (!normalizedSearch) return true;
       const haystack = `${task?.name || ''} ${task?.project_name || ''} ${job || ''}`.toLowerCase();
       return haystack.includes(normalizedSearch);
-    });
+    }).sort(compareTasksByDueDateAsc);
   }, [tasks, selectedJob, searchTerm]);
 
   const scoredTasks = useMemo(

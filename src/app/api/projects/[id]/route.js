@@ -155,23 +155,24 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    try {
-      await deleteOffice365Project({ userId: session.user.id, projectId: id });
-    } catch (err) {
-      console.warn('Office365 sync failed for deleted project:', err);
-    }
-    
-    // Delete project (cascade will handle related tasks and notes)
+    // Delete project from DB first (cascade will handle related tasks and notes)
     const { error } = await supabase
       .from('projects')
       .delete()
       .eq('id', id);
-    
+
     if (error) {
       const errorMessage = handleSupabaseError(error, 'delete');
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
-    
+
+    // Clean up Office365 after successful DB delete (best-effort; orphaned lists cleaned on next sync)
+    try {
+      await deleteOffice365Project({ userId: session.user.id, projectId: id });
+    } catch (err) {
+      console.warn('Office365 cleanup failed for deleted project (will resolve on next sync):', err);
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('DELETE /api/projects/[id] error:', error);

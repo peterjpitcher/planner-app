@@ -10,8 +10,7 @@ function isProduction() {
 
 function isVercelCronRequest(request) {
   const header = request.headers.get('x-vercel-cron');
-  const userAgent = request.headers.get('user-agent') || '';
-  return header === '1' || header === 'true' || userAgent.includes('vercel-cron');
+  return header === '1' || header === 'true';
 }
 
 function parseNumber(value, fallback) {

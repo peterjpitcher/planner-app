@@ -9,15 +9,16 @@ function isProduction() {
 
 export async function GET(request) {
   const vercelCronHeader = request.headers.get('x-vercel-cron');
-  const userAgent = request.headers.get('user-agent') || '';
-  const isVercelCron = userAgent.includes('vercel-cron');
   const cronSecret = process.env.CRON_SECRET;
   const providedSecret = request.headers.get('x-cron-secret');
+
+  // If CRON_SECRET is configured, always require it (takes precedence over Vercel header)
   if (cronSecret) {
     if (providedSecret !== cronSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-  } else if (isProduction() && !vercelCronHeader && !isVercelCron) {
+  } else if (isProduction() && !vercelCronHeader) {
+    // In production without a secret, only allow Vercel-initiated cron requests
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
