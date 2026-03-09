@@ -40,16 +40,17 @@ export async function GET(request) {
     const autoSyncMinutes = Number(process.env.OFFICE365_AUTO_SYNC_MINUTES || 2);
     const forceSync = searchParams.get('forceSync') === 'true';
 
+    // Fire Office365 auto-sync in the background — do NOT await it.
+    // Awaiting a full Graph API sync on every GET request causes the tasks page
+    // to hang indefinitely when the sync is slow or the token needs refreshing.
     if (Number.isFinite(autoSyncMinutes) && autoSyncMinutes > 0) {
-      try {
-        await maybeAutoSyncOffice365({
-          userId: session.user.id,
-          minIntervalMinutes: forceSync ? 0 : autoSyncMinutes,
-          reason: 'tasks-get',
-        });
-      } catch (err) {
+      maybeAutoSyncOffice365({
+        userId: session.user.id,
+        minIntervalMinutes: forceSync ? 0 : autoSyncMinutes,
+        reason: 'tasks-get',
+      }).catch((err) => {
         console.warn('Office365 auto-sync failed (tasks-get):', err);
-      }
+      });
     }
 
     const supabase = getSupabaseServiceRole();
