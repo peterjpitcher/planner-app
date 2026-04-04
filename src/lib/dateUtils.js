@@ -1,18 +1,20 @@
-import { 
-  addDays, 
-  nextFriday, 
-  nextMonday, 
-  endOfMonth, 
-  format, 
-  setDay, 
+import {
+  addDays,
+  nextFriday,
+  nextMonday,
+  endOfMonth,
+  format,
+  setDay,
   startOfWeek,
   differenceInCalendarDays,
   isPast,
   parseISO,
   isToday,
   isTomorrow,
-  isThisWeek
+  isThisWeek,
+  startOfDay
 } from 'date-fns';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { DUE_DATE_STYLES } from './styleUtils';
 
 export const quickPickOptions = [
@@ -125,4 +127,17 @@ export function formatDate(date, formatString = 'EEEE, MMM do') {
   if (!date) return '';
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
   return format(dateObj, formatString);
-} 
+}
+
+/**
+ * Get the start of today in the Europe/London timezone as a UTC Date.
+ * Use this instead of `startOfDay(new Date())` to avoid DST/offset issues
+ * when comparing dates stored as UTC midnight values.
+ * @returns {Date} UTC Date representing midnight at the start of today in London
+ */
+export function getStartOfTodayLondon() {
+  const now = new Date();
+  const londonNow = toZonedTime(now, 'Europe/London');
+  const londonMidnight = startOfDay(londonNow);
+  return fromZonedTime(londonMidnight, 'Europe/London');
+}
