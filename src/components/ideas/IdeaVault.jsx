@@ -106,14 +106,9 @@ export default function IdeaVault() {
       await apiClient.promoteIdea(id);
       // Remove from list — it's now a task
       setIdeas((prev) => prev.filter((idea) => idea.id !== id));
-      // Show toast if available (sonner / window.__toast)
+      // Show toast if available via window.__toast
       if (typeof window !== 'undefined' && window.__toast) {
         window.__toast.success('Idea promoted to task in Backlog');
-      } else {
-        // Fallback: use dynamic import for toast
-        import('sonner')
-          .then(({ toast }) => toast.success('Idea promoted to task in Backlog'))
-          .catch(() => {});
       }
     } catch (err) {
       setError(err.message || 'Failed to promote idea.');
