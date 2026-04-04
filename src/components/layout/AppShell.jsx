@@ -7,7 +7,7 @@ import { Header } from './Header';
 import { TabBar } from './TabBar';
 import QuickCapture from '@/components/shared/QuickCapture';
 
-const TAB_ROUTES = ['/today', '/plan', '/ideas'];
+const TAB_ROUTES = ['/today', '/plan', '/projects', '/ideas'];
 
 export default function AppShell({ children }) {
   const pathname = usePathname();

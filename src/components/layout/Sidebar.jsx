@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import {
     CalendarCheck,
     Columns3,
+    FolderOpen,
     Lightbulb,
     PieChart,
     Plug,
@@ -17,6 +18,7 @@ import { signOut } from 'next-auth/react';
 const navigation = [
     { name: 'Today', href: '/today', icon: CalendarCheck },
     { name: 'Plan', href: '/plan', icon: Columns3 },
+    { name: 'Projects', href: '/projects', icon: FolderOpen },
     { name: 'Ideas', href: '/ideas', icon: Lightbulb },
     { name: 'Reports', href: '/completed-report', icon: PieChart },
     { name: 'Integrations', href: '/settings/integrations', icon: Plug },

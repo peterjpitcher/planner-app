@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { CalendarIcon, ViewColumnsIcon, LightBulbIcon } from '@heroicons/react/24/outline';
+import { CalendarIcon, ViewColumnsIcon, FolderOpenIcon, LightBulbIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { name: 'Today', href: '/today', icon: CalendarIcon },
   { name: 'Plan', href: '/plan', icon: ViewColumnsIcon },
+  { name: 'Projects', href: '/projects', icon: FolderOpenIcon },
   { name: 'Ideas', href: '/ideas', icon: LightBulbIcon },
 ];
 
