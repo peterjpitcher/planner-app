@@ -53,7 +53,7 @@ export async function GET(request) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
     
-    return NextResponse.json(data || []);
+    return NextResponse.json({ data: data || [] });
   } catch (error) {
     console.error('GET /api/notes error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -139,7 +139,7 @@ export async function POST(request) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
     
-    return NextResponse.json(data);
+    return NextResponse.json({ data });
   } catch (error) {
     console.error('POST /api/notes error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
