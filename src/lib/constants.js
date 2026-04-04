@@ -9,19 +9,59 @@ export const PROJECT_STATUS = {
   CANCELLED: 'Cancelled'
 };
 
-// Priority Levels
-export const PRIORITY = {
-  HIGH: 'High',
-  MEDIUM: 'Medium',
-  LOW: 'Low'
+// Task States
+export const STATE = {
+  TODAY: 'today',
+  THIS_WEEK: 'this_week',
+  BACKLOG: 'backlog',
+  WAITING: 'waiting',
+  DONE: 'done'
 };
 
-// Priority Values for Sorting
-export const PRIORITY_VALUES = {
-  [PRIORITY.HIGH]: 3,
-  [PRIORITY.MEDIUM]: 2,
-  [PRIORITY.LOW]: 1,
-  DEFAULT: 0
+// Today Section Buckets
+export const TODAY_SECTION = {
+  MUST_DO: 'must_do',
+  GOOD_TO_DO: 'good_to_do',
+  QUICK_WINS: 'quick_wins'
+};
+
+export const TODAY_SECTION_ORDER = ['must_do', 'good_to_do', 'quick_wins'];
+export const IDEA_STATE_ORDER = ['captured', 'exploring', 'ready_later'];
+
+// Task Types
+export const TASK_TYPE = {
+  ADMIN: 'admin',
+  REPLY_CHASE: 'reply_chase',
+  FIX: 'fix',
+  PLANNING: 'planning',
+  CONTENT: 'content',
+  DEEP_WORK: 'deep_work',
+  PERSONAL: 'personal'
+};
+
+// Cross-cutting Chip Values
+export const CHIP_VALUES = {
+  HIGH_IMPACT: 'high_impact',
+  URGENT: 'urgent',
+  BLOCKS_OTHERS: 'blocks_others',
+  STRESS_RELIEF: 'stress_relief',
+  ONLY_I_CAN: 'only_i_can'
+};
+
+// Idea States
+export const IDEA_STATE = {
+  CAPTURED: 'captured',
+  EXPLORING: 'exploring',
+  READY_LATER: 'ready_later',
+  PROMOTED: 'promoted'
+};
+
+// Soft Caps per section
+export const SOFT_CAPS = {
+  MUST_DO: 5,
+  GOOD_TO_DO: 5,
+  QUICK_WINS: 8,
+  THIS_WEEK: 15
 };
 
 // UI Constants
