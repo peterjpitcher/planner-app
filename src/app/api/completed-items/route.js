@@ -24,9 +24,9 @@ export async function GET(request) {
     // Fetch completed tasks
     const { data: tasks, error: tasksError } = await supabase
       .from('tasks')
-      .select('*, project:project_id(id, name, stakeholders, job)')
+      .select('*, project:project_id(id, name, stakeholders, area)')
       .eq('user_id', session.user.id)
-      .eq('is_completed', true)
+      .eq('state', 'done')
       .gte('completed_at', startDate)
       .lte('completed_at', endDate)
       .order('completed_at', { ascending: true });
@@ -39,7 +39,7 @@ export async function GET(request) {
     // Fetch completed projects
     const { data: projects, error: projectsError } = await supabase
       .from('projects')
-      .select('*, stakeholders, job')
+      .select('*, stakeholders, area')
       .eq('user_id', session.user.id)
       .eq('status', 'Completed')
       .gte('updated_at', startDate)
