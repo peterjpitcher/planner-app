@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Menu } from '@headlessui/react';
+import { Menu, Portal } from '@headlessui/react';
 import { EllipsisVerticalIcon, Bars2Icon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -211,7 +211,7 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
             <EllipsisVerticalIcon className="h-4 w-4" />
           </Menu.Button>
 
-          <Menu.Items className="absolute right-0 z-10 mt-1 w-48 origin-top-right rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
+          <Menu.Items anchor="bottom end" className="z-50 w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
             {/* Complete / Un-complete */}
             <Menu.Item>
               {({ active }) => (
