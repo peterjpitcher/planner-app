@@ -16,6 +16,15 @@ function escapeHtml(text) {
     .replaceAll("'", '&#039;');
 }
 
+function getSectionLabel(sectionValue) {
+  const sectionMap = {
+    must_do: 'Must Do',
+    good_to_do: 'Good to Do',
+    quick_wins: 'Quick Win',
+  };
+  return sectionMap[sectionValue] || '';
+}
+
 function formatDateLabel(dateKey, timeZone) {
   const safeDate = new Date(`${dateKey}T12:00:00Z`);
   return new Intl.DateTimeFormat('en-GB', {
@@ -100,9 +109,9 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
 
   const { data, error } = await supabase
     .from('tasks')
-    .select('id, name, due_date, priority, project_id, created_at, projects(name)')
+    .select('id, name, due_date, state, today_section, project_id, created_at, projects(name)')
     .eq('user_id', userId)
-    .eq('is_completed', false)
+    .eq('state', 'today')
     .not('due_date', 'is', null)
     .lte('due_date', today);
 
@@ -148,20 +157,22 @@ export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboard
 
   const formatTaskLineText = (task, includeDueDate) => {
     const projectName = getProjectName(task);
-    const priority = task?.priority ? `[${task.priority}] ` : '';
+    const sectionLabel = task?.today_section ? getSectionLabel(task.today_section) : '';
+    const section = sectionLabel ? `[${sectionLabel}] ` : '';
     const name = task?.name || '(Untitled task)';
     const due = normalizeDueDate(task?.due_date);
     const dueLabel = includeDueDate && due ? ` — due ${formatDueDateLabel(due, timeZone)}` : '';
-    return `- ${priority}${name} (${projectName})${dueLabel}`;
+    return `- ${section}${name} (${projectName})${dueLabel}`;
   };
 
   const formatTaskLineHtml = (task, includeDueDate) => {
     const projectName = escapeHtml(getProjectName(task));
-    const priority = task?.priority ? `<strong>[${escapeHtml(task.priority)}]</strong> ` : '';
+    const sectionLabel = task?.today_section ? getSectionLabel(task.today_section) : '';
+    const section = sectionLabel ? `<strong>[${escapeHtml(sectionLabel)}]</strong> ` : '';
     const name = escapeHtml(task?.name || '(Untitled task)');
     const due = normalizeDueDate(task?.due_date);
     const dueLabel = includeDueDate && due ? ` <span style="color:#555;">— due ${escapeHtml(formatDueDateLabel(due, timeZone))}</span>` : '';
-    return `<li>${priority}${name} <span style="color:#555;">(${projectName})</span>${dueLabel}</li>`;
+    return `<li>${section}${name} <span style="color:#555;">(${projectName})</span>${dueLabel}</li>`;
   };
 
   const textSections = [];
