@@ -10,9 +10,18 @@ import {
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon, PauseCircleIcon } from '@heroicons/react/20/solid';
 import { format, parseISO } from 'date-fns';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { apiClient } from '@/lib/apiClient';
 import { getStatusClasses } from '@/lib/styleUtils';
 import { STATE, PROJECT_STATUS } from '@/lib/constants';
+import TaskCard from '@/components/shared/TaskCard';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,7 +97,7 @@ function ProjectCardSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// State badge
+// State badge (kept for potential future use in the view)
 // ---------------------------------------------------------------------------
 
 function StateBadge({ state }) {
@@ -108,19 +117,82 @@ function StateBadge({ state }) {
 }
 
 // ---------------------------------------------------------------------------
-// Task row inside expanded project card
+// Inline add-task input
 // ---------------------------------------------------------------------------
 
-function TaskRow({ task }) {
-  const dueDateLabel = formatDueDate(task.due_date);
+function AddTaskInput({ projectId, onTaskAdded }) {
+  const [name, setName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await apiClient.createTask({
+        name: trimmed,
+        projectId: projectId ?? undefined,
+        state: 'backlog',
+      });
+      setName('');
+      onTaskAdded?.();
+    } catch {
+      // silently fail — task creation errors are rare
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
-    <li className="flex items-center gap-2 py-1.5 text-sm text-gray-700">
-      <span className="flex-1 truncate">{task.name}</span>
-      <StateBadge state={task.state} />
-      {dueDateLabel && (
-        <span className="shrink-0 text-xs text-gray-400">{dueDateLabel}</span>
-      )}
-    </li>
+    <form onSubmit={handleSubmit} className="mt-2 flex gap-2">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Add a task…"
+        maxLength={255}
+        disabled={isSubmitting}
+        className="flex-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm placeholder-gray-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+      />
+      <button
+        type="submit"
+        disabled={!name.trim() || isSubmitting}
+        className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+      >
+        Add
+      </button>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Task list with DnD context (drag is no-op here — DndContext required by
+// TaskCard's useSortable hook)
+// ---------------------------------------------------------------------------
+
+function ProjectTaskList({ tasks, onComplete, onMove, onUpdate, onTaskClick, projectId, onTaskAdded }) {
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={() => {}}>
+      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-1.5">
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              isDragging={false}
+              onComplete={onComplete}
+              onMove={onMove}
+              onUpdate={onUpdate}
+              onClick={onTaskClick}
+            />
+          ))}
+        </div>
+      </SortableContext>
+      <AddTaskInput projectId={projectId} onTaskAdded={onTaskAdded} />
+    </DndContext>
   );
 }
 
@@ -128,7 +200,7 @@ function TaskRow({ task }) {
 // Project card
 // ---------------------------------------------------------------------------
 
-function ProjectCard({ project, tasks, onQuickAction }) {
+function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpdate, onTaskClick, onTaskAdded }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
 
@@ -296,13 +368,20 @@ function ProjectCard({ project, tasks, onQuickAction }) {
       {isExpanded && (
         <div className="border-t border-gray-100 px-4 pb-3 pt-2">
           {tasks.length === 0 ? (
-            <p className="py-2 text-xs text-gray-400 italic">No active tasks for this project.</p>
+            <>
+              <p className="py-2 text-xs text-gray-400 italic">No active tasks for this project.</p>
+              <AddTaskInput projectId={project.id} onTaskAdded={onTaskAdded} />
+            </>
           ) : (
-            <ul className="divide-y divide-gray-50">
-              {tasks.map((task) => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-            </ul>
+            <ProjectTaskList
+              tasks={tasks}
+              onComplete={onComplete}
+              onMove={onMove}
+              onUpdate={onUpdate}
+              onTaskClick={onTaskClick}
+              projectId={project.id}
+              onTaskAdded={onTaskAdded}
+            />
           )}
         </div>
       )}
@@ -383,6 +462,67 @@ export default function ProjectsView() {
     } catch (err) {
       setError(err.message || 'Failed to update project.');
     }
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Task interaction handlers
+  // -------------------------------------------------------------------------
+
+  const handleComplete = useCallback(async (taskId) => {
+    // Optimistic: remove from task lists immediately
+    setTasksByProject((prev) => {
+      const next = { ...prev };
+      for (const [pid, tasks] of Object.entries(next)) {
+        next[pid] = tasks.filter((t) => t.id !== taskId);
+      }
+      return next;
+    });
+    setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+    try {
+      await apiClient.updateTask(taskId, { state: 'done' });
+    } catch {
+      loadData(); // Revert by reloading on failure
+    }
+  }, [loadData]);
+
+  const handleMove = useCallback(async (taskId, targetState, targetSection) => {
+    const updates = { state: targetState };
+    if (targetSection) updates.today_section = targetSection;
+    if (targetState === STATE.TODAY && !targetSection) {
+      updates.today_section = 'good_to_do';
+    }
+
+    try {
+      await apiClient.updateTask(taskId, updates);
+      loadData(); // Reload to reflect new state grouping
+    } catch {
+      loadData();
+    }
+  }, [loadData]);
+
+  const handleUpdate = useCallback(async (taskId, updates) => {
+    try {
+      await apiClient.updateTask(taskId, updates);
+      // Update local state for immediate feedback
+      const updateInList = (tasks) =>
+        tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
+      setTasksByProject((prev) => {
+        const next = { ...prev };
+        for (const [pid, tasks] of Object.entries(next)) {
+          next[pid] = updateInList(tasks);
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => updateInList(prev));
+    } catch {
+      loadData();
+    }
+  }, [loadData]);
+
+  const handleTaskClick = useCallback((taskId) => {
+    // Detail drawer integration — placeholder for now
+    void taskId;
   }, []);
 
   // -------------------------------------------------------------------------
@@ -476,13 +616,18 @@ export default function ProjectsView() {
               project={project}
               tasks={tasksByProject[project.id] ?? []}
               onQuickAction={handleQuickAction}
+              onComplete={handleComplete}
+              onMove={handleMove}
+              onUpdate={handleUpdate}
+              onTaskClick={handleTaskClick}
+              onTaskAdded={loadData}
             />
           ))}
         </div>
       )}
 
-      {/* Unassigned tasks section */}
-      {!loading && unassignedTasks.length > 0 && (
+      {/* Unassigned tasks section — always shown so tasks can be added without a project */}
+      {!loading && (
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
           <button
             type="button"
@@ -505,11 +650,22 @@ export default function ProjectsView() {
           </button>
           {isUnassignedExpanded && (
             <div className="border-t border-gray-100 px-4 pb-3 pt-2">
-              <ul className="divide-y divide-gray-50">
-                {unassignedTasks.map((task) => (
-                  <TaskRow key={task.id} task={task} />
-                ))}
-              </ul>
+              {unassignedTasks.length === 0 ? (
+                <>
+                  <p className="py-2 text-xs text-gray-400 italic">No unassigned tasks.</p>
+                  <AddTaskInput projectId={null} onTaskAdded={loadData} />
+                </>
+              ) : (
+                <ProjectTaskList
+                  tasks={unassignedTasks}
+                  onComplete={handleComplete}
+                  onMove={handleMove}
+                  onUpdate={handleUpdate}
+                  onTaskClick={handleTaskClick}
+                  projectId={null}
+                  onTaskAdded={loadData}
+                />
+              )}
             </div>
           )}
         </div>
