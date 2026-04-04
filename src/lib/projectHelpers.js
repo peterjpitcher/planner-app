@@ -1,48 +1,4 @@
-import React from 'react';
 import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay } from 'date-fns';
-import { 
-  FireIcon as SolidFireIcon, 
-  ExclamationTriangleIcon as SolidExclamationTriangleIcon, 
-  CheckCircleIcon as SolidCheckIcon, 
-  ClockIcon as SolidClockIcon 
-} from '@heroicons/react/20/solid';
-
-export const getPriorityClasses = (priority) => {
-  switch (priority) {
-    case 'High':
-      return {
-        icon: <SolidFireIcon className="h-5 w-5 text-red-400" />,
-        textClass: 'text-red-500 font-semibold',
-        cardOuterClass: 'border-red-200/70 shadow-[0_24px_48px_-28px_rgba(239,68,68,0.65)]',
-        glowClass: 'bg-red-400/45',
-        ribbonClass: 'from-red-500/70 via-red-400/30 to-transparent',
-      };
-    case 'Medium':
-      return {
-        icon: <SolidExclamationTriangleIcon className="h-5 w-5 text-amber-400" />,
-        textClass: 'text-amber-500 font-semibold',
-        cardOuterClass: 'border-amber-200/60 shadow-[0_24px_48px_-28px_rgba(245,158,11,0.4)]',
-        glowClass: 'bg-amber-400/35',
-        ribbonClass: 'from-amber-400/60 via-amber-300/25 to-transparent',
-      };
-    case 'Low':
-      return {
-        icon: <SolidCheckIcon className="h-5 w-5 text-emerald-400" />,
-        textClass: 'text-emerald-500 font-medium',
-        cardOuterClass: 'border-emerald-200/60 shadow-[0_24px_48px_-28px_rgba(16,185,129,0.35)]',
-        glowClass: 'bg-emerald-300/40',
-        ribbonClass: 'from-emerald-400/60 via-emerald-300/20 to-transparent',
-      };
-    default:
-      return {
-        icon: <SolidClockIcon className="h-5 w-5 text-slate-400" />,
-        textClass: 'text-slate-500',
-        cardOuterClass: 'border-slate-200/70 shadow-[0_24px_48px_-30px_rgba(100,116,139,0.35)]',
-        glowClass: 'bg-slate-400/35',
-        ribbonClass: 'from-slate-400/40 via-slate-300/25 to-transparent',
-      };
-  }
-};
 
 export const getDueDateStatus = (dateString, isEditing = false, currentDueDateValue = '') => {
   const dateToConsider = isEditing && currentDueDateValue ? currentDueDateValue : dateString;
