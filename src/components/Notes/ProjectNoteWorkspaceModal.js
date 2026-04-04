@@ -5,8 +5,6 @@ import { Dialog, Transition } from '@headlessui/react';
 import { VALIDATION } from '@/lib/constants';
 import { apiClient } from '@/lib/apiClient';
 import NoteList from './NoteList';
-import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
-import { TaskScoreBadge } from '@/components/Tasks/TaskScoreBadge';
 import { format } from 'date-fns';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -19,7 +17,6 @@ export default function ProjectNoteWorkspaceModal({
   project,
   notes,
   onNoteSaved,
-  onTaskSubmit,
   onTaskComplete,
   isLoadingNotes = false,
   noteCreationDisabled = false,
@@ -96,17 +93,6 @@ export default function ProjectNoteWorkspaceModal({
       handleNoteSave(false);
     }
   }, [handleNoteSave]);
-
-  const handleTaskSubmit = useCallback(async (taskPayload) => {
-    if (!onTaskSubmit) return;
-    try {
-      await onTaskSubmit(taskPayload);
-      setTaskError('');
-    } catch (error) {
-      setTaskError(error?.message || 'Could not add that task.');
-      throw error;
-    }
-  }, [onTaskSubmit]);
 
   const handleTaskComplete = useCallback(async (taskId) => {
     if (!onTaskComplete || !taskId || completingTaskId) return;
@@ -292,7 +278,6 @@ export default function ProjectNoteWorkspaceModal({
                                   <p className="text-sm font-semibold text-slate-800">{task.name}</p>
                                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                     <span>{formatDueDateLabel(task.due_date)}</span>
-                                    <TaskScoreBadge task={task} />
                                   </div>
                                   {completingTaskId === task.id && (
                                     <p className="mt-1 text-[0.65rem] font-medium uppercase tracking-wide text-emerald-600">
@@ -306,23 +291,6 @@ export default function ProjectNoteWorkspaceModal({
                         ) : (
                           <p className="text-xs italic text-slate-400">All caught up—no open tasks.</p>
                         )}
-                      </div>
-                    </div>
-                    <div className="border-t border-slate-200 px-5 py-6 md:px-6">
-                      <h3 className="text-sm font-semibold text-slate-700">
-                        Quick Todo Capture
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Add follow-up tasks without leaving the meeting flow.
-                      </p>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                        <QuickTaskForm
-                          onSubmit={handleTaskSubmit}
-                          namePlaceholder="Add a follow-up task…"
-                          buttonLabel="Add Task"
-                          resetDateOnSubmit
-                          priorityType="select"
-                        />
                       </div>
                     </div>
                   </div>

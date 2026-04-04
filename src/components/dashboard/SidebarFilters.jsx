@@ -110,9 +110,9 @@ function FilterCard({ id, isActive, count, onToggle }) {
 }
 
 export default function SidebarFilters({
-  uniqueJobs,
-  selectedJob,
-  onJobChange,
+  uniqueAreas,
+  selectedArea,
+  onAreaChange,
   uniqueStakeholders,
   selectedStakeholder,
   onStakeholderChange,
@@ -127,21 +127,21 @@ export default function SidebarFilters({
   return (
     <Card className="border-none shadow-none bg-transparent">
       <div className="space-y-5">
-        {/* Jobs Section */}
+        {/* Areas Section */}
         <div>
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Jobs</p>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Areas</p>
           <div className="relative">
             <select
-              id="job-filter"
-              value={selectedJob}
-              onChange={onJobChange}
+              id="area-filter"
+              value={selectedArea}
+              onChange={onAreaChange}
               className="w-full appearance-none rounded-md border border-input bg-card px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
             >
-              <option value="All Jobs">All jobs</option>
-              <option value="No Job">No job</option>
-              {(uniqueJobs || []).map((job) => (
-                <option key={job} value={job}>
-                  {job}
+              <option value="All Areas">All areas</option>
+              <option value="No Area">No area</option>
+              {(uniqueAreas || []).map((area) => (
+                <option key={area} value={area}>
+                  {area}
                 </option>
               ))}
             </select>
@@ -199,9 +199,9 @@ export default function SidebarFilters({
           </div>
         </div>
 
-        {/* Priority Filters */}
+        {/* Filters */}
         <div>
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Priority Filters</p>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Filters</p>
           <div className="space-y-1.5">
             {filterOrder.map((filterKey) => {
               const ids = projectAnalysis[filterKey] || [];

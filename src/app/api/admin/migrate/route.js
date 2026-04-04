@@ -33,13 +33,13 @@ export async function POST(request) {
       {
         name: 'Create tasks indexes',
         sql: `
-          CREATE INDEX IF NOT EXISTS idx_tasks_user_completed_due_priority 
-          ON public.tasks (user_id, is_completed, due_date, priority DESC);
-          
-          CREATE INDEX IF NOT EXISTS idx_tasks_project_id 
+          CREATE INDEX IF NOT EXISTS idx_tasks_user_due_date
+          ON public.tasks (user_id, due_date);
+
+          CREATE INDEX IF NOT EXISTS idx_tasks_project_id
           ON public.tasks (project_id);
-          
-          CREATE INDEX IF NOT EXISTS idx_tasks_user_project 
+
+          CREATE INDEX IF NOT EXISTS idx_tasks_user_project
           ON public.tasks (user_id, project_id);
         `
       },

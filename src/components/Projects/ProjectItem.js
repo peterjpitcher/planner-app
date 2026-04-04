@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, forwardRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
-import { EyeIcon, EyeSlashIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import TaskList from '@/components/Tasks/TaskList';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
@@ -12,10 +12,7 @@ import ProjectNoteWorkspaceModal from '@/components/Notes/ProjectNoteWorkspaceMo
 import ProjectCompletionModal from './ProjectCompletionModal';
 import ProjectHeader from './ProjectHeader';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
-import { useSession } from 'next-auth/react';
-import QuickTaskForm from '@/components/Tasks/QuickTaskForm';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
-import { getPriorityClasses } from '@/lib/projectHelpers';
 import { cn } from '@/lib/utils'; // Standard utility
 import { compareTasksByDueDateAsc } from '@/lib/taskSort';
 
@@ -53,9 +50,6 @@ const ProjectItem = forwardRef((
   },
   ref
 ) => {
-  const { data: session } = useSession();
-  const currentUser = session?.user;
-
   // Task State
   const [tasks, setTasks] = useState(propTasks || []);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
@@ -132,8 +126,6 @@ const ProjectItem = forwardRef((
   }, [isNoteWorkspaceOpen, project, fetchProjectNotes]);
 
   if (!project) return null;
-
-  const priorityStyles = getPriorityClasses(project.priority);
 
   const openTasks = tasks.filter(task => !task.is_completed);
   const openTasksCount = openTasks.length;
@@ -249,8 +241,7 @@ const ProjectItem = forwardRef((
     let projectDataText = `Project Summary:\n`;
     projectDataText += `Name: ${project.name}\n`;
     projectDataText += `Status: ${project.status}\n`;
-    projectDataText += `Priority: ${project.priority}\n`;
-    projectDataText += `Job: ${project.job || 'N/A'}\n`;
+    projectDataText += `Area: ${project.area || 'N/A'}\n`;
     projectDataText += `Due Date: ${project.due_date ? format(parseISO(project.due_date), 'EEEE, MMM do, yyyy') : 'N/A'}\n`;
     projectDataText += `Description: ${project.description || 'N/A'}\n`;
     projectDataText += `Stakeholders: ${project.stakeholders && project.stakeholders.length > 0 ? project.stakeholders.join(', ') : 'N/A'}\n`;
@@ -370,22 +361,6 @@ const ProjectItem = forwardRef((
       } catch (e) { }
       setStatusToConfirm(null);
     }
-  };
-
-  const submitQuickTask = async ({ name, dueDate, priority }) => {
-    if (!project || !project.id) throw new Error('Project is not available.');
-    if (!currentUser?.id) throw new Error('Sign in to add tasks.');
-    const trimmedName = name.trim();
-    if (!trimmedName) throw new Error('Add a short name to create the task.');
-    const createdTask = await apiClient.createTask({
-      name: trimmedName,
-      description: null,
-      due_date: dueDate || getTodayISODate(),
-      priority: priority || 'Medium',
-      project_id: project.id,
-      user_id: currentUser.id,
-    });
-    handleTaskAdded(createdTask);
   };
 
   const canAcceptTaskDrag = (event) => {
@@ -545,10 +520,7 @@ const ProjectItem = forwardRef((
   // Standard Project
   return (
     <div {...containerProps}>
-      {/* Sidebar color strip for priority/branding */}
-      <div className={cn("absolute left-0 top-0 bottom-0 w-1", priorityStyles.bgClass)} />
-
-      <div className="pl-1">
+      <div>
         <ProjectHeader
           project={project}
           isExpanded={showTasks}
@@ -570,22 +542,6 @@ const ProjectItem = forwardRef((
 
       {showTasks && (
         <div className="px-6 pb-6 pt-2">
-
-          <QuickTaskForm
-            onSubmit={submitQuickTask}
-            namePlaceholder="Add a task..."
-            buttonLabel="Add"
-            buttonIcon={PlusCircleIcon}
-            priorityType="select"
-            priorityOptions={[
-              { value: 'Low', label: 'Low' },
-              { value: 'Medium', label: 'Medium' },
-              { value: 'High', label: 'High' },
-            ]}
-            defaultPriority="Medium"
-            defaultDueDate={getTodayISODate()}
-            className="mb-6 bg-muted/20 hover:bg-muted/30 border-none transition-colors"
-          />
 
           {/* Tasks List Header */}
           <div className="flex justify-between items-center mb-3">
@@ -676,7 +632,6 @@ const ProjectItem = forwardRef((
         project={project}
         notes={projectNotes}
         onNoteSaved={(note) => handleProjectNoteAdded(note)}
-        onTaskSubmit={submitQuickTask}
         onTaskComplete={completeOpenTaskFromWorkspace}
         isLoadingNotes={isLoadingProjectNotes}
         noteCreationDisabled={isProjectCompletedOrCancelled}

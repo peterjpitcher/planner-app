@@ -9,7 +9,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
-import { getPriorityClasses, getDueDateStatus, getStatusClasses } from '@/lib/projectHelpers';
+import { getDueDateStatus, getStatusClasses } from '@/lib/projectHelpers';
 
 export default function ProjectHeader({
   project,
@@ -40,11 +40,8 @@ export default function ProjectHeader({
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [currentDueDate, setCurrentDueDate] = useState(project.due_date ? toDateInputValue(project.due_date) : '');
 
-  const [isEditingPriority, setIsEditingPriority] = useState(false);
-  const [currentPriority, setCurrentPriority] = useState(project.priority);
-
-  const [isEditingJob, setIsEditingJob] = useState(false);
-  const [currentJob, setCurrentJob] = useState(project.job || '');
+  const [isEditingArea, setIsEditingArea] = useState(false);
+  const [currentArea, setCurrentArea] = useState(project.area || '');
 
   const [isEditingStakeholders, setIsEditingStakeholders] = useState(false);
   const [currentStakeholdersText, setCurrentStakeholdersText] = useState(project.stakeholders ? project.stakeholders.join(', ') : '');
@@ -56,13 +53,11 @@ export default function ProjectHeader({
     setCurrentName(project.name);
     setCurrentDescription(project.description || '');
     setCurrentDueDate(project.due_date ? toDateInputValue(project.due_date) : '');
-    setCurrentPriority(project.priority);
-    setCurrentJob(project.job || '');
+    setCurrentArea(project.area || '');
     setCurrentStakeholdersText(project.stakeholders ? project.stakeholders.join(', ') : '');
   }, [project]);
 
   const isProjectCompletedOrCancelled = project.status === 'Completed' || project.status === 'Cancelled';
-  const priorityStyles = getPriorityClasses(currentPriority);
   const dueDateDisplayStatus = getDueDateStatus(project.due_date, isEditingDueDate, currentDueDate);
   const projectStatusClasses = getStatusClasses(project.status);
   const projectStatusOptions = ['Open', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
@@ -91,7 +86,7 @@ export default function ProjectHeader({
         updateObj[field] = value.split(',').map(s => s.trim()).filter(Boolean);
       }
 
-      if (field === 'job') {
+      if (field === 'area') {
         updateObj[field] = value ? value.trim() : null;
       }
 
@@ -100,7 +95,7 @@ export default function ProjectHeader({
     } catch (error) {
       console.error(`Failed to update ${field}`, error);
       // Revert local state
-      setter(field === 'job' ? (project[field] || '') : project[field]);
+      setter(field === 'area' ? (project[field] || '') : project[field]);
     } finally {
       setIsEditing(false);
     }
@@ -110,8 +105,7 @@ export default function ProjectHeader({
   const handleNameSubmit = () => handleUpdate('name', currentName.trim(), setCurrentName, setIsEditingName);
   const handleDescriptionSubmit = () => handleUpdate('description', currentDescription.trim(), setCurrentDescription, setIsEditingDescription);
   const handleDueDateSubmit = (val) => handleUpdate('due_date', val !== undefined ? val : currentDueDate, setCurrentDueDate, setIsEditingDueDate);
-  const handlePrioritySubmit = () => handleUpdate('priority', currentPriority, setCurrentPriority, setIsEditingPriority);
-  const handleJobSubmit = () => handleUpdate('job', currentJob, setCurrentJob, setIsEditingJob);
+  const handleAreaSubmit = () => handleUpdate('area', currentArea, setCurrentArea, setIsEditingArea);
   const handleStakeholdersSubmit = () => handleUpdate('stakeholders', currentStakeholdersText, setCurrentStakeholdersText, setIsEditingStakeholders);
   const handleStatusChange = (status) => {
     setShowStatusDropdown(false);
@@ -127,7 +121,7 @@ export default function ProjectHeader({
         onClick={() => { onToggleExpand(); setTargetProjectId(null); }}
         role="button" tabIndex={0}
         onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && !isEditingName && !isEditingDueDate && !isEditingPriority && !isEditingJob && !isEditingStakeholders) {
+          if ((e.key === 'Enter' || e.key === ' ') && !isEditingName && !isEditingDueDate && !isEditingArea && !isEditingStakeholders) {
             onToggleExpand();
           }
         }}
@@ -257,43 +251,6 @@ export default function ProjectHeader({
 
             <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block"></div>
 
-            {/* Priority */}
-            <div className="relative">
-              {isEditingPriority && !isProjectCompletedOrCancelled ? (
-                <select
-                  value={currentPriority}
-                  onChange={(e) => setCurrentPriority(e.target.value)}
-                  onBlur={handlePrioritySubmit}
-                  onClick={(e) => e.stopPropagation()}
-                  className="rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm focus:ring-1 focus:ring-ring"
-                  autoFocus
-                >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                </select>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isProjectCompletedOrCancelled) {
-                      setIsEditingPriority(true);
-                      setTargetProjectId(null);
-                    }
-                  }}
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-muted ${isProjectCompletedOrCancelled ? 'cursor-not-allowed opacity-70' : ''}`}
-                  title="Change priority"
-                  disabled={isProjectCompletedOrCancelled}
-                >
-                  <span className={`${priorityStyles.textClass} flex items-center gap-1.5`}>
-                    {priorityStyles.icon}
-                    <span className="font-medium">{currentPriority}</span>
-                  </span>
-                </button>
-              )}
-            </div>
-
             {/* Date */}
             <div className="relative">
               {isEditingDueDate && !isProjectCompletedOrCancelled ? (
@@ -329,19 +286,19 @@ export default function ProjectHeader({
               )}
             </div>
 
-            {/* Job */}
+            {/* Area */}
             <div className="relative max-w-[150px]">
-              {isEditingJob && !isProjectCompletedOrCancelled ? (
+              {isEditingArea && !isProjectCompletedOrCancelled ? (
                 <input
                   type="text"
-                  value={currentJob}
-                  onChange={(e) => setCurrentJob(e.target.value)}
-                  onBlur={handleJobSubmit}
-                  onKeyDown={(e) => e.key === 'Enter' && handleJobSubmit() || e.key === 'Escape' && (setCurrentJob(project.job || ''), setIsEditingJob(false))}
+                  value={currentArea}
+                  onChange={(e) => setCurrentArea(e.target.value)}
+                  onBlur={handleAreaSubmit}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAreaSubmit() || e.key === 'Escape' && (setCurrentArea(project.area || ''), setIsEditingArea(false))}
                   className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                   autoFocus
                   onClick={(e) => e.stopPropagation()}
-                  placeholder="Job name"
+                  placeholder="Area name"
                 />
               ) : (
                 <button
@@ -349,16 +306,16 @@ export default function ProjectHeader({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!isProjectCompletedOrCancelled) {
-                      setIsEditingJob(true);
+                      setIsEditingArea(true);
                       setTargetProjectId(null);
                     }
                   }}
                   className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isProjectCompletedOrCancelled ? 'cursor-not-allowed opacity-70' : ''}`}
-                  title="Edit job"
+                  title="Edit area"
                   disabled={isProjectCompletedOrCancelled}
                 >
                   <BriefcaseIcon className="h-3.5 w-3.5 opacity-70" />
-                  <span className="truncate font-medium">{currentJob || 'No Job'}</span>
+                  <span className="truncate font-medium">{currentArea || 'No Area'}</span>
                 </button>
               )}
             </div>
