@@ -6,14 +6,9 @@ import { createTask, updateTask, deleteTask } from '@/services/taskService';
 import { maybeAutoSyncOffice365 } from '@/services/office365SyncService';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
-function toDateKey(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, created_at, updated_at';
 
-// GET /api/tasks - Fetch tasks with support for upcoming range
+// GET /api/tasks - Fetch tasks with support for state-based filtering
 export async function GET(request) {
   try {
     // Rate limiting
@@ -57,11 +52,9 @@ export async function GET(request) {
 
     // Parse query parameters
     const projectId = searchParams.get('projectId');
-    const includeCompleted = searchParams.get('includeCompleted') === 'true';
-    const range = searchParams.get('range'); // 'upcoming' or undefined
-    const parsedDays = parseInt(searchParams.get('days') || '14', 10);
-    const days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(parsedDays, 365) : 14;
-    const includeOverdue = searchParams.get('includeOverdue') !== 'false'; // default true
+    const state = searchParams.get('state');
+    const statesParam = searchParams.get('states');
+    const completedSince = searchParams.get('completedSince');
     const parsedLimit = parseInt(searchParams.get('limit') || '100', 10);
     const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 100;
     const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
@@ -70,7 +63,7 @@ export async function GET(request) {
     // Build base query
     let query = supabase
       .from('tasks')
-      .select('*, projects(id, name, job)', { count: 'exact' })
+      .select(`${TASK_SELECT_FIELDS}, projects(id, name, area)`, { count: 'exact' })
       .eq('user_id', session.user.id);
 
     // Apply project filter if specified
@@ -78,40 +71,25 @@ export async function GET(request) {
       query = query.eq('project_id', projectId);
     }
 
-    // Apply completion filter
-    if (!includeCompleted) {
-      query = query.eq('is_completed', false);
-    }
-
-    // Apply upcoming range filter
-    if (range === 'upcoming') {
-      const today = new Date();
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + days);
-      const todayDateKey = toDateKey(today);
-      const endDateKey = toDateKey(endDate);
-
-      // Build date filter conditions
-      if (includeOverdue) {
-        // Include all tasks with due_date <= endDate (includes overdue)
-        query = query.lte('due_date', endDateKey);
-      } else {
-        // Only include tasks from today onwards
-        query = query.gte('due_date', todayDateKey).lte('due_date', endDateKey);
+    // Apply state-based filtering
+    if (state) {
+      query = query.eq('state', state);
+    } else if (statesParam) {
+      const statesArray = statesParam.split(',').map(s => s.trim()).filter(Boolean);
+      if (statesArray.length > 0) {
+        query = query.in('state', statesArray);
       }
-
-      // Oldest due dates first, with stable oldest-created tie break.
-      query = query
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true });
-    } else {
-      // Keep date ordering consistent across all task views.
-      query = query
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true });
     }
+
+    // Apply completedSince filter (for "completed today" queries)
+    if (completedSince) {
+      query = query.gte('completed_at', completedSince);
+    }
+
+    // Default ordering: sort_order ASC, created_at ASC
+    query = query
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
 
     // Apply pagination
     query = query.range(offset, offset + limit - 1);
@@ -123,11 +101,11 @@ export async function GET(request) {
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
-    // Transform data to include project_name at top level for easier consumption
+    // Transform data to include project_name and project_area at top level for easier consumption
     const transformedData = (data || []).map(task => ({
       ...task,
       project_name: task.projects?.name || null,
-      project_job: task.projects?.job || null
+      project_area: task.projects?.area || null
     }));
 
     // Build response with pagination info if count is available
