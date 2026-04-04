@@ -8,7 +8,8 @@ import {
   ChevronRightIcon,
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
-import { CheckCircleIcon, PauseCircleIcon } from '@heroicons/react/20/solid';
+import { CheckCircleIcon, PauseCircleIcon, PlayCircleIcon, ArrowPathIcon, TrashIcon } from '@heroicons/react/20/solid';
+import { PlusIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import {
   DndContext,
@@ -22,6 +23,8 @@ import { apiClient } from '@/lib/apiClient';
 import { getStatusClasses } from '@/lib/styleUtils';
 import { STATE, PROJECT_STATUS } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
+import ProjectDetailDrawer from './ProjectDetailDrawer';
+import CreateProjectModal from './CreateProjectModal';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -200,7 +203,7 @@ function ProjectTaskList({ tasks, onComplete, onMove, onUpdate, onTaskClick, pro
 // Project card
 // ---------------------------------------------------------------------------
 
-function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpdate, onTaskClick, onTaskAdded }) {
+function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpdate, onTaskClick, onTaskAdded, onOpenDrawer }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
 
@@ -251,9 +254,14 @@ function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpda
         {/* Main content */}
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">
+            <button
+              type="button"
+              onClick={() => onOpenDrawer(project)}
+              className="text-sm font-semibold text-gray-900 truncate hover:text-indigo-700 focus:outline-none focus-visible:underline text-left"
+              aria-label={`Open details for ${project.name}`}
+            >
               {project.name}
-            </h3>
+            </button>
             <span
               className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusClasses}`}
             >
@@ -300,8 +308,27 @@ function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpda
 
           <Menu.Items
             anchor="bottom end"
-            className="absolute right-0 z-10 mt-1 w-48 origin-top-right rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none"
+            className="absolute right-0 z-10 mt-1 w-52 origin-top-right rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none"
           >
+            {/* Set In Progress — show when not already In Progress */}
+            {project.status !== PROJECT_STATUS.IN_PROGRESS && (
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    type="button"
+                    onClick={() => handleAction('in_progress')}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
+                      active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                    }`}
+                  >
+                    <PlayCircleIcon className="h-4 w-4 text-purple-500" />
+                    Set In Progress
+                  </button>
+                )}
+              </Menu.Item>
+            )}
+
+            {/* Complete — show when not already Completed */}
             {project.status !== PROJECT_STATUS.COMPLETED && (
               <Menu.Item>
                 {({ active }) => (
@@ -318,6 +345,8 @@ function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpda
                 )}
               </Menu.Item>
             )}
+
+            {/* Put on hold — show when not already On Hold */}
             {project.status !== PROJECT_STATUS.ON_HOLD && (
               <Menu.Item>
                 {({ active }) => (
@@ -334,6 +363,28 @@ function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpda
                 )}
               </Menu.Item>
             )}
+
+            {/* Re-open — show when Completed, Cancelled, or On Hold */}
+            {(project.status === PROJECT_STATUS.COMPLETED ||
+              project.status === PROJECT_STATUS.CANCELLED ||
+              project.status === PROJECT_STATUS.ON_HOLD) && (
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    type="button"
+                    onClick={() => handleAction('reopen')}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
+                      active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                    }`}
+                  >
+                    <ArrowPathIcon className="h-4 w-4 text-blue-500" />
+                    Re-open
+                  </button>
+                )}
+              </Menu.Item>
+            )}
+
+            {/* View in Plan board */}
             <Menu.Item>
               {({ active }) => (
                 <a
@@ -358,6 +409,25 @@ function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpda
                   </svg>
                   View in Plan board
                 </a>
+              )}
+            </Menu.Item>
+
+            {/* Divider */}
+            <div className="my-1 border-t border-gray-100" />
+
+            {/* Delete — red, at bottom */}
+            <Menu.Item>
+              {({ active }) => (
+                <button
+                  type="button"
+                  onClick={() => handleAction('delete')}
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 ${
+                    active ? 'bg-red-50' : ''
+                  }`}
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  Delete project
+                </button>
               )}
             </Menu.Item>
           </Menu.Items>
@@ -401,6 +471,8 @@ export default function ProjectsView() {
   const [error, setError] = useState(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   // -------------------------------------------------------------------------
   // Data fetching
@@ -447,9 +519,16 @@ export default function ProjectsView() {
   // -------------------------------------------------------------------------
 
   const handleQuickAction = useCallback(async (projectId, actionType) => {
+    if (actionType === 'delete') {
+      await handleProjectDelete(projectId);
+      return;
+    }
+
     const statusMap = {
       complete: PROJECT_STATUS.COMPLETED,
       hold: PROJECT_STATUS.ON_HOLD,
+      in_progress: PROJECT_STATUS.IN_PROGRESS,
+      reopen: PROJECT_STATUS.OPEN,
     };
     const newStatus = statusMap[actionType];
     if (!newStatus) return;
@@ -459,10 +538,44 @@ export default function ProjectsView() {
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, status: newStatus } : p))
       );
+      // Keep drawer in sync if this project is open in the drawer
+      setSelectedProject((prev) =>
+        prev && prev.id === projectId ? { ...prev, status: newStatus } : prev
+      );
     } catch (err) {
       setError(err.message || 'Failed to update project.');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // -------------------------------------------------------------------------
+  // Project CRUD handlers (for drawer and create modal)
+  // -------------------------------------------------------------------------
+
+  const handleProjectUpdate = useCallback(async (projectId, updates) => {
+    try {
+      await apiClient.updateProject(projectId, updates);
+      setProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, ...updates } : p))
+      );
+      // Keep selected project in sync
+      setSelectedProject((prev) =>
+        prev && prev.id === projectId ? { ...prev, ...updates } : prev
+      );
+    } catch {
+      loadData();
+    }
+  }, [loadData]);
+
+  const handleProjectDelete = useCallback(async (projectId) => {
+    try {
+      await apiClient.deleteProject(projectId);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setSelectedProject((prev) => (prev && prev.id === projectId ? null : prev));
+    } catch {
+      loadData();
+    }
+  }, [loadData]);
 
   // -------------------------------------------------------------------------
   // Task interaction handlers
@@ -568,17 +681,27 @@ export default function ProjectsView() {
             Review project health and close out completed work.
           </p>
         </div>
-        {completedCount > 0 && (
+        <div className="flex items-center gap-2">
+          {completedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowCompleted((v) => !v)}
+              className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              {showCompleted
+                ? 'Hide completed'
+                : `Show completed (${completedCount})`}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setShowCompleted((v) => !v)}
-            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 shadow-sm"
           >
-            {showCompleted
-              ? 'Hide completed'
-              : `Show completed (${completedCount})`}
+            <PlusIcon className="h-4 w-4" />
+            New project
           </button>
-        )}
+        </div>
       </div>
 
       {/* Error banner */}
@@ -621,10 +744,28 @@ export default function ProjectsView() {
               onUpdate={handleUpdate}
               onTaskClick={handleTaskClick}
               onTaskAdded={loadData}
+              onOpenDrawer={setSelectedProject}
             />
           ))}
         </div>
       )}
+
+      {/* Project detail drawer */}
+      <ProjectDetailDrawer
+        project={selectedProject}
+        isOpen={!!selectedProject}
+        onClose={() => setSelectedProject(null)}
+        onUpdate={handleProjectUpdate}
+        onDelete={handleProjectDelete}
+        tasks={selectedProject ? (tasksByProject[selectedProject.id] ?? []) : []}
+      />
+
+      {/* Create project modal */}
+      <CreateProjectModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onCreated={() => { setIsCreateOpen(false); loadData(); }}
+      />
 
       {/* Unassigned tasks section — always shown so tasks can be added without a project */}
       {!loading && (
