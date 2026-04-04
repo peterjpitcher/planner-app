@@ -5,7 +5,7 @@ import { Menu, Portal } from '@headlessui/react';
 import { EllipsisVerticalIcon, Bars2Icon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { differenceInCalendarDays, parseISO } from 'date-fns';
+import { differenceInCalendarDays, parseISO, addDays, format } from 'date-fns';
 import { getDueDateStatus } from '@/lib/dateUtils';
 import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER } from '@/lib/constants';
 import ChipBadge from './ChipBadge';
@@ -44,6 +44,13 @@ function getStaleness(task) {
 // ---------------------------------------------------------------------------
 // Move destinations for the quick action menu
 // ---------------------------------------------------------------------------
+
+const PUSH_OPTIONS = [
+  { label: 'Tomorrow', days: 1 },
+  { label: '+3 days', days: 3 },
+  { label: 'Next week', days: 7 },
+  { label: '+2 weeks', days: 14 },
+];
 
 const MOVE_TARGETS = [
   {
@@ -178,9 +185,13 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
           </div>
         )}
 
-        {/* Area label */}
-        {task.area && (
-          <p className="mt-0.5 text-xs text-gray-400">{task.area}</p>
+        {/* Project + area labels */}
+        {(task.project_name || task.area) && (
+          <p className="mt-0.5 text-xs text-gray-400">
+            {task.project_name && <span>{task.project_name}</span>}
+            {task.project_name && task.area && <span> · </span>}
+            {task.area && <span>{task.area}</span>}
+          </p>
         )}
 
         {/* Stale badge (shown below area to avoid clutter) */}
@@ -249,6 +260,47 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
                 )}
               </Menu.Item>
             ))}
+
+            {/* Divider */}
+            <div className="my-1 border-t border-gray-100" role="separator" />
+
+            {/* Push due date */}
+            <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Push due date
+            </p>
+            {PUSH_OPTIONS.map((opt) => (
+              <Menu.Item key={opt.label}>
+                {({ active }) => (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newDate = addDays(new Date(), opt.days);
+                      onUpdate?.(task.id, { due_date: format(newDate, 'yyyy-MM-dd') });
+                    }}
+                    className={`w-full px-3 py-1.5 text-left text-sm ${
+                      active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )}
+              </Menu.Item>
+            ))}
+            {task.due_date && (
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    type="button"
+                    onClick={() => onUpdate?.(task.id, { due_date: null })}
+                    className={`w-full px-3 py-1.5 text-left text-sm ${
+                      active ? 'bg-gray-50 text-red-600' : 'text-red-500'
+                    }`}
+                  >
+                    Clear due date
+                  </button>
+                )}
+              </Menu.Item>
+            )}
           </Menu.Items>
         </Menu>
       </div>

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { TabBar } from './TabBar';
+import QuickCapture from '@/components/shared/QuickCapture';
 
 const TAB_ROUTES = ['/today', '/plan', '/ideas'];
 
@@ -73,6 +74,7 @@ export default function AppShell({ children }) {
           {children}
         </div>
       </main>
+      {isTabRoute && <QuickCapture />}
     </div>
   );
 }
