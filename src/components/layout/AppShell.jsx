@@ -4,10 +4,16 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { TabBar } from './TabBar';
+
+const TAB_ROUTES = ['/today', '/plan', '/ideas'];
 
 export default function AppShell({ children }) {
   const pathname = usePathname();
   const isAuthRoute = pathname === '/login';
+  const isTabRoute = TAB_ROUTES.some(
+    (route) => pathname === route || pathname?.startsWith(route + '/')
+  );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -62,7 +68,8 @@ export default function AppShell({ children }) {
         onToggleMobileMenu={() => setIsMobileMenuOpen((open) => !open)}
       />
       <main className="min-h-screen pl-0 pt-14 lg:pl-[240px]">
-        <div className="w-full p-4 sm:p-6">
+        {isTabRoute && <TabBar />}
+        <div className={isTabRoute ? 'w-full p-4 sm:p-6 pb-20 lg:pb-6' : 'w-full p-4 sm:p-6'}>
           {children}
         </div>
       </main>
