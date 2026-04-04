@@ -1,121 +1,102 @@
-# CLAUDE.md
+# CLAUDE.md — Planner 2.0
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides project-specific guidance. See the workspace-level `CLAUDE.md` one directory up for shared conventions.
+
+## Quick Profile
+
+```yaml
+framework: Next.js 15.3 App Router
+auth: NextAuth.js v5 (NOT Supabase Auth)
+database: Supabase (direct queries, no server actions)
+test_runner: None configured — tech debt
+styling: Tailwind CSS
+ui_library: Headless UI + Heroicons
+hosting: Vercel
+size: ~50 files, project/task management app
+```
 
 ## Commands
 
-### Development
-- `npm run dev` - Start the Next.js development server on port 3000
-- `npm run build` - Build the application for production
-- `npm run start` - Start the production server
-- `npm run lint` - Run ESLint to check code quality
+```bash
+npm run dev    # Start Next.js dev server on port 3000
+npm run build  # Build for production
+npm run start  # Start production server
+npm run lint   # ESLint
+npm install    # Install dependencies
+```
 
-### Installation
-- `npm install` - Install all dependencies
+## Architecture
 
-## Architecture Overview
+**Framework**: Next.js 15.3.2 with App Router — project and task management system.
 
-This is a Next.js 15.3.2 application using the App Router pattern for a project and task management system.
-
-### Technology Stack
-- **Framework**: Next.js 15.3.2 with App Router
-- **Frontend**: React 19.0.0
-- **Authentication**: NextAuth.js v5 with Supabase credential provider
-- **Database**: Supabase (PostgreSQL backend)
-- **Styling**: Tailwind CSS v4 with PostCSS
-- **UI Components**: Headless UI, Heroicons
-- **Date Handling**: date-fns for formatting and calculations
+**Additional stack**: NextAuth.js v5 (Supabase credential provider), Headless UI, Heroicons, date-fns.
 
 ### Project Structure
-- `/src/app/` - Next.js App Router pages and API routes
-  - `/api/auth/[...nextauth]/` - NextAuth.js authentication endpoint
-  - `/dashboard/` - Main dashboard (responsive layout)
-  - `/completed-report/` - Reporting interface for completed items
-  - `/login/` - Authentication page
-- `/src/components/` - React components organized by feature
-  - `/Auth/` - Authentication components
-  - `/Projects/` - Project management components
-  - `/Tasks/` - Task management components
-  - `/Notes/` - Note-taking components
-- `/src/contexts/` - React contexts (TargetProjectContext for project selection)
-- `/src/lib/` - Utilities and clients
-  - `supabaseClient.js` - Supabase database client
-  - `dateUtils.js` - Date formatting utilities
+- `/src/app/api/auth/[...nextauth]/` — NextAuth.js authentication endpoint
+- `/src/app/dashboard/` — Main dashboard (responsive layout)
+- `/src/app/completed-report/` — Reporting interface for completed items
+- `/src/app/login/` — Authentication page
+- `/src/components/` — React components organised by feature (Auth, Projects, Tasks, Notes)
+- `/src/contexts/` — React contexts (TargetProjectContext for project selection)
+- `/src/lib/supabaseClient.js` — Supabase database client
+- `/src/lib/dateUtils.js` — Date formatting utilities
 
-### Key Features
-1. **Project Management**: 
-   - Priority levels (High/Medium/Low) with color-coded borders
-   - Due dates with visual indicators (red for today/overdue, amber for tomorrow)
-   - Stakeholder tracking and filtering
-   - Project completion modal with task verification
-   - Status options: Open, In Progress, On Hold, Completed, Cancelled
+## Authentication
 
-2. **Task Management**: 
-   - Tasks linked to projects with in-line editing
-   - Collapsible task sections per project
-   - Global expand/collapse functionality
-   - Task completion tracking with timestamps
-
-3. **Notes System**: 
-   - Timestamped notes for both projects and tasks
-   - Expandable/collapsible UI
-   - Creation timestamps displayed
-
-4. **Responsive Dashboard**:
-   - Unified `/dashboard` experience adapts from mobile to desktop
-   - Sidebar filters and task panel stack naturally on small screens
-   - Touch-friendly controls maintained across viewports
-
-5. **Reporting & Filtering**:
-   - Completed items report with date range filtering
-   - CSV export functionality
-   - Dashboard filters: stakeholder, overdue, projects without tasks
-   - Monthly completion reports
-
-### Authentication Flow
-- Uses NextAuth.js with Supabase as the credential provider
+Uses NextAuth.js (not Supabase Auth) with Supabase credential provider:
 - JWT session strategy with 30-day expiration
 - Session refresh every 24 hours
 - Secure session cookies in production (HttpOnly, SameSite=lax)
-- Login page at `/login`
-- Protected routes require active session
+- Login page at `/login`, protected routes require active session
 
-### Database Schema (Supabase)
-Key tables include:
-- `users` - User accounts with email/password authentication
-- `projects` - Project records with:
-  - `name`, `dueDate`, `priority` (High/Medium/Low)
-  - `status`, `stakeholders[]`, `user_id`
-  - `created_at`, `updated_at`, `completed_at`
-- `tasks` - Tasks with:
-  - `name`, `projectId` (foreign key), `dueDate`
-  - `status`, `priority`, `user_id`
-  - `created_at`, `updated_at`, `completed_at`
-- `notes` - Notes with:
-  - `content`, `projectId`, `taskId`
-  - `user_id`, `created_at`
+## Database Schema
 
-### Environment Requirements
-Required environment variables:
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
-- `NEXTAUTH_SECRET` - Secret for JWT encryption
-- `NEXTAUTH_URL` - Application URL for callbacks
+Key tables:
+- `users` — email/password authentication
+- `projects` — `name`, `dueDate`, `priority` (High/Medium/Low), `status`, `stakeholders[]`, `user_id`, timestamps + `completed_at`
+- `tasks` — `name`, `projectId` (FK), `dueDate`, `status`, `priority`, `user_id`, timestamps + `completed_at`
+- `notes` — `content`, `projectId`, `taskId`, `user_id`, `created_at`
 
-### UI/UX Patterns
-- **In-line Editing**: Direct field editing without modals
-- **Priority Styling**: 
-  - High: Red border and text
-  - Medium: Yellow/amber border and text
-  - Low: Green border and text
-- **Due Date Indicators**: Visual cues for urgency
-- **Optimistic Updates**: Immediate UI updates before database confirmation
-- **Modal Backdrops**: Blurred background for better focus
+## Key Features
 
-### Development Patterns
+- Priority levels with colour-coded borders (High=red, Medium=amber, Low=green)
+- Due date visual indicators (red for today/overdue, amber for tomorrow)
+- Stakeholder tracking and filtering
+- In-line editing without modals, collapsible task sections
+- CSV export, monthly completion reports, date range filtering
+
+## Environment Variables
+
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+NEXTAUTH_SECRET
+NEXTAUTH_URL
+```
+
+## Key Files
+
+| Path | Purpose |
+|------|---------|
+| `src/lib/supabaseClient.js` | Supabase database client (single instance) |
+| `src/lib/dateUtils.js` | Date formatting utilities |
+| `src/contexts/TargetProjectContext.tsx` | Global project selection state |
+| `src/components/Projects/ProjectBoard.tsx` | Main project management view |
+| `src/components/Tasks/TaskSection.tsx` | Task list with inline editing |
+| `src/app/api/auth/[...nextauth]/route.ts` | NextAuth.js config + Supabase provider |
+| `src/app/dashboard/page.tsx` | Main dashboard entry point |
+
+## Development Patterns
+
 - Heavy use of client components (`'use client'`)
-- Direct Supabase queries in components
-- Try-catch error handling with user feedback
-- Real-time state updates after database operations
-- Component-level state management
-- Responsive design with mobile-first approach
+- Direct Supabase queries in components (not server actions)
+- Optimistic UI updates, component-level state management
+- Mobile-first responsive design
+
+## Gotchas
+
+- **Auth is NextAuth.js, NOT Supabase Auth** — don't follow workspace Supabase Auth patterns here
+- **No test suite** — zero test coverage, noted as tech debt. Add Vitest if writing tests
+- **JavaScript files** — `supabaseClient.js` and `dateUtils.js` are plain JS, not TypeScript
+- **No server actions** — all data fetching is client-side via direct Supabase calls
+- **No RLS enforcement** — uses anon key with direct queries; security relies on NextAuth session checks

@@ -7,8 +7,7 @@ import {
   BriefcaseIcon, CalendarDaysIcon, ChatBubbleLeftEllipsisIcon, PencilSquareIcon,
   ClipboardDocumentIcon, TrashIcon
 } from '@heroicons/react/24/outline';
-import { useTargetProject } from '@/contexts/TargetProjectContext';
-import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
+import { toDateInputValue } from '@/lib/dateUtils';
 import { getDueDateStatus, getStatusClasses } from '@/lib/projectHelpers';
 
 export default function ProjectHeader({
@@ -28,8 +27,6 @@ export default function ProjectHeader({
   isDragOverTarget,
   dropStatusText
 }) {
-  const { setTargetProjectId } = useTargetProject();
-
   // Local editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(project.name);
@@ -118,7 +115,7 @@ export default function ProjectHeader({
     <div className="relative z-30">
       <div
         className="relative cursor-pointer px-4 pt-4 pb-2 transition-colors hover:bg-muted/30"
-        onClick={() => { onToggleExpand(); setTargetProjectId(null); }}
+        onClick={() => { onToggleExpand(); }}
         role="button" tabIndex={0}
         onKeyDown={(e) => {
           if ((e.key === 'Enter' || e.key === ' ') && !isEditingName && !isEditingDueDate && !isEditingArea && !isEditingStakeholders) {
@@ -159,7 +156,6 @@ export default function ProjectHeader({
                   onClick={(e) => {
                     if (!isProjectCompletedOrCancelled) {
                       e.stopPropagation();
-                      setTargetProjectId(null);
                       setIsEditingName(true);
                     }
                   }}
@@ -273,7 +269,6 @@ export default function ProjectHeader({
                     e.stopPropagation();
                     if (!isProjectCompletedOrCancelled) {
                       setIsEditingDueDate(true);
-                      setTargetProjectId(null);
                     }
                   }}
                   className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-muted ${dueDateDisplayStatus.classes}`}
@@ -307,7 +302,6 @@ export default function ProjectHeader({
                     e.stopPropagation();
                     if (!isProjectCompletedOrCancelled) {
                       setIsEditingArea(true);
-                      setTargetProjectId(null);
                     }
                   }}
                   className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isProjectCompletedOrCancelled ? 'cursor-not-allowed opacity-70' : ''}`}
@@ -341,7 +335,6 @@ export default function ProjectHeader({
                     e.stopPropagation();
                     if (!isProjectCompletedOrCancelled) {
                       setIsEditingStakeholders(true);
-                      setTargetProjectId(null);
                     }
                   }}
                   className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isProjectCompletedOrCancelled ? 'cursor-not-allowed opacity-70' : ''}`}

@@ -5,13 +5,12 @@ import { format, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
-import TaskList from '@/components/Tasks/TaskList';
+import TaskItem from '@/components/Tasks/TaskItem';
 import NoteList from '@/components/Notes/NoteList';
 import AddNoteForm from '@/components/Notes/AddNoteForm';
 import ProjectNoteWorkspaceModal from '@/components/Notes/ProjectNoteWorkspaceModal';
 import ProjectCompletionModal from './ProjectCompletionModal';
 import ProjectHeader from './ProjectHeader';
-import { useTargetProject } from '@/contexts/TargetProjectContext';
 import { DRAG_DATA_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils'; // Standard utility
 import { compareTasksByDueDateAsc } from '@/lib/taskSort';
@@ -68,7 +67,6 @@ const ProjectItem = forwardRef((
   const [statusToConfirm, setStatusToConfirm] = useState(null);
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
 
-  const { setTargetProjectId } = useTargetProject();
   const isUnassignedProject = project?.name?.toLowerCase() === 'unassigned';
   const isProjectCompletedOrCancelled = project?.status === 'Completed' || project?.status === 'Cancelled';
   const isSourceProject = dragSourceProjectId !== null && project?.id === dragSourceProjectId;
@@ -168,12 +166,6 @@ const ProjectItem = forwardRef((
       onProjectDataChange(project.id, updatedTask, 'task_updated');
     }
 
-    if (updatedTask.is_completed && project) {
-      const allTasksForProjectNowComplete = updatedTasks.every(t => t.is_completed);
-      if (allTasksForProjectNowComplete && updatedTasks.length > 0 && !isProjectCompletedOrCancelled) {
-        setTargetProjectId(project.id);
-      }
-    }
   };
 
   const completeOpenTaskFromWorkspace = async (taskId) => {
@@ -498,15 +490,19 @@ const ProjectItem = forwardRef((
           {isLoadingTasks ? (
             <div className="text-center py-4 text-xs text-muted-foreground animate-pulse">Loading tasks...</div>
           ) : tasks.length > 0 ? (
-            <TaskList
-              tasks={tasks}
-              notesByTask={notesByTask}
-              isLoading={isLoadingTasks}
-              onTaskUpdated={handleTaskUpdated}
-              showCompletedTasks={showCompletedTasks}
-              isProjectCompleted={false}
-              onTaskDragStateChange={onTaskDragStateChange}
-            />
+            <div>
+              {tasks
+                .filter(task => showCompletedTasks || !task.is_completed)
+                .map(task => (
+                  <TaskItem
+                    key={task.id}
+                    task={task}
+                    notes={notesByTask?.[task.id]}
+                    onTaskUpdated={handleTaskUpdated}
+                    onTaskDragStateChange={onTaskDragStateChange}
+                  />
+                ))}
+            </div>
           ) : (
             <div className="text-center py-8 rounded-lg border-2 border-dashed border-border/50 bg-background/50">
               <p className="text-sm text-muted-foreground">No unassigned tasks.</p>
@@ -568,16 +564,20 @@ const ProjectItem = forwardRef((
           {isLoadingTasks ? (
             <div className="text-center py-4 text-xs text-muted-foreground animate-pulse">Loading tasks...</div>
           ) : tasks.length > 0 ? (
-            <TaskList
-              tasks={tasks}
-              notesByTask={notesByTask}
-              isLoading={isLoadingTasks}
-              onTaskUpdated={handleTaskUpdated}
-              onTaskNoteAdded={onTaskNoteAdded}
-              showCompletedTasks={showCompletedTasks}
-              isProjectCompleted={isProjectCompletedOrCancelled}
-              onTaskDragStateChange={onTaskDragStateChange}
-            />
+            <div>
+              {tasks
+                .filter(task => showCompletedTasks || !task.is_completed)
+                .map(task => (
+                  <TaskItem
+                    key={task.id}
+                    task={task}
+                    notes={notesByTask?.[task.id]}
+                    onTaskUpdated={handleTaskUpdated}
+                    onTaskNoteAdded={onTaskNoteAdded}
+                    onTaskDragStateChange={onTaskDragStateChange}
+                  />
+                ))}
+            </div>
           ) : (
             <div className="text-center py-6 rounded-lg border border-dashed border-border bg-muted/10">
               <p className="text-xs text-muted-foreground">No tasks yet.</p>
