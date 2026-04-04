@@ -9,11 +9,10 @@ import { deleteOffice365Project, syncOffice365Project } from '@/services/office3
 const PROJECT_UPDATE_FIELDS = [
   'name',
   'description',
-  'priority',
   'status',
   'due_date',
   'stakeholders',
-  'job',
+  'area',
 ];
 
 function pickProjectUpdates(payload) {
@@ -183,7 +182,7 @@ export async function PATCH(request) {
     // Verify ownership
     const { data: existingProject, error: fetchError } = await supabase
       .from('projects')
-      .select('id, user_id, name, description, priority, status, due_date, stakeholders, job')
+      .select('id, user_id, name, description, status, due_date, stakeholders, area')
       .eq('id', id)
       .single();
     
