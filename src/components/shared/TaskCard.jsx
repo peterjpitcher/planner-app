@@ -286,6 +286,28 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
                 )}
               </Menu.Item>
             ))}
+            <Menu.Item>
+              {({ active }) => (
+                <label
+                  className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm ${
+                    active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                  }`}
+                >
+                  Pick a date
+                  <input
+                    type="date"
+                    className="ml-auto h-6 w-[130px] cursor-pointer rounded border border-gray-200 bg-transparent px-1 text-xs text-gray-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    defaultValue={task.due_date || ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        onUpdate?.(task.id, { due_date: e.target.value });
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </label>
+              )}
+            </Menu.Item>
             {task.due_date && (
               <Menu.Item>
                 {({ active }) => (
