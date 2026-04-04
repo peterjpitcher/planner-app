@@ -9,6 +9,8 @@ import {
   useSensors,
   DragOverlay,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { format, addDays } from 'date-fns';
@@ -30,6 +32,20 @@ const COLUMNS = [
 ];
 
 const BACKLOG_PAGE_SIZE = 20;
+
+// Custom collision detection: try sortable items first (closestCenter for
+// reorder within columns), then fall back to droppable containers
+// (pointerWithin for cross-column moves). This ensures that columns with no
+// visible sortable items (e.g. collapsed Today sub-sections) can still receive
+// drops.
+function boardCollisionDetection(args) {
+  // First try pointer-within — detects which droppable container the pointer is over
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+
+  // Fall back to rect intersection for keyboard / touch
+  return rectIntersection(args);
+}
 
 // Quick pick options for the waiting follow-up popover
 const QUICK_PICKS = [
@@ -559,7 +575,7 @@ export default function PlanBoard() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={boardCollisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
