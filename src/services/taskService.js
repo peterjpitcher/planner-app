@@ -1,4 +1,4 @@
-import { PRIORITY, PROJECT_STATUS } from '@/lib/constants';
+import { STATE, TODAY_SECTION, PROJECT_STATUS } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { deleteOffice365Task, syncOffice365Task } from '@/services/office365SyncService';
@@ -7,13 +7,15 @@ const TASK_UPDATE_FIELDS = new Set([
   'name',
   'description',
   'due_date',
-  'priority',
-  'is_completed',
-  'completed_at',
+  'state',
+  'today_section',
+  'area',
+  'task_type',
+  'chips',
+  'waiting_reason',
+  'follow_up_date',
   'project_id',
-  'job',
-  'importance_score',
-  'urgency_score',
+  'completed_at',
   'updated_at',
 ]);
 
@@ -27,142 +29,67 @@ function filterTaskUpdates(updates = {}) {
   return filtered;
 }
 
-function normalizeJob(value) {
+function normalizeArea(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  return trimmed ? trimmed : null;  // Preserve case, just trim
 }
 
-function normalizeScore(value) {
-  if (value === null) return null;
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric)) {
-    return { error: 'Must be a number between 0 and 100' };
-  }
-  const rounded = Math.round(numeric);
-  if (rounded < 0 || rounded > 100) {
-    return { error: 'Must be between 0 and 100' };
-  }
-  return { value: rounded };
-}
-
-function isUnassignedProject(project) {
-  const name = typeof project?.name === 'string' ? project.name.trim().toLowerCase() : '';
-  return name === 'unassigned';
-}
-
-async function ensureUnassignedProject(supabase, userId) {
-  const { data: existingProject, error: fetchError } = await supabase
-    .from('projects')
-    .select('id')
-    .eq('user_id', userId)
-    .ilike('name', 'unassigned')
-    .maybeSingle();
-
-  if (fetchError) {
-    throw fetchError;
-  }
-
-  if (existingProject?.id) {
-    return existingProject.id;
-  }
-
-  const { data: createdProject, error: createError } = await supabase
-    .from('projects')
-    .insert({
-      user_id: userId,
-      name: 'Unassigned',
-      status: PROJECT_STATUS.OPEN,
-      priority: PRIORITY.MEDIUM,
-      stakeholders: [],
-      description: 'Auto-generated project for unassigned tasks.'
-    })
-    .select('id')
-    .single();
-
-  if (createError) {
-    if (createError.code === '23505') {
-      const { data: raceProject, error: raceFetchError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('user_id', userId)
-        .ilike('name', 'unassigned')
-        .maybeSingle();
-
-      if (raceFetchError || !raceProject?.id) {
-        throw createError;
-      }
-
-      return raceProject.id;
-    }
-
-    throw createError;
-  }
-
-  return createdProject.id;
-}
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, created_at, updated_at';
 
 export async function createTask({ supabase, userId, payload, options = {} }) {
   const taskData = {
     ...payload,
     user_id: userId,
-    is_completed: payload?.is_completed ?? false
+    state: payload?.state || STATE.BACKLOG,
   };
 
-  if (!taskData.project_id) {
-    taskData.project_id = await ensureUnassignedProject(supabase, userId);
+  // When state = 'today' and no today_section provided, default to 'good_to_do'
+  if (taskData.state === STATE.TODAY && !taskData.today_section) {
+    taskData.today_section = TODAY_SECTION.GOOD_TO_DO;
   }
 
-  taskData.job = normalizeJob(taskData.job);
+  // Normalize area
+  taskData.area = normalizeArea(taskData.area);
 
-  const scoreErrors = {};
-  if (Object.prototype.hasOwnProperty.call(taskData, 'importance_score')) {
-    const normalized = normalizeScore(taskData.importance_score);
-    if (normalized?.error) {
-      scoreErrors.importance_score = normalized.error;
-    } else {
-      taskData.importance_score = normalized.value;
-    }
+  // Set entered_state_at for initial state
+  if (!taskData.entered_state_at) {
+    taskData.entered_state_at = new Date().toISOString();
   }
-  if (Object.prototype.hasOwnProperty.call(taskData, 'urgency_score')) {
-    const normalized = normalizeScore(taskData.urgency_score);
-    if (normalized?.error) {
-      scoreErrors.urgency_score = normalized.error;
-    } else {
-      taskData.urgency_score = normalized.value;
-    }
-  }
-  if (Object.keys(scoreErrors).length > 0) {
-    return { error: { status: 400, details: scoreErrors } };
-  }
+
+  // Remove old fields that should not be sent
+  delete taskData.priority;
+  delete taskData.importance_score;
+  delete taskData.urgency_score;
+  delete taskData.is_completed;
+  delete taskData.job;
 
   const validation = validateTask(taskData);
   if (!validation.isValid) {
     return { error: { status: 400, details: validation.errors } };
   }
 
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('user_id, name')
-    .eq('id', taskData.project_id)
-    .single();
+  // Validate project ownership if project_id is provided
+  if (taskData.project_id) {
+    const { data: project, error: projectError } = await supabase
+      .from('projects')
+      .select('user_id, name')
+      .eq('id', taskData.project_id)
+      .single();
 
-  if (projectError || !project) {
-    return { error: { status: 404, message: 'Project not found' } };
-  }
+    if (projectError || !project) {
+      return { error: { status: 404, message: 'Project not found' } };
+    }
 
-  if (project.user_id !== userId) {
-    return { error: { status: 403, message: 'Forbidden' } };
-  }
-
-  if (!isUnassignedProject(project)) {
-    taskData.job = null;
+    if (project.user_id !== userId) {
+      return { error: { status: 403, message: 'Forbidden' } };
+    }
   }
 
   const { data, error } = await supabase
     .from('tasks')
     .insert(taskData)
-    .select('*, projects(id, name)')
+    .select(`${TASK_SELECT_FIELDS}, projects(id, name)`)
     .single();
 
   if (error) {
@@ -170,10 +97,13 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
     return { error: { status: 500, message: errorMessage } };
   }
 
-  await supabase
-    .from('projects')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', taskData.project_id);
+  // Touch the project's updated_at
+  if (taskData.project_id) {
+    await supabase
+      .from('projects')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', taskData.project_id);
+  }
 
   if (!options?.skipOffice365Sync && data?.id) {
     try {
@@ -189,7 +119,7 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
 export async function updateTask({ supabase, userId, taskId, updates, options = {} }) {
   const { data: existingTask, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, user_id, project_id, job, name, description, due_date, priority, importance_score, urgency_score, is_completed, completed_at')
+    .select(TASK_SELECT_FIELDS)
     .eq('id', taskId)
     .eq('user_id', userId)
     .single();
@@ -206,95 +136,74 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   if (Object.keys(updatesToApply).length === 0) {
     return { error: { status: 400, message: 'No valid fields to update' } };
   }
-  const userProvidedJob = Object.prototype.hasOwnProperty.call(updatesToApply, 'job');
+
+  const userProvidedArea = Object.prototype.hasOwnProperty.call(updatesToApply, 'area');
   const userProvidedProjectId = Object.prototype.hasOwnProperty.call(updatesToApply, 'project_id');
 
-  const scoreUpdateErrors = {};
-  if (Object.prototype.hasOwnProperty.call(updatesToApply, 'importance_score')) {
-    const normalized = normalizeScore(updatesToApply.importance_score);
-    if (normalized?.error) {
-      scoreUpdateErrors.importance_score = normalized.error;
-    } else {
-      updatesToApply.importance_score = normalized.value;
-    }
-  }
-  if (Object.prototype.hasOwnProperty.call(updatesToApply, 'urgency_score')) {
-    const normalized = normalizeScore(updatesToApply.urgency_score);
-    if (normalized?.error) {
-      scoreUpdateErrors.urgency_score = normalized.error;
-    } else {
-      updatesToApply.urgency_score = normalized.value;
-    }
-  }
-  if (Object.keys(scoreUpdateErrors).length > 0) {
-    return { error: { status: 400, message: 'Validation failed', details: scoreUpdateErrors } };
-  }
-
-  if (userProvidedJob) {
-    updatesToApply.job = normalizeJob(updatesToApply.job);
+  // Normalize area if provided
+  if (userProvidedArea) {
+    updatesToApply.area = normalizeArea(updatesToApply.area);
   }
 
   const touches = new Set();
   if (existingTask.project_id) touches.add(existingTask.project_id);
 
-  if (userProvidedJob || userProvidedProjectId) {
-    const projectId = userProvidedProjectId ? updatesToApply.project_id : existingTask.project_id;
-    if (!projectId) {
-      return { error: { status: 400, message: 'Task must be associated with a project' } };
-    }
+  // Validate project ownership when project_id changes
+  if (userProvidedProjectId) {
+    const projectId = updatesToApply.project_id;
+    if (projectId) {
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('id, user_id, name')
+        .eq('id', projectId)
+        .single();
 
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('id, user_id, name, job')
-      .eq('id', projectId)
-      .single();
+      if (projectError || !project) {
+        return { error: { status: 404, message: 'Project not found' } };
+      }
 
-    if (projectError || !project) {
-      return { error: { status: 404, message: 'Project not found' } };
-    }
+      if (project.user_id !== userId) {
+        return { error: { status: 403, message: 'Forbidden' } };
+      }
 
-    if (project.user_id !== userId) {
-      return { error: { status: 403, message: 'Forbidden' } };
-    }
-
-    const movingProjects = userProvidedProjectId && updatesToApply.project_id !== existingTask.project_id;
-    if (movingProjects) {
-      touches.add(project.id);
-    }
-
-    const targetIsUnassigned = isUnassignedProject(project);
-
-    if (!targetIsUnassigned) {
-      // Tasks in a "real" project always inherit the project's job; don't store on the task.
-      updatesToApply.job = null;
-    } else {
-      // Moving into Unassigned: if no job was provided, preserve context.
-      if (movingProjects && !userProvidedJob) {
-        const { data: previousProject, error: previousProjectError } = await supabase
-          .from('projects')
-          .select('id, name, job')
-          .eq('id', existingTask.project_id)
-          .single();
-
-        if (!previousProjectError && previousProject) {
-          updatesToApply.job = isUnassignedProject(previousProject)
-            ? normalizeJob(existingTask.job)
-            : normalizeJob(previousProject.job);
-        } else {
-          updatesToApply.job = normalizeJob(existingTask.job);
-        }
+      const movingProjects = updatesToApply.project_id !== existingTask.project_id;
+      if (movingProjects) {
+        touches.add(project.id);
       }
     }
+    // project_id = null is valid (unassigned task) — skip ownership check
   }
 
-  if ('is_completed' in updatesToApply) {
-    const isCompleted = Boolean(updatesToApply.is_completed);
-    if (options.preserveCompletedAt) {
-      updatesToApply.completed_at = isCompleted
-        ? updatesToApply.completed_at || new Date().toISOString()
-        : null;
-    } else {
-      updatesToApply.completed_at = isCompleted ? new Date().toISOString() : null;
+  // State transition logic
+  if ('state' in updatesToApply) {
+    const newState = updatesToApply.state;
+    const oldState = existingTask.state;
+
+    if (newState !== oldState) {
+      updatesToApply.entered_state_at = new Date().toISOString();
+    }
+
+    // When state changes to 'today', ensure today_section is set
+    if (newState === STATE.TODAY) {
+      if (!updatesToApply.today_section && !existingTask.today_section) {
+        updatesToApply.today_section = TODAY_SECTION.GOOD_TO_DO;
+      }
+    }
+    // When state changes away from 'today', do NOT include today_section
+    // (the database trigger clears it)
+    if (newState !== STATE.TODAY && oldState === STATE.TODAY) {
+      delete updatesToApply.today_section;
+    }
+
+    // Handle completed_at for done state
+    if (newState === STATE.DONE) {
+      if (options.preserveCompletedAt) {
+        updatesToApply.completed_at = updatesToApply.completed_at || new Date().toISOString();
+      } else {
+        updatesToApply.completed_at = new Date().toISOString();
+      }
+    } else if (oldState === STATE.DONE && newState !== STATE.DONE) {
+      updatesToApply.completed_at = null;
     }
   }
 
@@ -313,7 +222,7 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     .update(updatesToApply)
     .eq('id', taskId)
     .eq('user_id', userId)
-    .select()
+    .select(TASK_SELECT_FIELDS)
     .single();
 
   if (error) {
@@ -337,6 +246,29 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   }
 
   return { data };
+}
+
+export async function updateSortOrder({ supabase, userId, items }) {
+  if (!items || items.length === 0 || items.length > 50) {
+    return { error: 'Invalid batch size (1-50 items)' };
+  }
+  // Verify ownership
+  const ids = items.map(i => i.id);
+  const { data: owned } = await supabase
+    .from('tasks')
+    .select('id')
+    .in('id', ids)
+    .eq('user_id', userId);
+  if (!owned || owned.length !== ids.length) {
+    return { error: 'Ownership verification failed' };
+  }
+  // Batch update via RPC
+  const { error } = await supabase.rpc('fn_batch_update_sort_order', {
+    p_user_id: userId,
+    p_items: JSON.stringify(items),
+  });
+  if (error) return { error: error.message || error };
+  return { success: true };
 }
 
 export async function deleteTask({ supabase, userId, taskId, options = {} }) {
@@ -387,7 +319,7 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
 export async function fetchTaskById({ supabase, userId, taskId }) {
   const { data, error } = await supabase
     .from('tasks')
-    .select('*')
+    .select(TASK_SELECT_FIELDS)
     .eq('id', taskId)
     .eq('user_id', userId)
     .single();
@@ -417,5 +349,3 @@ export async function verifyTaskOwnership({ supabase, userId, taskId }) {
 
   return { data };
 }
-
-export { ensureUnassignedProject };
