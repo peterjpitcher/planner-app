@@ -131,9 +131,9 @@ class APIClient {
       ...cleanUpdates
     } = updates;
 
-    const result = await this.fetchWithAuth(`/api/tasks/${taskId}`, {
+    const result = await this.fetchWithAuth('/api/tasks', {
       method: 'PATCH',
-      body: JSON.stringify(cleanUpdates),
+      body: JSON.stringify({ id: taskId, ...cleanUpdates }),
     });
     return result?.data ?? result;
   }
