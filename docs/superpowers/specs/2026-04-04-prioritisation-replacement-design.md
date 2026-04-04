@@ -3,6 +3,7 @@
 **Date**: 2026-04-04
 **Working title**: From capture to calm execution
 **Approach**: Big bang replacement — remove all legacy priority mechanics, replace with section-based containment model
+**QA Reviewed**: 2026-04-04 — 5-specialist review, all critical/high findings addressed in this revision
 
 ---
 
@@ -33,7 +34,7 @@ The current app has two overlapping prioritisation systems (static High/Medium/L
 | Ideas | Fully separate entity with own table and lifecycle | Ideas as tasks with special state |
 | Migration seeding | All active tasks start in Backlog | Map from existing due dates; Start in This Week |
 | Layout model | Hybrid — Today Focus for execution, Board for planning | Pure kanban; Pure stacked lists |
-| Migration strategy | Big bang replacement | Incremental migration; Parallel app |
+| Migration strategy | Big bang replacement (user override of complexity rule — implementation plan will decompose into ordered PRs) | Incremental migration; Parallel app |
 
 ---
 
@@ -45,7 +46,7 @@ The current app has two overlapping prioritisation systems (static High/Medium/L
 tasks (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES users(id),
-  project_id      UUID REFERENCES projects(id),  -- NOW NULLABLE
+  project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,  -- NOW NULLABLE, SET NULL on project delete
   name            text NOT NULL,
   description     text,
   state           text NOT NULL DEFAULT 'backlog'
@@ -61,6 +62,7 @@ tasks (
   due_date        date,
   waiting_reason  text,
   follow_up_date  date,
+  source_idea_id  UUID REFERENCES ideas(id),  -- back-reference when promoted from idea
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
   completed_at    timestamptz,
@@ -73,6 +75,36 @@ ALTER TABLE tasks ADD CONSTRAINT check_today_section
     (state = 'today' AND today_section IS NOT NULL) OR
     (state != 'today' AND today_section IS NULL)
   );
+
+-- Auto-healing trigger: ensures today_section is always correct even if application
+-- code forgets to set it atomically. Prevents constraint violations on drag-and-drop.
+CREATE OR REPLACE FUNCTION fn_auto_heal_today_section()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.state = 'today' AND NEW.today_section IS NULL THEN
+    NEW.today_section := 'good_to_do';
+  ELSIF NEW.state != 'today' AND NEW.today_section IS NOT NULL THEN
+    NEW.today_section := NULL;
+  END IF;
+  -- Auto-set completed_at when moving to done
+  IF NEW.state = 'done' AND OLD.state != 'done' THEN
+    NEW.completed_at := now();
+  END IF;
+  -- Auto-clear completed_at when moving out of done
+  IF NEW.state != 'done' AND OLD.state = 'done' THEN
+    NEW.completed_at := NULL;
+  END IF;
+  -- Track state changes
+  IF NEW.state != OLD.state THEN
+    NEW.state_changed_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_auto_heal_today_section
+  BEFORE INSERT OR UPDATE ON tasks
+  FOR EACH ROW EXECUTE FUNCTION fn_auto_heal_today_section();
 ```
 
 **Existing fields kept**: `description` (already exists on tasks, no migration needed)
@@ -81,7 +113,7 @@ ALTER TABLE tasks ADD CONSTRAINT check_today_section
 
 **Chip values**: `high_impact`, `urgent`, `blocks_others`, `quick_win`, `deep_work`, `stress_relief`, `only_i_can`
 
-**Chips validation**: Application-level only (validate in taskService before write). No database CHECK constraint on the array — this keeps chips extensible without migrations.
+**Chips validation**: Application-level allowlist check in taskService before write. Max 7 values (one of each type), no duplicates, values must be in `CHIP_VALUES` constant. No database CHECK constraint — keeps chips extensible without migrations.
 
 ### Ideas Table (new)
 
@@ -96,10 +128,50 @@ ideas (
                   CHECK (idea_state IN ('captured', 'exploring', 'ready_later', 'promoted')),
   why_it_matters  text,
   smallest_step   text,
+  promoted_to_task_id UUID REFERENCES tasks(id),  -- set when promoted, enables navigation
   review_date     date,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
+
+-- RLS policies (RLS is always on per workspace convention)
+ALTER TABLE ideas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_own_ideas" ON ideas
+  FOR ALL USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+```
+
+**Note on RLS**: The existing app does not enforce RLS (uses anon key, relies on NextAuth session checks). The RLS policy above is added as defence-in-depth. Application-level `user_id` filtering remains the primary data isolation mechanism — all queries must include `.eq('user_id', session.user.id)`.
+
+### Database Indexes
+
+```sql
+-- New indexes for state-based query patterns
+CREATE INDEX idx_tasks_user_state_sort
+  ON tasks (user_id, state, sort_order);
+
+CREATE INDEX idx_tasks_user_today_section_sort
+  ON tasks (user_id, today_section, sort_order)
+  WHERE state = 'today';
+
+CREATE INDEX idx_tasks_user_completed_at
+  ON tasks (user_id, completed_at DESC)
+  WHERE state = 'done';
+
+CREATE INDEX idx_tasks_user_area
+  ON tasks (user_id, area)
+  WHERE area IS NOT NULL;
+
+CREATE INDEX idx_tasks_user_followup
+  ON tasks (user_id, follow_up_date)
+  WHERE state = 'waiting' AND follow_up_date IS NOT NULL;
+
+CREATE INDEX idx_ideas_user_state
+  ON ideas (user_id, idea_state);
+
+-- Drop legacy indexes (reference dropped columns)
+DROP INDEX IF EXISTS idx_tasks_user_completed_due_priority;
+DROP INDEX IF EXISTS idx_tasks_user_scores;
 ```
 
 ### Projects Table (modified)
@@ -111,17 +183,19 @@ ideas (
 ### Notes Table (modified)
 
 - **Add**: `idea_id` UUID FK (nullable)
-- **Update constraint**: at least one of (project_id, task_id, idea_id) is NOT NULL, but only one at a time
+- **Update constraint**: exactly one of (project_id, task_id, idea_id) is NOT NULL
 - **Existing data**: Current notes already satisfy this (they have exactly one of project_id or task_id set). Migration adds the column and updates the constraint in one step:
 
 ```sql
--- Audit for orphan notes before applying constraint
--- SELECT count(*) FROM notes WHERE project_id IS NULL AND task_id IS NULL;
--- If orphans exist: delete them or assign to a default project before proceeding
-
 ALTER TABLE notes ADD COLUMN idea_id UUID REFERENCES ideas(id);
 
--- Clean up any orphan notes (both FKs null) — these violate the new constraint
+-- Log orphan notes before cleanup (notes where both FKs are null)
+-- Run manually first: SELECT id, content, created_at FROM notes WHERE project_id IS NULL AND task_id IS NULL;
+-- If orphans exist and contain valuable data, reassign to the user's oldest project:
+UPDATE notes SET project_id = (
+  SELECT id FROM projects WHERE user_id = notes.user_id ORDER BY created_at LIMIT 1
+) WHERE project_id IS NULL AND task_id IS NULL;
+-- Delete only truly unassignable orphans (users with zero projects)
 DELETE FROM notes WHERE project_id IS NULL AND task_id IS NULL;
 
 ALTER TABLE notes DROP CONSTRAINT IF EXISTS check_note_parent;
@@ -132,9 +206,67 @@ ALTER TABLE notes ADD CONSTRAINT check_note_parent CHECK (
 );
 ```
 
+**Notes on done tasks**: Notes remain attached to their task when it moves to done. They are visible when viewing the task via the "Show completed" toggle or the completed-report view. Notes are never auto-deleted or reassigned on task completion.
+
+### Constants
+
+```js
+export const STATE = {
+  TODAY: 'today',
+  THIS_WEEK: 'this_week',
+  BACKLOG: 'backlog',
+  WAITING: 'waiting',
+  DONE: 'done'
+};
+
+export const TODAY_SECTION = {
+  MUST_DO: 'must_do',
+  GOOD_TO_DO: 'good_to_do',
+  QUICK_WINS: 'quick_wins'
+};
+
+export const TASK_TYPE = {
+  ADMIN: 'admin',
+  REPLY_CHASE: 'reply_chase',
+  FIX: 'fix',
+  PLANNING: 'planning',
+  CONTENT: 'content',
+  DEEP_WORK: 'deep_work',
+  PERSONAL: 'personal'
+};
+
+export const CHIP_VALUES = {
+  HIGH_IMPACT: 'high_impact',
+  URGENT: 'urgent',
+  BLOCKS_OTHERS: 'blocks_others',
+  QUICK_WIN: 'quick_win',
+  DEEP_WORK: 'deep_work',
+  STRESS_RELIEF: 'stress_relief',
+  ONLY_I_CAN: 'only_i_can'
+};
+
+export const IDEA_STATE = {
+  CAPTURED: 'captured',
+  EXPLORING: 'exploring',
+  READY_LATER: 'ready_later',
+  PROMOTED: 'promoted'
+};
+
+export const SOFT_CAPS = {
+  MUST_DO: 5,
+  GOOD_TO_DO: 5,
+  QUICK_WINS: 8,
+  THIS_WEEK: 15
+};
+```
+
 ---
 
 ## Views & Navigation
+
+### Authentication
+
+All new routes (`/today`, `/plan`, `/ideas`) require active NextAuth sessions. The existing middleware matcher covers these by default. New API routes for ideas must include `getAuthContext()` session checks identical to the existing `/api/tasks/route.js` pattern.
 
 ### Tab Bar
 
@@ -145,6 +277,16 @@ Three primary tabs (top on desktop, bottom on mobile):
 | **Today** | Daily execution view | Default landing page |
 | **Plan** | Board view for weekly planning/triage | |
 | **Ideas** | Idea Vault — separate from tasks | |
+
+### View States
+
+Every view must handle all three states per ui-patterns.md:
+
+| View | Loading | Error | Empty |
+|------|---------|-------|-------|
+| **Today** | Skeleton cards in three sections | Error banner with retry | "No tasks for today yet. Pull from This Week?" with link to Plan |
+| **Plan** | Skeleton columns | Error banner with retry | "Capture your first task" with inline input |
+| **Ideas** | Skeleton cards | Error banner with retry | "Got an idea? Capture it here" with inline input |
 
 ### Today Focus View
 
@@ -170,6 +312,12 @@ Stacked vertical layout with three fixed sections:
 - Completing a task moves it to "Completed today" at the bottom
 - Quick actions per card: complete, move to This Week, move to Waiting
 
+**Data fetching**: Two queries:
+1. `WHERE user_id = $1 AND state = 'today' ORDER BY today_section, sort_order` — populates three active sections
+2. `WHERE user_id = $1 AND state = 'done' AND completed_at >= $start_of_today_london ORDER BY completed_at DESC` — populates Completed today section
+
+The `$start_of_today_london` boundary must be computed server-side using `date-fns-tz` with `timeZone: 'Europe/London'` to handle BST/GMT transitions correctly. Add a `getStartOfTodayLondon()` utility to `dateUtils.js`.
+
 ### Plan Board View
 
 Horizontal kanban columns:
@@ -189,6 +337,8 @@ Horizontal kanban columns:
 - Backlog is searchable/filterable by area and task_type
 - Waiting items show follow-up date and flag if overdue
 - Quick capture button on Backlog column
+
+**Data fetching**: Load Today and This Week eagerly (bounded by soft caps). Load Backlog and Waiting with pagination/virtual scrolling (these can be large). Separate API calls per state so the default Today view loads fast.
 
 ### Mobile Plan View
 
@@ -213,8 +363,15 @@ Three sections matching idea states:
 
 - Capture is lightweight: just a title into "Captured"
 - Moving to "Exploring" surfaces prompts (why it matters, area, smallest step)
-- "Promote to task" creates a task in Backlog and sets the idea's `idea_state = 'promoted'` (idea retained for history, hidden from active views)
+- "Promote to task" creates a task in Backlog with `source_idea_id` set, and sets the idea's `idea_state = 'promoted'` + `promoted_to_task_id` (idea retained for history, hidden from active views, bidirectional link)
 - Ideas never appear in Today/Plan views
+
+### Component Architecture
+
+Given the project's existing pattern of heavy client-side data fetching (`'use client'` components with direct Supabase queries), the new views follow the same pattern:
+- Page-level components (`/today/page.js`, `/plan/page.js`, `/ideas/page.js`) are client components
+- The layout shell and tab navigation can be a server component that wraps client children
+- All data fetching happens via API routes called from client components
 
 ---
 
@@ -224,7 +381,7 @@ Compact card showing:
 - Task name (primary text)
 - Chips as small coloured pills (e.g. "High impact", "Quick win")
 - Area as subtle text label if set
-- Due date badge (red = overdue/today, amber = tomorrow, blue = this week, grey = future)
+- Due date badge using `getDueDateStatus()` from `dateUtils.js` (red = overdue/today, amber = tomorrow, blue = this week, grey = future)
 - Drag handle on left
 - Checkbox on right (complete)
 
@@ -244,19 +401,24 @@ Task `description` is not shown on the card — it is viewable and editable in t
 | Move between Today sections | Drag between Must Do / Good to Do / Quick Wins |
 | Promote to Today | Drag from This Week/Backlog to Today (defaults to Good to Do) |
 | Demote from Today | Drag to This Week or Backlog |
-| Send to Waiting | Drag to Waiting — inline prompt for waiting_reason |
+| Send to Waiting | Drag to Waiting — card moves optimistically, then popover appears anchored to card asking for reason and follow-up date. If dismissed, task stays in Waiting with null fields |
 | Move within Plan board | Drag between any columns |
 
-Optimistic UI — card moves instantly, database write in background.
+Optimistic UI — card moves instantly, database write in background. On write failure, revert optimistic state and show error toast.
 
 ### Drag-and-Drop Library
 
 Use **@dnd-kit/core** + **@dnd-kit/sortable**. The current native HTML drag-and-drop is insufficient for multi-container sortable lists with sort order persistence. @dnd-kit provides:
 - Multi-container sortable (items between Today sections and Board columns)
 - Touch support for mobile
-- Keyboard accessibility
+- Keyboard accessibility (arrow keys to move between items/containers, Enter to confirm)
 - Collision detection strategies for kanban
 - Active development and React 19 compatible
+
+**Accessibility**: @dnd-kit provides keyboard navigation out of the box. Additionally:
+- ARIA live regions announce state changes ("Task moved to This Week")
+- Focus returns to the moved card after drag completes
+- Mobile swipe gestures have equivalent button alternatives
 
 ### Sort Order Mechanics
 
@@ -266,14 +428,18 @@ Use **@dnd-kit/core** + **@dnd-kit/sortable**. The current native HTML drag-and-
 - When inserting at top: `sort_order = first_item.sort_order - 1000`
 - When inserting at bottom: `sort_order = last_item.sort_order + 1000`
 - Initial gap: 1000 between items
-- **Lazy reindex**: When a gap becomes < 1 (after many insertions between the same two items), reindex all items in that state+section with gaps of 1000. This is rare in practice.
+- **Tiebreaker**: `ORDER BY sort_order ASC, created_at ASC` — prevents undefined ordering when two tasks have the same sort_order
+- **Lazy reindex**: When a gap becomes < 1 (after many insertions between the same two items), reindex all items in that state+section with gaps of 1000. Use the batch `updateSortOrder` endpoint (see Service Layer section).
 - When a task moves between sections/states: it gets `sort_order = max(sort_order in target) + 1000` (appended to bottom of target, except drag to Today defaults to Good to Do section bottom)
+- **Sort order is server-computed**: The client sends a "position" (before/after a sibling task ID), and the service layer computes the `sort_order` value. The client never sends raw `sort_order` integers.
+
+**Write queue for rapid drags**: Sort-order mutations are enqueued client-side and processed sequentially with 300ms debounce. If the user drags multiple items quickly, only the final state of each item is persisted. Prevents optimistic UI divergence.
 
 ### Quick Actions (per card, via action menu or swipe)
 
 | Action | Effect |
 |--------|--------|
-| Complete | state = 'done', completed_at set |
+| Complete | state = 'done', completed_at set (via trigger) |
 | Move to... | Quick picker: Today (which section?) / This Week / Backlog / Waiting |
 | Set chips | Toggle chips on/off (pill-style multi-select) |
 | Set due date | Inline picker with quick picks (Tomorrow, Friday, Next Monday) |
@@ -285,16 +451,19 @@ Use **@dnd-kit/core** + **@dnd-kit/sortable**. The current native HTML drag-and-
 Available from every view via persistent floating input:
 - Enter = create in Backlog
 - Shift+Enter = create in Today > Good to Do
-- `!` prefix = create as Idea in vault
+- `! ` (exclamation + space) prefix = create as Idea in vault. Bare `!` without a following space is treated as a normal task character.
+- The `! ` prefix is stripped from the idea title before storage
 - Minimal fields on capture: just the name
+- All input sanitised via `sanitizeInput()` before write. Max 255 characters.
 
 ### Waiting Mechanics
 
-When moving to Waiting:
+When moving to Waiting (via drag popover or quick action):
 - Inline prompt: "Who/what are you waiting on?" (optional free text)
-- "Follow-up date?" with quick picks: +3 days, +1 week, +2 weeks
+- "Follow-up date?" with quick picks: +3 days, +1 week, +2 weeks. Default: +7 days if skipped.
 - Card shows reason and follow-up date
 - Overdue follow-ups get amber visual flag
+- **Waiting items with null follow_up_date**: flagged as stale after 7 days (same amber badge as overdue follow-ups). This prevents tasks from rotting silently in Waiting.
 
 ### Completion Behaviour
 
@@ -304,13 +473,15 @@ When moving to Waiting:
 
 ### "Completed Today" Day Boundary
 
-The "Completed today" section filters by `completed_at >= start of today (Europe/London)`. When the user opens the app the next morning, yesterday's completions are no longer shown — they are in the `done` state and visible only via the "Show completed" toggle in the Plan board. No manual reset needed.
+The "Completed today" section filters by `completed_at >= start of today (Europe/London)`. Computed server-side using `getStartOfTodayLondon()` (new utility in `dateUtils.js` using `date-fns-tz`). When the user opens the app the next morning, yesterday's completions are no longer shown — they are in the `done` state and visible only via the "Show completed" toggle in the Plan board. No manual reset needed.
 
 ### Staleness Detection
 
+Computed once on data arrival (not on every render), stored as a derived `isStale` boolean on the client-side task object:
 - This Week items with state_changed_at >14 days old → subtle "stale" badge
 - Backlog items never flagged as stale
 - Waiting items with overdue follow_up_date → amber flag
+- Waiting items with null follow_up_date and state_changed_at >7 days → amber flag
 
 ---
 
@@ -326,7 +497,7 @@ The "Completed today" section filters by `completed_at >= start of today (Europe
 | Quick Wins > 8 items | Amber header warning |
 | Overdue follow-ups in Waiting | Banner: "N items need follow-up" |
 
-Visual nudges only. Never blocking, never modal, never punishing. Dismissable.
+Visual nudges only. Never blocking, never modal, never punishing. Dismissable via localStorage with daily TTL (reset each morning).
 
 ### Weekly Planning Support
 
@@ -346,15 +517,90 @@ Visual nudges only. Never blocking, never modal, never punishing. Dismissable.
 
 ---
 
+## Ideas Service Layer
+
+### API Routes
+
+Create `src/app/api/ideas/route.js` following the exact same auth pattern as `/api/tasks/route.js`:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/ideas` | List user's ideas (filter by idea_state, exclude 'promoted') |
+| POST | `/api/ideas` | Create idea (title required, everything else optional) |
+| PATCH | `/api/ideas/[id]` | Update idea fields |
+| DELETE | `/api/ideas/[id]` | Delete idea |
+| POST | `/api/ideas/[id]/promote` | Promote idea to task |
+
+### Service Functions
+
+Create `src/services/ideaService.js`:
+
+- `listIdeas(userId, filters)` — query with `.eq('user_id', userId)`, exclude promoted
+- `createIdea(userId, data)` — validate, set user_id from session (never from request body)
+- `updateIdea(userId, id, data)` — verify ownership, validate, update
+- `deleteIdea(userId, id)` — verify ownership, delete
+- `promoteIdea(userId, id)` — verify ownership, create task in Backlog with `source_idea_id`, set idea `idea_state = 'promoted'` + `promoted_to_task_id`, return created task
+
+### Validation
+
+`validateIdea()` in `validators.js`:
+- `title`: required, 1-255 characters, sanitised
+- `idea_state`: must be in IDEA_STATE values
+- `area`: optional, max 100 characters, trimmed, sanitised
+- `why_it_matters`: optional, max 1000 characters
+- `smallest_step`: optional, max 1000 characters
+- `notes`: optional, max 1000 characters
+
+---
+
+## Server-Side Validation
+
+All state transitions and field updates are validated in the service layer before database write:
+
+### State Transition Rules
+
+| From | Allowed To | Notes |
+|------|-----------|-------|
+| backlog | today, this_week, waiting, done | Moving to today auto-sets today_section via trigger |
+| this_week | today, backlog, waiting, done | |
+| today | this_week, backlog, waiting, done | Moving away auto-nulls today_section via trigger |
+| waiting | today, this_week, backlog, done | |
+| done | today, this_week, backlog | Un-completing auto-clears completed_at via trigger |
+
+### Field Validation (taskService)
+
+| Field | Rules |
+|-------|-------|
+| state | Must be in STATE values |
+| today_section | Must be in TODAY_SECTION values when state = 'today' (trigger auto-heals) |
+| chips | Array, max 7 items, each must be in CHIP_VALUES, no duplicates |
+| area | Optional, max 100 chars, trimmed, normalised to lowercase, empty string → null |
+| task_type | Optional, must be in TASK_TYPE values |
+| waiting_reason | Optional, max 500 chars, sanitised |
+| follow_up_date | Optional, must be a valid future date |
+| sort_order | Not accepted from client — computed server-side from position |
+| user_id | Never accepted from client — always set from session |
+
+### Batch Sort Order Endpoint
+
+Create a dedicated `updateSortOrder` function in `taskService.js`:
+- Accepts array of `{id, sort_order}` (max 50 items)
+- Single batch UPDATE (not N individual updates)
+- Skips validation, project lookup, and Office 365 sync (positional-only change)
+- Verifies ownership of all task IDs in batch before executing
+- Used by drag-and-drop reorder and lazy reindex operations
+
+---
+
 ## Routing & Existing Pages
 
 The new navigation model replaces the current page structure:
 
 | Current Route | Fate | New Route |
 |---------------|------|-----------|
-| `/dashboard` | **Replaced** — becomes redirect to `/today` | `/today` |
+| `/dashboard` | **Replaced** — redirect to `/today` (entire file replaced with redirect, not modified) | `/today` |
 | `/login` | **Kept** — unchanged | `/login` |
-| `/completed-report` | **Kept** — update queries to use `state = 'done'` instead of `is_completed` | `/completed-report` |
+| `/completed-report` | **Kept** — update queries to use `state = 'done'` instead of `is_completed`, replace priority grouping with area or today_section | `/completed-report` |
 | `/prioritise` | **Removed entirely** — scoring system gone | N/A |
 | `/capture` | **Removed** — replaced by Quick Capture floating input on all views | N/A |
 | `/tasks` | **Removed** — replaced by Plan board view | N/A |
@@ -369,11 +615,15 @@ The new navigation model replaces the current page structure:
 
 ### Project Association & "Unassigned" Project
 
-Making `project_id` nullable means tasks can exist without a project. The existing `ensureUnassignedProject` pattern is **removed** — tasks without a project simply have `project_id = null`. The area field replaces the need for a catch-all project. Existing tasks in the "Unassigned" project get `project_id` set to null during migration.
+Making `project_id` nullable means tasks can exist without a project. The existing `ensureUnassignedProject` and `isUnassignedProject` functions in `taskService.js` are **removed**. Tasks without a project simply have `project_id = null`. Existing tasks in the "Unassigned" project get `project_id` set to null during migration.
+
+**Ownership validation when project_id is null**: Skip the project ownership check, but ensure `user_id` is set from the session (never from the request body). When `project_id` is non-null, the existing project ownership check is preserved.
 
 ### Area Field Behaviour
 
-`area` is free text with no database constraint. "Existing areas" dropdown is populated by `SELECT DISTINCT area FROM tasks WHERE area IS NOT NULL AND user_id = $1 UNION SELECT DISTINCT area FROM projects WHERE area IS NOT NULL AND user_id = $1`. Users can type a new value or select from the dropdown. Empty strings are normalised to null.
+`area` is free text, max 100 characters, with no database constraint. Values are **normalised on write**: `area = area.trim().toLowerCase()` — prevents case-sensitive duplicates ("Admin" vs "admin"). Empty strings normalised to null.
+
+"Existing areas" dropdown is populated by `SELECT DISTINCT area FROM tasks WHERE area IS NOT NULL AND user_id = $1 UNION SELECT DISTINCT area FROM projects WHERE area IS NOT NULL AND user_id = $1`. Cached client-side at view load time with 60-second TTL — not re-fetched on every dropdown open.
 
 ---
 
@@ -381,22 +631,35 @@ Making `project_id` nullable means tasks can exist without a project. The existi
 
 ### Office 365 Sync Service
 
-`src/services/office365SyncService.js` currently maps `priority` to Microsoft Graph's `importance` field and uses `is_completed` to set Graph task status.
+`src/services/office365SyncService.js` currently maps `priority` to Microsoft Graph's `importance` field and uses `is_completed` to set Graph task status. The sync has both outbound (local → Graph) and inbound (Graph → local) paths.
 
-**Changes required:**
+**Outbound changes:**
 - Replace `is_completed` check with `state === 'done'`
-- Remove `priority` → Graph `importance` mapping entirely (Graph tasks will use `importance: 'normal'` as default)
+- Remove `priority` → Graph `importance` mapping (Graph tasks use `importance: 'normal'` as default)
+- Update `buildTodoTaskPayload` function to use `state` instead of `is_completed`
 - Update any `job` references to `area`
+
+**Inbound changes:**
+- In `normalizeLocalTask`: replace `task.priority` and `task.is_completed` with `task.state`
+- In `tasksMatch`: update comparison to use `state` instead of `is_completed` and `priority`
+- Inbound sync: map Graph `status === 'completed'` to `state = 'done'` + set `completed_at`
+- Inbound sync: map Graph `status !== 'completed'` → preserve existing `state` (do not reset it)
+- Stop writing `priority` on inbound sync entirely
 
 ### Daily Task Email Service
 
 `src/services/dailyTaskEmailService.js` currently queries by `priority` and filters `is_completed = false`.
 
 **Changes required:**
-- Filter by `state = 'today'` instead of `is_completed = false` (email shows today's tasks)
-- Replace priority formatting with today_section labels (Must Do / Good to Do / Quick Wins)
+- Update `fetchOutstandingTasks` select clause: remove `priority` from select, add `state, today_section`
+- Replace `.eq('is_completed', false)` with `.eq('state', 'today')`
+- Replace priority formatting in `formatTaskLineText` and `formatTaskLineHtml` with today_section labels (Must Do / Good to Do / Quick Wins)
 - Group tasks by today_section in the email template
 - Update any `job` references to `area`
+
+### Daily Task Email Cron Route
+
+`src/app/api/cron/daily-task-email/route.js` — update to match new service query shape.
 
 ---
 
@@ -432,7 +695,7 @@ Making `project_id` nullable means tasks can exist without a project. The existi
 | src/components/Tasks/AddTaskModal.js | Wraps AddTaskForm — removed with it |
 | src/components/dashboard/TasksPanel.jsx | Dashboard tasks panel — replaced by Today view |
 | src/components/Tasks/TaskList.js | Uses is_completed for sorting/filtering — replaced by new views |
-| src/contexts/TargetProjectContext.tsx | Project selection context — remove (projects no longer primary navigation organiser) |
+| src/contexts/TargetProjectContext.js | Project selection context — remove (projects no longer primary navigation organiser) |
 | src/components/Projects/ProjectList.js | Priority-ordered project list — replaced by Plan board |
 | src/app/prioritise/page.js | Scoring matrix page — entire feature removed |
 | src/app/capture/page.js | Replaced by Quick Capture floating input |
@@ -442,28 +705,31 @@ Making `project_id` nullable means tasks can exist without a project. The existi
 
 | File | What Changes |
 |------|-------------|
-| src/lib/constants.js | Remove PRIORITY, PRIORITY_VALUES. Add STATE, TODAY_SECTION, TASK_TYPE, CHIP_VALUES constants. Rename DRAG_DATA_TYPES if needed for @dnd-kit |
+| src/lib/constants.js | Remove PRIORITY, PRIORITY_VALUES. Add STATE, TODAY_SECTION, TASK_TYPE, CHIP_VALUES, IDEA_STATE, SOFT_CAPS constants |
 | src/lib/styleUtils.js | Remove getPriorityStyles(), getPriorityBadgeStyles(). Add state/section styling helpers |
 | src/lib/projectHelpers.js | Remove priority styling functions, shadow glows. Update any `job` references to `area` |
-| src/lib/validators.js | Remove importance_score, urgency_score validation. Add state, today_section, task_type, chips validation |
+| src/lib/validators.js | Remove `priority` validation from `validateProject`. Remove `importance_score`, `urgency_score` validation from `validateTask`. **Remove mandatory `project_id` check** from `validateTask` (now nullable). Add `state`, `today_section`, `task_type`, `chips` validation to `validateTask`. Add `validateIdea` function. Update `validateNote` to accept `idea_id` as valid parent |
+| src/lib/dateUtils.js | Add `getStartOfTodayLondon()` utility using `date-fns-tz` for timezone-aware day boundary |
+| src/lib/apiClient.js | Update all task CRUD methods: stop sending `priority`, `importance_score`, `urgency_score`, `is_completed`, `job`. Start sending `state`, `today_section`, `sort_order`, `chips`, `area`, `task_type`, `waiting_reason`, `follow_up_date`. Update response parsing for new fields. Add ideas CRUD methods. Add batch sort order method |
 | src/components/Tasks/TaskItem.js | Remove getTaskPriorityClasses(), priority rendering, ChaseTaskModal import. Rebuild as new TaskCard component |
-| src/components/Projects/ProjectItem.js | Remove priority sidebar strip, shadow glow. Update `job` to `area`. Remove drag-to-project logic (replaced by drag-to-state) |
-| src/components/dashboard/SidebarFilters.jsx | Remove priority filter checkboxes. Update `job` filter to `area` |
-| src/services/taskService.js | Update all queries: remove priority/importance_score/urgency_score fields, add state/today_section/sort_order/chips fields, rename job to area |
-| src/services/office365SyncService.js | Replace is_completed with state check, remove priority mapping, rename job to area |
-| src/services/dailyTaskEmailService.js | Filter by state='today', replace priority with today_section, rename job to area |
-| src/app/api/tasks/route.js | Update query fields to match new schema |
-| src/app/api/projects/route.js | Remove priority, rename job to area |
-| src/app/api/projects/[id]/route.js | Remove priority, rename job to area |
-| src/app/api/completed-items/route.js | Replace is_completed=true filter with state='done' |
-| src/app/dashboard/page.js | Redirect to /today or replace with new navigation shell |
+| src/components/Projects/ProjectItem.js | Remove priority sidebar strip, shadow glow, QuickTaskForm import. Update `job` to `area`. Remove drag-to-project logic (replaced by drag-to-state) |
+| src/components/dashboard/SidebarFilters.jsx | Remove priority filter checkboxes (keep project-health filters like overdue, noTasks, untouched, noDueDate — rename section from "Priority Filters"). Rename `uniqueJobs`/`selectedJob`/`onJobChange` props to `uniqueAreas`/`selectedArea`/`onAreaChange`. Rename "Jobs" section label to "Areas" |
+| src/services/taskService.js | Replace `TASK_UPDATE_FIELDS` whitelist with new field set. Remove `ensureUnassignedProject`, `isUnassignedProject`. Update all queries: remove priority/importance_score/urgency_score/is_completed fields, add state/today_section/sort_order/chips fields, rename job to area. Add `updateSortOrder` batch function. Update ownership validation for nullable project_id |
+| src/services/office365SyncService.js | Update outbound AND inbound sync: replace is_completed with state check, remove priority mapping, update normalizeLocalTask/tasksMatch/buildTodoTaskPayload, rename job to area |
+| src/services/dailyTaskEmailService.js | Update fetchOutstandingTasks select clause (remove priority, add state/today_section). Filter by state='today'. Replace priority formatting with today_section labels. Rename job to area |
+| src/app/layout.js | Remove `TargetProjectProvider` import and wrapper |
+| src/app/api/tasks/route.js | Update query fields, replace `is_completed` filter with state filter, update project join from `job` to `area`, update `TASK_UPDATE_FIELDS` if duplicated here |
+| src/app/api/projects/route.js | Remove priority from `PROJECT_UPDATE_FIELDS` whitelist, rename job to area, update select clauses and response transformations |
+| src/app/api/projects/[id]/route.js | Same as above — remove priority, rename job to area in whitelist, select, and response |
+| src/app/api/completed-items/route.js | Replace `is_completed=true` filter with `state='done'`. Update project join from `job` to `area` |
+| src/app/dashboard/page.js | Replace entire file with redirect to `/today` |
+| src/app/completed-report/ | Update queries to use `state = 'done'`. Remove priority-based grouping, replace with area or today_section grouping |
 | src/components/Projects/ProjectHeader.jsx | Remove priority display, update job to area |
 | src/components/Projects/AddProjectForm.js | Remove priority dropdown, update job to area |
-| src/components/Notes/ProjectNoteWorkspaceModal.js | Remove QuickTaskForm import, replace with new Quick Capture or inline task creation |
-| src/components/Projects/ProjectItem.js | Remove QuickTaskForm import (in addition to priority removals listed above) |
-| src/app/api/admin/migrate/route.js | Remove priority references from migration indexes |
+| src/components/Notes/ProjectNoteWorkspaceModal.js | Remove QuickTaskForm and TaskScoreBadge imports, replace with new Quick Capture or inline task creation |
+| src/app/api/admin/migrate/route.js | Remove priority AND is_completed references from migration indexes, add new state-based indexes |
 | src/app/api/cron/daily-task-email/route.js | Update to match new dailyTaskEmailService query shape |
-| src/lib/taskSort.js | Keep — due date sort logic still useful in new views. Remove any priority references if present |
+| src/lib/taskSort.js | Keep — due date sort logic still useful in new views. Remove any priority references if present. Add sort_order tiebreaker: `ORDER BY sort_order ASC, created_at ASC` |
 
 ### Features Retired
 
@@ -477,7 +743,7 @@ Making `project_id` nullable means tasks can exist without a project. The existi
 
 ### What Survives Unchanged
 
-- Due date colour coding (red/amber/blue/grey)
+- Due date colour coding (red/amber/blue/grey) via `getDueDateStatus()`
 - Quick date picker options
 - Notes system (extended with idea_id FK)
 - Project statuses (Open, In Progress, On Hold, Completed, Cancelled)
@@ -489,34 +755,81 @@ Making `project_id` nullable means tasks can exist without a project. The existi
 
 ## Migration
 
-### Single Migration File
+### Transaction-Wrapped Migration
 
-**Step 1 — Create new tables and columns:**
-- Create ideas table
-- Add new columns to tasks: state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, state_changed_at
-- Add idea_id FK to notes, update constraint
+The entire migration runs inside a single `BEGIN...COMMIT` transaction. If any step fails, the entire migration rolls back and no data is lost.
+
+```sql
+BEGIN;
+```
+
+**Step 1 — Structural changes (no constraints yet, to allow seeding):**
+- Create ideas table (without CHECK constraints)
+- Add new columns to tasks: state (no CHECK yet), today_section (no CHECK yet), sort_order, area, task_type, chips, waiting_reason, follow_up_date, state_changed_at, source_idea_id
+- `ALTER TABLE tasks ALTER COLUMN project_id DROP NOT NULL`
+- Drop and recreate project_id FK with `ON DELETE SET NULL`: `ALTER TABLE tasks DROP CONSTRAINT tasks_project_id_fkey; ALTER TABLE tasks ADD CONSTRAINT tasks_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;`
+- Add idea_id FK to notes
 - Add area column to projects
+- Drop CHECK constraints on priority: `ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_priority_check; ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_priority_check;`
 
 **Step 2 — Seed existing data:**
-- Active tasks (is_completed = false): state = 'backlog'
-- Completed tasks (is_completed = true): state = 'done', completed_at preserved
-- Copy job values to area on tasks and projects
-- Set sort_order = 0, state_changed_at = now() on all tasks
+- Active tasks (`is_completed = false`): `state = 'backlog'`
+- Completed tasks (`is_completed = true`): `state = 'done'`, `completed_at` preserved
+- Copy `job` values to `area` on tasks and projects
+- Seed `sort_order` with incremental values: `UPDATE tasks SET sort_order = sub.rn * 1000 FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at ASC) AS rn FROM tasks) sub WHERE tasks.id = sub.id`
+- Set `state_changed_at = now()` on all tasks
+- Null out `project_id` on tasks belonging to "Unassigned" projects
 
-**Step 3 — Audit and update functions/triggers:**
+**Step 2a — Verify seeding:**
+```sql
+-- These must all return 0
+SELECT count(*) FROM tasks WHERE state IS NULL;
+SELECT count(*) FROM tasks WHERE sort_order IS NULL;
+```
+
+**Step 3 — Handle orphan notes:**
+- Reassign orphan notes to user's oldest project
+- Delete remaining unassignable orphans (users with no projects)
+- Update notes constraint
+
+**Step 4 — Audit and update functions/triggers:**
 - Find all PL/pgSQL functions referencing priority, importance_score, urgency_score, is_completed, job
 - Update or drop each in the same migration
 
-**Step 4 — Drop old columns:**
+**Step 5 — Drop old columns:**
 - Tasks: drop priority, importance_score, urgency_score, is_completed, job
 - Projects: drop priority, job
 
-**Step 5 — Add constraints:**
-- All CHECK constraints on new enums
-- today_section required when state = 'today'
+**Step 6 — Add constraints and indexes:**
+- Add all CHECK constraints on state, today_section, task_type, idea_state
+- Add `check_today_section` constraint
+- Add auto-healing trigger `fn_auto_heal_today_section`
+- Add RLS policies on ideas table
+- Create all 6 new indexes
+- Drop 2 legacy indexes
+
+```sql
+COMMIT;
+```
 
 ### Rollback Strategy
 
-- Full database backup before migration
-- Test with npx supabase db push --dry-run
-- Old columns dropped only after confirming new columns populated
+- Full database backup via Supabase dashboard before migration
+- Test with `npx supabase db push --dry-run`
+- Transaction wrapping means partial failure = full rollback, no inconsistent state
+- If migration succeeds but new code has issues: old columns are gone, so rollback requires restoring from backup. This is acceptable for a single-user app.
+
+---
+
+## Testing Considerations
+
+The project currently has no test suite (noted as tech debt). This refactor is an opportunity to add Vitest. Priority test targets:
+
+1. **Sort order algorithm** — gap-based insertion, lazy reindex, tiebreaker ordering
+2. **State transition validation** — all valid/invalid transitions, today_section auto-healing
+3. **Chips validation** — allowlist check, dedup, max length
+4. **Promote idea to task** — bidirectional link, state changes on both entities
+5. **Area normalisation** — trim, lowercase, empty string → null
+6. **`getStartOfTodayLondon()`** — BST/GMT boundary, DST transitions
+
+Adding Vitest setup and these critical tests should be part of the implementation plan.
