@@ -4,11 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
-    Home,
-    ListTodo,
-    LayoutGrid,
-    Grid3X3,
-    BookOpen,
+    CalendarCheck,
+    Columns3,
+    Lightbulb,
     PieChart,
     Plug,
     LogOut,
@@ -17,11 +15,9 @@ import {
 import { signOut } from 'next-auth/react';
 
 const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: Home },
-    { name: 'Tasks', href: '/tasks', icon: ListTodo },
-    { name: 'Prioritise', href: '/prioritise', icon: LayoutGrid },
-    { name: 'Mind Sweep', href: '/capture', icon: Grid3X3 },
-    { name: 'Journal', href: '/journal', icon: BookOpen },
+    { name: 'Today', href: '/today', icon: CalendarCheck },
+    { name: 'Plan', href: '/plan', icon: Columns3 },
+    { name: 'Ideas', href: '/ideas', icon: Lightbulb },
     { name: 'Reports', href: '/completed-report', icon: PieChart },
     { name: 'Integrations', href: '/settings/integrations', icon: Plug },
 ];

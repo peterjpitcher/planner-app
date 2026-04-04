@@ -19,7 +19,7 @@ export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu
                     {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
                 </button>
                 <div className="hidden md:flex items-center text-sm font-medium text-muted-foreground">
-                    <span className="text-foreground">Dashboard</span>
+                    <span className="text-foreground">Planner</span>
                 </div>
             </div>
 
