@@ -29,27 +29,8 @@ function isProjectActive(status) {
   return normalized === 'open' || normalized === 'in progress' || normalized === 'on hold';
 }
 
-function toLocalPriority(importance) {
-  switch (importance) {
-    case 'high':
-      return 'High';
-    case 'low':
-      return 'Low';
-    default:
-      return 'Medium';
-  }
-}
-
-function toGraphImportance(priority) {
-  switch (priority) {
-    case 'High':
-      return 'high';
-    case 'Low':
-      return 'low';
-    default:
-      return 'normal';
-  }
-}
+// Priority mapping removed: the local model uses `state` (not priority/importance).
+// Graph importance is always sent as 'normal' on outbound; inbound importance is ignored.
 
 function toGraphDueDateTime(dueDate) {
   if (!dueDate) return null;
@@ -79,8 +60,9 @@ function normalizeLocalTask(task) {
     title: normalizeText(task?.name),
     description: normalizeText(task?.description),
     dueDate: task?.due_date ? String(task.due_date).slice(0, 10) : null,
-    importance: toGraphImportance(task?.priority),
-    status: task?.is_completed ? 'completed' : 'notStarted',
+    // importance is always 'normal' — we no longer map local priority to Graph importance.
+    importance: 'normal',
+    status: task?.state === 'done' ? 'completed' : 'notStarted',
   };
 }
 
@@ -103,9 +85,8 @@ function normalizeRemoteTask(todoTask) {
     // If Graph omits dueDateTime, treat it as null so we can push local due dates.
     result.dueDate = null;
   }
-  if (Object.prototype.hasOwnProperty.call(task, 'importance')) {
-    result.importance = task.importance || 'normal';
-  }
+  // importance is intentionally excluded from the normalised remote task — we no longer
+  // sync priority between Graph and local, so it must not influence tasksMatch().
   if (Object.prototype.hasOwnProperty.call(task, 'status')) {
     result.status = task.status || 'notStarted';
   }
@@ -204,8 +185,9 @@ function buildTodoTaskPayload(task) {
   const dueDateTime = toGraphDueDateTime(task.due_date);
   const payload = {
     title: task.name,
-    importance: toGraphImportance(task.priority),
-    status: task.is_completed ? 'completed' : 'notStarted',
+    // importance is always 'normal' — we no longer map local data to Graph importance.
+    importance: 'normal',
+    status: task.state === 'done' ? 'completed' : 'notStarted',
     dueDateTime,
     body: { contentType: 'text', content: task.description ? String(task.description) : '' },
   };
@@ -649,16 +631,17 @@ export async function syncOffice365All({ userId }) {
         const projectId = projectMapping.project_id;
         if (!projectId) continue;
 
+        const remoteIsCompleted = remoteTask?.status === 'completed';
         const payload = {
           user_id: userId,
           project_id: projectId,
           name: remoteTask.title || 'New task',
           description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
           due_date: fromGraphDueDateTime(remoteTask?.dueDateTime) || new Date().toISOString().slice(0, 10),
-          priority: toLocalPriority(remoteTask?.importance),
-          is_completed: remoteTask?.status === 'completed',
+          // Map Graph status to local state; inbound importance is ignored (no local priority field).
+          state: remoteIsCompleted ? 'done' : 'todo',
           completed_at:
-            remoteTask?.status === 'completed'
+            remoteIsCompleted
               ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())
               : null,
           updated_at: toIsoTimestamp(remoteTask?.lastModifiedDateTime || remoteTask?.createdDateTime) || new Date().toISOString(),
@@ -792,18 +775,17 @@ export async function syncOffice365All({ userId }) {
             if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'dueDateTime')) {
               updates.due_date = fromGraphDueDateTime(remoteDetails?.dueDateTime);
             }
-            if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'importance')) {
-              updates.priority = toLocalPriority(remoteDetails?.importance);
-            }
+            // inbound importance is intentionally ignored — we do not write priority from Graph.
             if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'status')) {
-              const isCompleted = remoteDetails?.status === 'completed';
-              updates.is_completed = isCompleted;
-              if (isCompleted) {
+              const remoteCompleted = remoteDetails?.status === 'completed';
+              if (remoteCompleted) {
+                // Only mark done when Graph says completed; preserve existing local state otherwise.
+                updates.state = 'done';
                 const completedAt = toIsoTimestamp(remoteDetails?.completedDateTime?.dateTime);
                 updates.completed_at = completedAt || localTask.completed_at || new Date().toISOString();
-              } else {
-                updates.completed_at = null;
               }
+              // If Graph status is not 'completed', do NOT overwrite local state — the user may have
+              // set it to 'in-progress' or similar, which Graph has no equivalent for.
             }
 
             const { data: updatedLocalTask, error: updateError } = await supabase
