@@ -24,7 +24,7 @@ const SECTION_SOFT_CAP = {
   [TODAY_SECTION.QUICK_WINS]: SOFT_CAPS.QUICK_WINS,
 };
 
-function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onClick }) {
+function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onClick, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const label = SECTION_LABELS[sectionKey] ?? sectionKey;
   const cap = SECTION_SOFT_CAP[sectionKey];
@@ -78,6 +78,7 @@ function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onCl
                   onMove={onMove}
                   onUpdate={onUpdate}
                   onClick={onClick}
+                  onDelete={onDelete}
                 />
               ))
             )}
@@ -92,7 +93,7 @@ function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onCl
 // Waiting task card — shows follow-up date and stale flags prominently
 // ---------------------------------------------------------------------------
 
-function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick }) {
+function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete }) {
   const followUpDate = task.follow_up_date
     ? new Date(task.follow_up_date).toLocaleDateString('en-GB', {
         day: 'numeric',
@@ -138,6 +139,7 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick }) {
         onMove={onMove}
         onUpdate={onUpdate}
         onClick={onClick}
+        onDelete={onDelete}
       />
     </div>
   );
@@ -176,6 +178,7 @@ const PAGE_SIZE = 20;
  *   onMove: (taskId: string, targetState: string, targetSection?: string) => void,
  *   onUpdate: (taskId: string, updates: object) => void,
  *   onClick: (taskId: string) => void,
+ *   onDelete: (taskId: string) => void,
  *   children?: React.ReactNode,
  *   areas?: string[],
  *   onLoadMore?: () => void,
@@ -192,6 +195,7 @@ export default function BoardColumn({
   onMove,
   onUpdate,
   onClick,
+  onDelete,
   children,
   areas = [],
   onLoadMore,
@@ -373,6 +377,7 @@ export default function BoardColumn({
                 onMove={onMove}
                 onUpdate={onUpdate}
                 onClick={onClick}
+                onDelete={onDelete}
               />
             ))}
           </div>
@@ -393,6 +398,7 @@ export default function BoardColumn({
                     onMove={onMove}
                     onUpdate={onUpdate}
                     onClick={onClick}
+                    onDelete={onDelete}
                   />
                 ))
               )}
@@ -416,6 +422,7 @@ export default function BoardColumn({
                     onMove={onMove}
                     onUpdate={onUpdate}
                     onClick={onClick}
+                    onDelete={onDelete}
                   />
                 ))
               )}
@@ -448,6 +455,7 @@ export default function BoardColumn({
                     onMove={onMove}
                     onUpdate={onUpdate}
                     onClick={onClick}
+                    onDelete={onDelete}
                   />
                 ))
               )}

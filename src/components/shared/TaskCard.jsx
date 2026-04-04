@@ -104,9 +104,10 @@ function DueDateBadge({ dueDate }) {
  *   onMove: (taskId: string, targetState: string, targetSection?: string) => void,
  *   onUpdate: (taskId: string, updates: object) => void,
  *   onClick: (taskId: string) => void,
+ *   onDelete: (taskId: string) => void,
  * }} props
  */
-export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick }) {
+export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick, onDelete }) {
   const {
     attributes,
     listeners,
@@ -323,6 +324,24 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
                 )}
               </Menu.Item>
             )}
+
+            {/* Divider */}
+            <div className="my-1 border-t border-gray-100" role="separator" />
+
+            {/* Delete task */}
+            <Menu.Item>
+              {({ active }) => (
+                <button
+                  type="button"
+                  onClick={() => onDelete?.(task.id)}
+                  className={`w-full px-3 py-1.5 text-left text-sm ${
+                    active ? 'bg-red-50 text-red-700' : 'text-red-600'
+                  }`}
+                >
+                  Delete task
+                </button>
+              )}
+            </Menu.Item>
           </Menu.Items>
         </Menu>
       </div>

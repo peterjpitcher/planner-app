@@ -19,6 +19,7 @@ import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
 import { computeSortOrder } from '@/lib/sortOrder';
 import BoardColumn from './BoardColumn';
 import TaskCard from '@/components/shared/TaskCard';
+import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -205,6 +206,9 @@ export default function PlanBoard() {
   // Waiting popover: { taskId, columnKey } or null
   const [waitingPopover, setWaitingPopover] = useState(null);
 
+  // Task detail drawer state
+  const [selectedTask, setSelectedTask] = useState(null);
+
   // Debounce timer for sort-order writes
   const sortDebounceRef = useRef(null);
 
@@ -387,6 +391,8 @@ export default function PlanBoard() {
       }
       return next;
     });
+    // Keep selected task in sync
+    setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     try {
       await apiClient.updateTask(taskId, updates);
     } catch {
@@ -395,10 +401,34 @@ export default function PlanBoard() {
     }
   }, [loadAllColumns]);
 
-  // No-op — task detail opening is handled by the parent routing context
-  const handleClick = useCallback((_taskId) => {
-    // Future: open task detail drawer/modal
-  }, []);
+  const handleDeleteTask = useCallback(async (taskId) => {
+    // Remove from all columns
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const col of Object.keys(next)) {
+        next[col] = next[col].filter((t) => t.id !== taskId);
+      }
+      return next;
+    });
+    setSelectedTask((prev) => (prev && prev.id === taskId ? null : prev));
+    try {
+      await apiClient.deleteTask(taskId);
+    } catch {
+      loadAllColumns();
+    }
+  }, [loadAllColumns]);
+
+  const handleDrawerUpdate = useCallback(async (taskId, updates) => {
+    await handleUpdate(taskId, updates);
+  }, [handleUpdate]);
+
+  const handleClick = useCallback((taskId) => {
+    // Find task across all columns
+    for (const [, tasks] of Object.entries(columns)) {
+      const found = tasks.find((t) => t.id === taskId);
+      if (found) { setSelectedTask(found); return; }
+    }
+  }, [columns]);
 
   // ---------------------------------------------------------------------------
   // Waiting popover callbacks
@@ -551,6 +581,7 @@ export default function PlanBoard() {
           onMove={handleMove}
           onUpdate={handleUpdate}
           onClick={handleClick}
+          onDelete={handleDeleteTask}
           areas={colKey === STATE.BACKLOG ? areas : []}
           onLoadMore={colKey === STATE.BACKLOG ? handleLoadMoreBacklog : undefined}
           hasMore={colKey === STATE.BACKLOG ? backlogHasMore : false}
@@ -649,6 +680,15 @@ export default function PlanBoard() {
           />
         ) : null}
       </DragOverlay>
+
+      {/* Task detail drawer */}
+      <TaskDetailDrawer
+        task={selectedTask}
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={handleDrawerUpdate}
+        onDelete={handleDeleteTask}
+      />
     </DndContext>
   );
 }

@@ -41,10 +41,18 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
 
+  // Editable title
+  const [title, setTitle] = useState(idea.title ?? '');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const titleInputRef = React.useRef(null);
+
   // Local editable field state — only used in Exploring mode
   const [whyItMatters, setWhyItMatters] = useState(idea.why_it_matters ?? '');
   const [smallestStep, setSmallestStep] = useState(idea.smallest_step ?? '');
   const [area, setArea] = useState(idea.area ?? '');
+
+  // Review date for Ready Later state
+  const [reviewDate, setReviewDate] = useState(idea.review_date ?? '');
 
   const isExploring = idea.idea_state === IDEA_STATE.EXPLORING;
   const isReadyLater = idea.idea_state === IDEA_STATE.READY_LATER;
@@ -62,6 +70,21 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
   // -------------------------------------------------------------------------
   // Blur save handlers (for Exploring state inline edits)
   // -------------------------------------------------------------------------
+
+  function handleTitleBlur() {
+    setIsEditingTitle(false);
+    const trimmed = title.trim();
+    if (trimmed && trimmed !== idea.title) {
+      onUpdate(idea.id, { title: trimmed });
+    } else {
+      setTitle(idea.title ?? '');
+    }
+  }
+
+  function handleReviewDateChange(value) {
+    setReviewDate(value);
+    onUpdate(idea.id, { review_date: value || null });
+  }
 
   function handleWhyItMattersBlur() {
     if (whyItMatters !== (idea.why_it_matters ?? '')) {
@@ -135,7 +158,34 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
       {/* Header row: title + menu */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-gray-800 leading-snug">{idea.title || 'Untitled idea'}</p>
+          {isEditingTitle ? (
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleTitleBlur}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') titleInputRef.current?.blur();
+                if (e.key === 'Escape') {
+                  setTitle(idea.title ?? '');
+                  setIsEditingTitle(false);
+                }
+              }}
+              className="w-full rounded border border-indigo-300 px-1.5 py-0.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              aria-label="Idea title"
+              autoFocus
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditingTitle(true)}
+              className="w-full text-left font-medium text-gray-800 leading-snug hover:text-indigo-700 focus:outline-none focus-visible:underline"
+              aria-label="Edit idea title"
+            >
+              {idea.title || 'Untitled idea'}
+            </button>
+          )}
         </div>
 
         {/* Action menu */}
@@ -296,9 +346,44 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
         </div>
       )}
 
-      {/* Ready Later: show review date if set */}
-      {isReadyLater && reviewLabel && (
-        <p className="mt-1.5 text-xs text-green-600">Review: {reviewLabel}</p>
+      {/* Ready Later: review date picker */}
+      {isReadyLater && (
+        <div className="mt-3 space-y-2">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Review date
+          </label>
+          <input
+            type="date"
+            value={reviewDate ? reviewDate.slice(0, 10) : ''}
+            onChange={(e) => handleReviewDateChange(e.target.value)}
+            className="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-sm text-gray-800 focus:border-green-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-green-400"
+          />
+          {/* Quick picks */}
+          <div className="flex gap-1.5">
+            {[
+              { label: '+1 week', days: 7 },
+              { label: '+2 weeks', days: 14 },
+              { label: '+1 month', days: 30 },
+            ].map(({ label, days }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + days);
+                  const val = d.toISOString().slice(0, 10);
+                  handleReviewDateChange(val);
+                }}
+                className="flex-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {reviewLabel && (
+            <p className="text-xs text-green-600">Review: {reviewLabel}</p>
+          )}
+        </div>
       )}
 
       {/* Created date — shown subtly at bottom */}

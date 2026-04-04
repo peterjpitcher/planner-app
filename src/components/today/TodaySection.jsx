@@ -15,6 +15,7 @@ import TaskCard from '@/components/shared/TaskCard';
  *   onMove: (taskId: string, targetState: string, targetSection?: string) => void,
  *   onUpdate: (taskId: string, updates: object) => void,
  *   onClick: (taskId: string) => void,
+ *   onDelete: (taskId: string) => void,
  * }} props
  */
 export default function TodaySection({
@@ -26,6 +27,7 @@ export default function TodaySection({
   onMove,
   onUpdate,
   onClick,
+  onDelete,
 }) {
   const count = tasks.length;
   const overCap = count > softCap;
@@ -75,6 +77,7 @@ export default function TodaySection({
                 onMove={onMove}
                 onUpdate={onUpdate}
                 onClick={onClick}
+                onDelete={onDelete}
               />
             ))
           )}

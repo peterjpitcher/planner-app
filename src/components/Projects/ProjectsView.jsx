@@ -23,6 +23,7 @@ import { apiClient } from '@/lib/apiClient';
 import { getStatusClasses } from '@/lib/styleUtils';
 import { STATE, PROJECT_STATUS } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
+import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 import ProjectDetailDrawer from './ProjectDetailDrawer';
 import CreateProjectModal from './CreateProjectModal';
 
@@ -174,7 +175,7 @@ function AddTaskInput({ projectId, onTaskAdded }) {
 // TaskCard's useSortable hook)
 // ---------------------------------------------------------------------------
 
-function ProjectTaskList({ tasks, onComplete, onMove, onUpdate, onTaskClick, projectId, onTaskAdded }) {
+function ProjectTaskList({ tasks, onComplete, onMove, onUpdate, onTaskClick, onDelete, projectId, onTaskAdded }) {
   const sensors = useSensors(useSensor(PointerSensor));
 
   return (
@@ -190,6 +191,7 @@ function ProjectTaskList({ tasks, onComplete, onMove, onUpdate, onTaskClick, pro
               onMove={onMove}
               onUpdate={onUpdate}
               onClick={onTaskClick}
+              onDelete={onDelete}
             />
           ))}
         </div>
@@ -203,7 +205,7 @@ function ProjectTaskList({ tasks, onComplete, onMove, onUpdate, onTaskClick, pro
 // Project card
 // ---------------------------------------------------------------------------
 
-function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpdate, onTaskClick, onTaskAdded, onOpenDrawer }) {
+function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpdate, onTaskClick, onDelete, onTaskAdded, onOpenDrawer }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
 
@@ -449,6 +451,7 @@ function ProjectCard({ project, tasks, onQuickAction, onComplete, onMove, onUpda
               onMove={onMove}
               onUpdate={onUpdate}
               onTaskClick={onTaskClick}
+              onDelete={onDelete}
               projectId={project.id}
               onTaskAdded={onTaskAdded}
             />
@@ -472,6 +475,7 @@ export default function ProjectsView() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   // -------------------------------------------------------------------------
@@ -628,15 +632,43 @@ export default function ProjectsView() {
         return next;
       });
       setUnassignedTasks((prev) => updateInList(prev));
+      // Keep selected task in sync
+      setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     } catch {
       loadData();
     }
   }, [loadData]);
 
+  const handleDeleteTask = useCallback(async (taskId) => {
+    setTasksByProject((prev) => {
+      const next = { ...prev };
+      for (const [pid, tasks] of Object.entries(next)) {
+        next[pid] = tasks.filter((t) => t.id !== taskId);
+      }
+      return next;
+    });
+    setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    setSelectedTask((prev) => (prev && prev.id === taskId ? null : prev));
+    try {
+      await apiClient.deleteTask(taskId);
+    } catch {
+      loadData();
+    }
+  }, [loadData]);
+
+  const handleDrawerUpdate = useCallback(async (taskId, updates) => {
+    await handleUpdate(taskId, updates);
+  }, [handleUpdate]);
+
   const handleTaskClick = useCallback((taskId) => {
-    // Detail drawer integration — placeholder for now
-    void taskId;
-  }, []);
+    // Find task across tasksByProject and unassignedTasks
+    for (const tasks of Object.values(tasksByProject)) {
+      const found = tasks.find((t) => t.id === taskId);
+      if (found) { setSelectedTask(found); return; }
+    }
+    const found = unassignedTasks.find((t) => t.id === taskId);
+    if (found) setSelectedTask(found);
+  }, [tasksByProject, unassignedTasks]);
 
   // -------------------------------------------------------------------------
   // Derived / sorted list
@@ -743,6 +775,7 @@ export default function ProjectsView() {
               onMove={handleMove}
               onUpdate={handleUpdate}
               onTaskClick={handleTaskClick}
+              onDelete={handleDeleteTask}
               onTaskAdded={loadData}
               onOpenDrawer={setSelectedProject}
             />
@@ -758,6 +791,15 @@ export default function ProjectsView() {
         onUpdate={handleProjectUpdate}
         onDelete={handleProjectDelete}
         tasks={selectedProject ? (tasksByProject[selectedProject.id] ?? []) : []}
+      />
+
+      {/* Task detail drawer */}
+      <TaskDetailDrawer
+        task={selectedTask}
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={handleDrawerUpdate}
+        onDelete={handleDeleteTask}
       />
 
       {/* Create project modal */}
@@ -803,6 +845,7 @@ export default function ProjectsView() {
                   onMove={handleMove}
                   onUpdate={handleUpdate}
                   onTaskClick={handleTaskClick}
+                  onDelete={handleDeleteTask}
                   projectId={null}
                   onTaskAdded={loadData}
                 />

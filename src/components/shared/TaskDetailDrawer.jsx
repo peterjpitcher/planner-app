@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { XMarkIcon, LinkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, LinkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import ChipBadge from './ChipBadge';
 import { STATE, TASK_TYPE, CHIP_VALUES } from '@/lib/constants';
@@ -98,9 +98,11 @@ function FieldRow({ label, htmlFor, children, helpText }) {
  *   isOpen: boolean,
  *   onClose: () => void,
  *   onUpdate: (taskId: string, updates: object) => void,
+ *   onDelete: (taskId: string) => void,
+ *   projects: object[],
  * }} props
  */
-export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
+export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDelete, projects: projectsProp }) {
   const api = useApiClient();
 
   // Local field state — initialised from task prop when drawer opens
@@ -121,6 +123,13 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
   const [noteError, setNoteError] = useState(null);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
 
+  // Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Projects state for reassignment
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState('');
+
   const nameInputRef = useRef(null);
   const prevTaskIdRef = useRef(null);
 
@@ -137,6 +146,8 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
     setDueDate(toDateInputValue(task.due_date));
     setWaitingReason(task.waiting_reason ?? '');
     setFollowUpDate(toDateInputValue(task.follow_up_date));
+    setProjectId(task.project_id ?? '');
+    setShowDeleteConfirm(false);
     setNotes([]);
     setNewNoteContent('');
     setNoteError(null);
@@ -157,6 +168,24 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
       setNotes(data);
     }
   }, [api.notes]);
+
+  // Fetch projects for reassignment dropdown
+  useEffect(() => {
+    if (projectsProp) {
+      setProjects(projectsProp);
+      return;
+    }
+    if (!isOpen) return;
+    (async () => {
+      try {
+        const { data } = await api.projects.list({});
+        if (data) setProjects(data);
+      } catch {
+        // Non-critical
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, projectsProp]);
 
   // ---------------------------------------------------------------------------
   // Save helpers — each field calls onUpdate on blur
@@ -230,6 +259,15 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
       saveField('follow_up_date', followUpDate || null);
     }
   }, [followUpDate, task, saveField]);
+
+  const handleProjectChange = useCallback(
+    (e) => {
+      const value = e.target.value;
+      setProjectId(value);
+      saveField('project_id', value || null);
+    },
+    [saveField]
+  );
 
   // ---------------------------------------------------------------------------
   // Notes
@@ -504,12 +542,23 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
               </>
             )}
 
-            {/* Project association (read-only) */}
-            {task.project_name && (
-              <FieldRow label="Project">
-                <p className="text-sm text-gray-700">{task.project_name}</p>
-              </FieldRow>
-            )}
+            {/* Project assignment */}
+            <FieldRow label="Project" htmlFor="drawer-project">
+              <select
+                id="drawer-project"
+                value={projectId}
+                onChange={handleProjectChange}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                aria-label="Task project"
+              >
+                <option value="">No project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </FieldRow>
 
             {/* Promoted from idea */}
             {task.source_idea_id && (
@@ -590,6 +639,47 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate }) {
                 </p>
               )}
             </div>
+
+            {/* ----------------------------------------------------------------
+                Delete section
+            ---------------------------------------------------------------- */}
+            {onDelete && (
+              <div className="pt-2 border-t border-gray-100">
+                {showDeleteConfirm ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 space-y-3">
+                    <p className="text-sm font-medium text-red-800">Delete task?</p>
+                    <p className="text-xs text-red-700">
+                      This cannot be undone.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { onDelete(task.id); onClose(); }}
+                        className="flex-1 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                      >
+                        Yes, delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transition-colors"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    Delete task
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           {/* end scrollable body */}
 

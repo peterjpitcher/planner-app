@@ -19,6 +19,7 @@ import { getStartOfTodayLondon } from '@/lib/dateUtils';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
 import TaskCard from '@/components/shared/TaskCard';
+import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 import TodaySection from './TodaySection';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,9 @@ export default function TodayView() {
   const [completedOpen, setCompletedOpen] = useState(false);
   const [overdueFollowUps, setOverdueFollowUps] = useState(0);
   const [firstRunInfo, setFirstRunInfo] = useState(null); // { overdue, dueThisWeek }
+
+  // Task detail drawer state
+  const [selectedTask, setSelectedTask] = useState(null);
 
   // Track in-flight optimistic task ids to avoid double-firing
   const pendingRef = useRef(new Set());
@@ -255,6 +259,17 @@ export default function TodayView() {
   }, []);
 
   const handleUpdate = useCallback(async (taskId, updates) => {
+    // Optimistically update local state so changes are immediately visible
+    setSections((prev) => {
+      const next = { must_do: [...prev.must_do], good_to_do: [...prev.good_to_do], quick_wins: [...prev.quick_wins] };
+      for (const key of TODAY_SECTION_ORDER) {
+        next[key] = next[key].map((t) => (t.id === taskId ? { ...t, ...updates } : t));
+      }
+      return next;
+    });
+    setCompletedToday((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updates } : t)));
+    // Keep selected task in sync
+    setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     try {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
@@ -262,11 +277,38 @@ export default function TodayView() {
     }
   }, []);
 
+  const handleDeleteTask = useCallback(async (taskId) => {
+    // Remove from sections
+    setSections((prev) => {
+      const next = { must_do: [...prev.must_do], good_to_do: [...prev.good_to_do], quick_wins: [...prev.quick_wins] };
+      for (const key of TODAY_SECTION_ORDER) {
+        next[key] = next[key].filter((t) => t.id !== taskId);
+      }
+      return next;
+    });
+    setCompletedToday((prev) => prev.filter((t) => t.id !== taskId));
+    setSelectedTask((prev) => (prev && prev.id === taskId ? null : prev));
+    try {
+      await apiClient.deleteTask(taskId);
+    } catch (err) {
+      alert(`Failed to delete task: ${err.message}`);
+      loadData(); // Reload on failure
+    }
+  }, [loadData]);
+
+  const handleDrawerUpdate = useCallback(async (taskId, updates) => {
+    await handleUpdate(taskId, updates);
+  }, [handleUpdate]);
+
   const handleTaskClick = useCallback((taskId) => {
-    // Placeholder — detail drawer not in scope for this task
-    // Future: open task detail panel
-    void taskId;
-  }, []);
+    // Find task across all sections and completedToday
+    for (const key of TODAY_SECTION_ORDER) {
+      const found = sections[key].find((t) => t.id === taskId);
+      if (found) { setSelectedTask(found); return; }
+    }
+    const found = completedToday.find((t) => t.id === taskId);
+    if (found) setSelectedTask(found);
+  }, [sections, completedToday]);
 
   // ---------------------------------------------------------------------------
   // Drag and drop
@@ -497,6 +539,7 @@ export default function TodayView() {
               onMove={handleMove}
               onUpdate={handleUpdate}
               onClick={handleTaskClick}
+              onDelete={handleDeleteTask}
             />
           ))}
         </div>
@@ -534,12 +577,22 @@ export default function TodayView() {
                   onMove={handleMove}
                   onUpdate={handleUpdate}
                   onClick={handleTaskClick}
+                  onDelete={handleDeleteTask}
                 />
               ))}
             </div>
           )}
         </div>
       )}
+
+      {/* Task detail drawer */}
+      <TaskDetailDrawer
+        task={selectedTask}
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={handleDrawerUpdate}
+        onDelete={handleDeleteTask}
+      />
     </div>
   );
 }
