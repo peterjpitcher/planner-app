@@ -1,44 +1,7 @@
 // Style Utilities
 
-import { PRIORITY } from './constants';
-
-// Priority Style Classes
-export const PRIORITY_STYLES = {
-  [PRIORITY.HIGH]: {
-    text: 'text-red-700',
-    border: 'border-red-300',
-    bg: 'bg-red-50',
-    ring: 'ring-red-500',
-    full: 'text-red-700 border-red-300 bg-red-50'
-  },
-  [PRIORITY.MEDIUM]: {
-    text: 'text-yellow-700',
-    border: 'border-yellow-300',
-    bg: 'bg-yellow-50',
-    ring: 'ring-yellow-500',
-    full: 'text-yellow-700 border-yellow-300 bg-yellow-50'
-  },
-  [PRIORITY.LOW]: {
-    text: 'text-green-700',
-    border: 'border-green-300',
-    bg: 'bg-green-50',
-    ring: 'ring-green-500',
-    full: 'text-green-700 border-green-300 bg-green-50'
-  },
-  DEFAULT: {
-    text: 'text-gray-700',
-    border: 'border-gray-300',
-    bg: 'bg-gray-50',
-    ring: 'ring-gray-500',
-    full: 'text-gray-700 border-gray-300 bg-gray-50'
-  }
-};
-
-// Get priority classes for an element
-export function getPriorityClasses(priority, type = 'full') {
-  const styles = PRIORITY_STYLES[priority] || PRIORITY_STYLES.DEFAULT;
-  return styles[type] || styles.full;
-}
+// Priority styles removed — replaced by section-based containment model.
+// State/section styling helpers will be added in Phase 2.
 
 // Status Style Classes
 export const STATUS_STYLES = {
