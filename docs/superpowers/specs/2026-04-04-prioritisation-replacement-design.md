@@ -3,7 +3,8 @@
 **Date**: 2026-04-04
 **Working title**: From capture to calm execution
 **Approach**: Big bang replacement — remove all legacy priority mechanics, replace with section-based containment model
-**QA Reviewed**: 2026-04-04 — 5-specialist review, all critical/high findings addressed in this revision
+**QA Reviewed**: 2026-04-04 — 5-specialist review, all critical/high findings addressed
+**User Review**: 2026-04-04 — 10 issues fixed, design refinements applied
 
 ---
 
@@ -66,7 +67,7 @@ tasks (
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
   completed_at    timestamptz,
-  state_changed_at timestamptz NOT NULL DEFAULT now()
+  entered_state_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- Constraint: today_section required when state = 'today', null otherwise
@@ -76,44 +77,46 @@ ALTER TABLE tasks ADD CONSTRAINT check_today_section
     (state != 'today' AND today_section IS NULL)
   );
 
--- Auto-healing trigger: ensures today_section is always correct even if application
--- code forgets to set it atomically. Prevents constraint violations on drag-and-drop.
-CREATE OR REPLACE FUNCTION fn_auto_heal_today_section()
+-- Cleanup trigger: handles side-effects of state changes.
+-- Does NOT silently default today_section — a bad write should fail loudly.
+-- The service layer is responsible for setting today_section explicitly when moving to today.
+CREATE OR REPLACE FUNCTION fn_task_state_cleanup()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.state = 'today' AND NEW.today_section IS NULL THEN
-    NEW.today_section := 'good_to_do';
-  ELSIF NEW.state != 'today' AND NEW.today_section IS NOT NULL THEN
+  -- Clear today_section when leaving today state
+  IF NEW.state != 'today' AND NEW.today_section IS NOT NULL THEN
     NEW.today_section := NULL;
   END IF;
   -- Auto-set completed_at when moving to done
-  IF NEW.state = 'done' AND OLD.state != 'done' THEN
+  IF NEW.state = 'done' AND (OLD IS NULL OR OLD.state != 'done') THEN
     NEW.completed_at := now();
   END IF;
   -- Auto-clear completed_at when moving out of done
-  IF NEW.state != 'done' AND OLD.state = 'done' THEN
+  IF OLD IS NOT NULL AND NEW.state != 'done' AND OLD.state = 'done' THEN
     NEW.completed_at := NULL;
   END IF;
   -- Track state changes
-  IF NEW.state != OLD.state THEN
-    NEW.state_changed_at := now();
+  IF OLD IS NULL OR NEW.state != OLD.state THEN
+    NEW.entered_state_at := now();
   END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_auto_heal_today_section
+CREATE TRIGGER trg_task_state_cleanup
   BEFORE INSERT OR UPDATE ON tasks
-  FOR EACH ROW EXECUTE FUNCTION fn_auto_heal_today_section();
+  FOR EACH ROW EXECUTE FUNCTION fn_task_state_cleanup();
 ```
 
 **Existing fields kept**: `description` (already exists on tasks, no migration needed)
 
 **Removed fields**: `priority`, `importance_score`, `urgency_score`, `is_completed`, `job`
 
-**Chip values**: `high_impact`, `urgent`, `blocks_others`, `quick_win`, `deep_work`, `stress_relief`, `only_i_can`
+**Chip values**: `high_impact`, `urgent`, `blocks_others`, `stress_relief`, `only_i_can`
 
-**Chips validation**: Application-level allowlist check in taskService before write. Max 7 values (one of each type), no duplicates, values must be in `CHIP_VALUES` constant. No database CHECK constraint — keeps chips extensible without migrations.
+Chips are cross-cutting properties only — they do not duplicate what `today_section` (Quick Wins) or `task_type` (deep_work) already express.
+
+**Chips validation**: Application-level allowlist check in taskService before write. Max 5 values (one of each type), no duplicates, values must be in `CHIP_VALUES` constant. No database CHECK constraint — keeps chips extensible without migrations.
 
 ### Ideas Table (new)
 
@@ -128,20 +131,13 @@ ideas (
                   CHECK (idea_state IN ('captured', 'exploring', 'ready_later', 'promoted')),
   why_it_matters  text,
   smallest_step   text,
-  promoted_to_task_id UUID REFERENCES tasks(id),  -- set when promoted, enables navigation
   review_date     date,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
-
--- RLS policies (RLS is always on per workspace convention)
-ALTER TABLE ideas ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "users_own_ideas" ON ideas
-  FOR ALL USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
 ```
 
-**Note on RLS**: The existing app does not enforce RLS (uses anon key, relies on NextAuth session checks). The RLS policy above is added as defence-in-depth. Application-level `user_id` filtering remains the primary data isolation mechanism — all queries must include `.eq('user_id', session.user.id)`.
+**No RLS on ideas.** The app authenticates via NextAuth, not Supabase Auth. `auth.uid()` in Postgres is tied to Supabase Auth sessions, which this app does not use — enabling RLS with `auth.uid()` policies would break reads/writes, not protect them. All data isolation is enforced in the service/API layer via `user_id` filtering from the NextAuth session. Every query must include `.eq('user_id', session.user.id)`. This matches the existing pattern on tasks, projects, and notes.
 
 ### Database Indexes
 
@@ -189,14 +185,12 @@ DROP INDEX IF EXISTS idx_tasks_user_scores;
 ```sql
 ALTER TABLE notes ADD COLUMN idea_id UUID REFERENCES ideas(id);
 
--- Log orphan notes before cleanup (notes where both FKs are null)
--- Run manually first: SELECT id, content, created_at FROM notes WHERE project_id IS NULL AND task_id IS NULL;
--- If orphans exist and contain valuable data, reassign to the user's oldest project:
-UPDATE notes SET project_id = (
-  SELECT id FROM projects WHERE user_id = notes.user_id ORDER BY created_at LIMIT 1
-) WHERE project_id IS NULL AND task_id IS NULL;
--- Delete only truly unassignable orphans (users with zero projects)
-DELETE FROM notes WHERE project_id IS NULL AND task_id IS NULL;
+-- PRE-MIGRATION MANUAL STEP (run before deploying):
+-- Check for orphan notes and review them manually.
+-- SELECT id, content, created_at, user_id FROM notes WHERE project_id IS NULL AND task_id IS NULL;
+-- This is a single-user app — manual review is completely reasonable.
+-- Decide per-note: assign to a project, or delete.
+-- Only proceed with the constraint change once orphan count is zero.
 
 ALTER TABLE notes DROP CONSTRAINT IF EXISTS check_note_parent;
 ALTER TABLE notes ADD CONSTRAINT check_note_parent CHECK (
@@ -225,6 +219,11 @@ export const TODAY_SECTION = {
   QUICK_WINS: 'quick_wins'
 };
 
+// Explicit display ordering — do not rely on text sort (must_do, good_to_do, quick_wins
+// do not sort alphabetically in the right order)
+export const TODAY_SECTION_ORDER = ['must_do', 'good_to_do', 'quick_wins'];
+export const IDEA_STATE_ORDER = ['captured', 'exploring', 'ready_later'];
+
 export const TASK_TYPE = {
   ADMIN: 'admin',
   REPLY_CHASE: 'reply_chase',
@@ -235,12 +234,15 @@ export const TASK_TYPE = {
   PERSONAL: 'personal'
 };
 
+// Chips are cross-cutting properties only. They do not duplicate what
+// today_section or task_type already express:
+//   - "quick win" is expressed by the Quick Wins today section
+//   - "deep work" is expressed by the deep_work task type
+// Chips answer: "what makes this task special across any section or type?"
 export const CHIP_VALUES = {
   HIGH_IMPACT: 'high_impact',
   URGENT: 'urgent',
   BLOCKS_OTHERS: 'blocks_others',
-  QUICK_WIN: 'quick_win',
-  DEEP_WORK: 'deep_work',
   STRESS_RELIEF: 'stress_relief',
   ONLY_I_CAN: 'only_i_can'
 };
@@ -363,7 +365,7 @@ Three sections matching idea states:
 
 - Capture is lightweight: just a title into "Captured"
 - Moving to "Exploring" surfaces prompts (why it matters, area, smallest step)
-- "Promote to task" creates a task in Backlog with `source_idea_id` set, and sets the idea's `idea_state = 'promoted'` + `promoted_to_task_id` (idea retained for history, hidden from active views, bidirectional link)
+- "Promote to task" creates a task in Backlog with `source_idea_id` set, and sets the idea's `idea_state = 'promoted'` (idea retained for history, hidden from active views). Navigation from idea → task is derived by querying `tasks WHERE source_idea_id = idea.id`. One canonical link, no synchronisation drift.
 - Ideas never appear in Today/Plan views
 
 ### Component Architecture
@@ -460,10 +462,10 @@ Available from every view via persistent floating input:
 
 When moving to Waiting (via drag popover or quick action):
 - Inline prompt: "Who/what are you waiting on?" (optional free text)
-- "Follow-up date?" with quick picks: +3 days, +1 week, +2 weeks. Default: +7 days if skipped.
-- Card shows reason and follow-up date
+- "Follow-up date?" with quick picks: +3 days, +1 week, +2 weeks. Fully optional — no default applied if skipped.
+- Card shows reason and follow-up date (if set)
 - Overdue follow-ups get amber visual flag
-- **Waiting items with null follow_up_date**: flagged as stale after 7 days (same amber badge as overdue follow-ups). This prevents tasks from rotting silently in Waiting.
+- **Waiting items with no follow-up date**: flagged as stale after 7 days in Waiting (uses `entered_state_at`). This prevents tasks from rotting silently.
 
 ### Completion Behaviour
 
@@ -477,11 +479,11 @@ The "Completed today" section filters by `completed_at >= start of today (Europe
 
 ### Staleness Detection
 
-Computed once on data arrival (not on every render), stored as a derived `isStale` boolean on the client-side task object:
-- This Week items with state_changed_at >14 days old → subtle "stale" badge
+**"Stale" means "has been in this state too long."** Computed once on data arrival (not on every render), stored as a derived `isStale` boolean on the client-side task object:
+- This Week items with `entered_state_at` >14 days ago → subtle "stale" badge
 - Backlog items never flagged as stale
-- Waiting items with overdue follow_up_date → amber flag
-- Waiting items with null follow_up_date and state_changed_at >7 days → amber flag
+- Waiting items with overdue `follow_up_date` → amber flag
+- Waiting items with no `follow_up_date` and `entered_state_at` >7 days ago → amber flag
 
 ---
 
@@ -498,6 +500,14 @@ Computed once on data arrival (not on every render), stored as a derived `isStal
 | Overdue follow-ups in Waiting | Banner: "N items need follow-up" |
 
 Visual nudges only. Never blocking, never modal, never punishing. Dismissable via localStorage with daily TTL (reset each morning).
+
+### First-Run Triage (post-migration only)
+
+After migration, all active tasks land in Backlog. On first load, show a one-off prompt:
+
+> "You have X overdue items and Y due this week in Backlog. Review now?"
+
+Links to the Plan board filtered to overdue/this-week items. Dismissed via localStorage (shown once, never again). This prevents genuinely urgent work from being buried in the initial Backlog dump.
 
 ### Weekly Planning Support
 
@@ -539,7 +549,7 @@ Create `src/services/ideaService.js`:
 - `createIdea(userId, data)` — validate, set user_id from session (never from request body)
 - `updateIdea(userId, id, data)` — verify ownership, validate, update
 - `deleteIdea(userId, id)` — verify ownership, delete
-- `promoteIdea(userId, id)` — verify ownership, create task in Backlog with `source_idea_id`, set idea `idea_state = 'promoted'` + `promoted_to_task_id`, return created task
+- `promoteIdea(userId, id)` — verify ownership, create task in Backlog with `source_idea_id` pointing back to the idea, set idea `idea_state = 'promoted'`, return created task. Navigation from idea → task is derived by querying `tasks WHERE source_idea_id = idea.id` — one canonical link, no dual FKs.
 
 ### Validation
 
@@ -561,23 +571,23 @@ All state transitions and field updates are validated in the service layer befor
 
 | From | Allowed To | Notes |
 |------|-----------|-------|
-| backlog | today, this_week, waiting, done | Moving to today auto-sets today_section via trigger |
-| this_week | today, backlog, waiting, done | |
-| today | this_week, backlog, waiting, done | Moving away auto-nulls today_section via trigger |
-| waiting | today, this_week, backlog, done | |
-| done | today, this_week, backlog | Un-completing auto-clears completed_at via trigger |
+| backlog | today, this_week, waiting, done | Service layer MUST set today_section explicitly when moving to today (trigger does NOT default it — constraint will reject the write if missing) |
+| this_week | today, backlog, waiting, done | Same: today_section required when target is today |
+| today | this_week, backlog, waiting, done | Trigger auto-nulls today_section when leaving today |
+| waiting | today, this_week, backlog, done | Same: today_section required when target is today |
+| done | today, this_week, backlog | Trigger auto-clears completed_at. Today requires today_section |
 
 ### Field Validation (taskService)
 
 | Field | Rules |
 |-------|-------|
 | state | Must be in STATE values |
-| today_section | Must be in TODAY_SECTION values when state = 'today' (trigger auto-heals) |
-| chips | Array, max 7 items, each must be in CHIP_VALUES, no duplicates |
-| area | Optional, max 100 chars, trimmed, normalised to lowercase, empty string → null |
+| today_section | Must be in TODAY_SECTION values. Required when state = 'today' — service layer must set explicitly (trigger does NOT auto-default, constraint rejects if missing). Defaults to 'good_to_do' when user drags into Today without choosing a section — but this default lives in the service layer, not the database. |
+| chips | Array, max 5 items, each must be in CHIP_VALUES, no duplicates |
+| area | Optional, max 100 chars, trimmed (case preserved), empty string → null |
 | task_type | Optional, must be in TASK_TYPE values |
 | waiting_reason | Optional, max 500 chars, sanitised |
-| follow_up_date | Optional, must be a valid future date |
+| follow_up_date | Optional, any valid date (past dates allowed — overdue is a feature, not invalid data) |
 | sort_order | Not accepted from client — computed server-side from position |
 | user_id | Never accepted from client — always set from session |
 
@@ -621,9 +631,9 @@ Making `project_id` nullable means tasks can exist without a project. The existi
 
 ### Area Field Behaviour
 
-`area` is free text, max 100 characters, with no database constraint. Values are **normalised on write**: `area = area.trim().toLowerCase()` — prevents case-sensitive duplicates ("Admin" vs "admin"). Empty strings normalised to null.
+`area` is free text, max 100 characters, with no database constraint. Values are **trimmed on write** but **case is preserved** — "General Mills", "AIStudio", "Old El Paso" display as the user typed them. Empty strings normalised to null.
 
-"Existing areas" dropdown is populated by `SELECT DISTINCT area FROM tasks WHERE area IS NOT NULL AND user_id = $1 UNION SELECT DISTINCT area FROM projects WHERE area IS NOT NULL AND user_id = $1`. Cached client-side at view load time with 60-second TTL — not re-fetched on every dropdown open.
+**Deduplication**: The dropdown compares case-insensitively when suggesting matches. The query uses `SELECT DISTINCT ON (LOWER(area)) area FROM tasks WHERE area IS NOT NULL AND user_id = $1 UNION SELECT DISTINCT ON (LOWER(area)) area FROM projects WHERE area IS NOT NULL AND user_id = $1`. This keeps one display value per case-insensitive group (the first one inserted wins). Cached client-side at view load time with 60-second TTL — not re-fetched on every dropdown open.
 
 ---
 
@@ -765,7 +775,7 @@ BEGIN;
 
 **Step 1 — Structural changes (no constraints yet, to allow seeding):**
 - Create ideas table (without CHECK constraints)
-- Add new columns to tasks: state (no CHECK yet), today_section (no CHECK yet), sort_order, area, task_type, chips, waiting_reason, follow_up_date, state_changed_at, source_idea_id
+- Add new columns to tasks: state (no CHECK yet), today_section (no CHECK yet), sort_order, area, task_type, chips, waiting_reason, follow_up_date, entered_state_at, source_idea_id
 - `ALTER TABLE tasks ALTER COLUMN project_id DROP NOT NULL`
 - Drop and recreate project_id FK with `ON DELETE SET NULL`: `ALTER TABLE tasks DROP CONSTRAINT tasks_project_id_fkey; ALTER TABLE tasks ADD CONSTRAINT tasks_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;`
 - Add idea_id FK to notes
@@ -777,7 +787,7 @@ BEGIN;
 - Completed tasks (`is_completed = true`): `state = 'done'`, `completed_at` preserved
 - Copy `job` values to `area` on tasks and projects
 - Seed `sort_order` with incremental values: `UPDATE tasks SET sort_order = sub.rn * 1000 FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at ASC) AS rn FROM tasks) sub WHERE tasks.id = sub.id`
-- Set `state_changed_at = now()` on all tasks
+- Set `entered_state_at = COALESCE(updated_at, created_at)` on all tasks (preserves history — "how long has this been sitting here?" rather than resetting the clock)
 - Null out `project_id` on tasks belonging to "Unassigned" projects
 
 **Step 2a — Verify seeding:**
@@ -803,14 +813,27 @@ SELECT count(*) FROM tasks WHERE sort_order IS NULL;
 **Step 6 — Add constraints and indexes:**
 - Add all CHECK constraints on state, today_section, task_type, idea_state
 - Add `check_today_section` constraint
-- Add auto-healing trigger `fn_auto_heal_today_section`
-- Add RLS policies on ideas table
+- Add cleanup trigger `fn_task_state_cleanup`
 - Create all 6 new indexes
 - Drop 2 legacy indexes
 
 ```sql
 COMMIT;
 ```
+
+### Deployment Checklist
+
+Because this is a big-bang replacement, cron jobs and external sync must be paused during deployment to prevent them hitting half-migrated schema or half-deployed code:
+
+1. **Pause cron jobs** — disable daily task email cron in Vercel dashboard
+2. **Pause Office 365 sync** — disable the sync webhook/cron trigger
+3. **Take database backup** — full backup via Supabase dashboard
+4. **Manually review orphan notes** — run the audit query, resolve before migration
+5. **Run migration** — `npx supabase db push` (test with `--dry-run` first)
+6. **Deploy app** — `vercel deploy --prod` (new code that expects new schema)
+7. **Smoke test** — verify /today loads, drag-and-drop works, ideas create
+8. **Re-enable cron** — daily task email
+9. **Re-enable Office 365 sync**
 
 ### Rollback Strategy
 
@@ -829,7 +852,7 @@ The project currently has no test suite (noted as tech debt). This refactor is a
 2. **State transition validation** — all valid/invalid transitions, today_section auto-healing
 3. **Chips validation** — allowlist check, dedup, max length
 4. **Promote idea to task** — bidirectional link, state changes on both entities
-5. **Area normalisation** — trim, lowercase, empty string → null
+5. **Area handling** — trim, case-insensitive dedup in dropdown, empty string → null
 6. **`getStartOfTodayLondon()`** — BST/GMT boundary, DST transitions
 
 Adding Vitest setup and these critical tests should be part of the implementation plan.
