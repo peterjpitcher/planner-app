@@ -33,6 +33,28 @@ class APIClient {
     });
   }
 
+  async getAllProjects(includeCompleted = false) {
+    const allProjects = [];
+    let offset = 0;
+    const limit = 200; // max allowed by API
+    let hasMore = true;
+
+    while (hasMore) {
+      const params = new URLSearchParams();
+      if (includeCompleted) params.append('includeCompleted', 'true');
+      params.append('limit', limit.toString());
+      params.append('offset', offset.toString());
+
+      const response = await this.fetchWithAuth(`/api/projects?${params}`);
+      const data = response.data || [];
+      allProjects.push(...data);
+      hasMore = response.pagination?.hasMore ?? false;
+      offset += limit;
+    }
+
+    return allProjects;
+  }
+
   async createProject(projectData) {
     const result = await this.fetchWithAuth('/api/projects', {
       method: 'POST',
@@ -78,6 +100,30 @@ class APIClient {
 
     const response = await this.fetchWithAuth(`/api/tasks?${params}`);
     return response.data || [];
+  }
+
+  async getAllTasks(projectId = null, options = {}) {
+    const allTasks = [];
+    let offset = 0;
+    const limit = 200; // max allowed by API
+    let hasMore = true;
+
+    while (hasMore) {
+      const params = new URLSearchParams();
+      if (projectId) params.append('projectId', projectId);
+      if (options.states) params.append('states', options.states);
+      if (options.state) params.append('state', options.state);
+      params.append('limit', limit.toString());
+      params.append('offset', offset.toString());
+
+      const response = await this.fetchWithAuth(`/api/tasks?${params}`);
+      const data = response.data || [];
+      allTasks.push(...data);
+      hasMore = response.pagination?.hasMore ?? false;
+      offset += limit;
+    }
+
+    return allTasks;
   }
 
   // Convenience method: fetch tasks filtered by a single state
