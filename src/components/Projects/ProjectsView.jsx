@@ -24,6 +24,7 @@ import { getStatusClasses } from '@/lib/styleUtils';
 import { STATE, PROJECT_STATUS } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
+import AddTaskInput from '@/components/shared/AddTaskInput';
 import ProjectDetailDrawer from './ProjectDetailDrawer';
 import CreateProjectModal from './CreateProjectModal';
 
@@ -117,56 +118,6 @@ function StateBadge({ state }) {
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {label}
     </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Inline add-task input
-// ---------------------------------------------------------------------------
-
-function AddTaskInput({ projectId, onTaskAdded }) {
-  const [name, setName] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await apiClient.createTask({
-        name: trimmed,
-        projectId: projectId ?? undefined,
-        state: 'backlog',
-      });
-      setName('');
-      onTaskAdded?.();
-    } catch {
-      // silently fail — task creation errors are rare
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="mt-2 flex gap-2">
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Add a task…"
-        maxLength={255}
-        disabled={isSubmitting}
-        className="flex-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm placeholder-gray-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
-      />
-      <button
-        type="submit"
-        disabled={!name.trim() || isSubmitting}
-        className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-      >
-        Add
-      </button>
-    </form>
   );
 }
 
@@ -656,6 +607,18 @@ export default function ProjectsView() {
     }
   }, [loadData]);
 
+  const handleTaskAdded = useCallback((newTask, projectId) => {
+    if (!newTask?.id) return;
+    if (projectId) {
+      setTasksByProject((prev) => ({
+        ...prev,
+        [projectId]: [...(prev[projectId] || []), newTask],
+      }));
+    } else {
+      setUnassignedTasks((prev) => [...prev, newTask]);
+    }
+  }, []);
+
   const handleDrawerUpdate = useCallback(async (taskId, updates) => {
     await handleUpdate(taskId, updates);
   }, [handleUpdate]);
@@ -776,7 +739,7 @@ export default function ProjectsView() {
               onUpdate={handleUpdate}
               onTaskClick={handleTaskClick}
               onDelete={handleDeleteTask}
-              onTaskAdded={loadData}
+              onTaskAdded={handleTaskAdded}
               onOpenDrawer={setSelectedProject}
             />
           ))}
@@ -836,7 +799,7 @@ export default function ProjectsView() {
               {unassignedTasks.length === 0 ? (
                 <>
                   <p className="py-2 text-xs text-gray-400 italic">No unassigned tasks.</p>
-                  <AddTaskInput projectId={null} onTaskAdded={loadData} />
+                  <AddTaskInput projectId={null} onTaskAdded={handleTaskAdded} />
                 </>
               ) : (
                 <ProjectTaskList
@@ -847,7 +810,7 @@ export default function ProjectsView() {
                   onTaskClick={handleTaskClick}
                   onDelete={handleDeleteTask}
                   projectId={null}
-                  onTaskAdded={loadData}
+                  onTaskAdded={handleTaskAdded}
                 />
               )}
             </div>
