@@ -38,10 +38,14 @@ function normalizeArea(value) {
 const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, created_at, updated_at';
 
 export async function createTask({ supabase, userId, payload, options = {} }) {
+  // Map camelCase frontend fields to snake_case DB columns
+  const { projectId, dueDate, ...rest } = payload || {};
   const taskData = {
-    ...payload,
+    ...rest,
+    ...(projectId !== undefined && { project_id: projectId }),
+    ...(dueDate !== undefined && { due_date: dueDate }),
     user_id: userId,
-    state: payload?.state || STATE.BACKLOG,
+    state: rest?.state || STATE.BACKLOG,
   };
 
   // When state = 'today' and no today_section provided, default to 'good_to_do'

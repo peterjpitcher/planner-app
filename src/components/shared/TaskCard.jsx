@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Menu, Portal } from '@headlessui/react';
 import { EllipsisVerticalIcon, Bars2Icon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
@@ -77,15 +77,67 @@ const MOVE_TARGETS = [
 // Due date badge
 // ---------------------------------------------------------------------------
 
-function DueDateBadge({ dueDate }) {
+function DueDateBadge({ dueDate, onChangeDueDate }) {
+  const dateRef = useRef(null);
   const status = useMemo(() => getDueDateStatus(dueDate), [dueDate]);
   if (!status) return null;
 
   return (
-    <span
-      className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded ${status.styles.bg} ${status.styles.text}`}
-    >
-      {status.label}
+    <span className="relative shrink-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          dateRef.current?.showPicker?.();
+          dateRef.current?.focus();
+        }}
+        className={`text-xs font-medium px-1.5 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-indigo-300 ${status.styles.bg} ${status.styles.text}`}
+      >
+        {status.label}
+      </button>
+      <input
+        ref={dateRef}
+        type="date"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        tabIndex={-1}
+        value={typeof dueDate === 'string' ? dueDate : format(dueDate, 'yyyy-MM-dd')}
+        onChange={(e) => {
+          e.stopPropagation();
+          onChangeDueDate?.(e.target.value || null);
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </span>
+  );
+}
+
+function NoDueDatePicker({ onChangeDueDate }) {
+  const dateRef = useRef(null);
+
+  return (
+    <span className="relative shrink-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          dateRef.current?.showPicker?.();
+          dateRef.current?.focus();
+        }}
+        className="text-xs font-medium px-1.5 py-0.5 rounded cursor-pointer text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 hover:text-gray-600"
+      >
+        + date
+      </button>
+      <input
+        ref={dateRef}
+        type="date"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        tabIndex={-1}
+        onChange={(e) => {
+          e.stopPropagation();
+          if (e.target.value) onChangeDueDate?.(e.target.value);
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
     </span>
   );
 }
@@ -211,7 +263,14 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
 
       {/* Right side: due date + menu */}
       <div className="flex shrink-0 items-center gap-1.5">
-        {task.due_date && <DueDateBadge dueDate={task.due_date} />}
+        {task.due_date ? (
+          <DueDateBadge
+            dueDate={task.due_date}
+            onChangeDueDate={(val) => onUpdate?.(task.id, { due_date: val })}
+          />
+        ) : (
+          <NoDueDatePicker onChangeDueDate={(val) => onUpdate?.(task.id, { due_date: val })} />
+        )}
 
         {/* Three-dot quick action menu */}
         <Menu as="div" className="relative">
