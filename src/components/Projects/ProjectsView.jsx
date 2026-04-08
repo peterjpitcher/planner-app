@@ -53,6 +53,9 @@ export default function ProjectsView() {
   const [selectedTask, setSelectedTask] = useState(null);
 
   // ---- Data fetching ----
+  // Capture initial URL id once — subsequent selection changes update state directly
+  const initialUrlId = useRef(searchParams.get('id'));
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -77,18 +80,17 @@ export default function ProjectsView() {
       setTasksByProject(byProject);
       setUnassignedTasks(unassigned);
 
-      // Validate URL-based selection
-      const urlId = searchParams.get('id');
+      // Validate URL-based selection (initial load only)
+      const urlId = initialUrlId.current;
       if (urlId) {
+        initialUrlId.current = null; // Only apply once
         const found = allProjects.find((p) => p.id === urlId);
         if (found) {
           setSelectedProjectId(urlId);
-          // Auto-show completed if the project is completed
           if (found.status === 'Completed' || found.status === 'Cancelled') {
             setShowCompleted(true);
           }
         } else {
-          // Invalid or inaccessible project — clear from URL
           setSelectedProjectId(null);
           window.history.replaceState(null, '', '/projects');
         }
@@ -98,7 +100,7 @@ export default function ProjectsView() {
     } finally {
       setLoading(false);
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
