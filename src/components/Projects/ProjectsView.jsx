@@ -98,7 +98,7 @@ export default function ProjectsView() {
     } finally {
       setLoading(false);
     }
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
