@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { STATE } from '@/lib/constants';
 import {
@@ -34,7 +34,6 @@ function ProjectsViewSkeleton() {
 }
 
 export default function ProjectsView() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   // Core data
@@ -48,6 +47,7 @@ export default function ProjectsView() {
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('id') || null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedArea, setSelectedArea] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -90,7 +90,7 @@ export default function ProjectsView() {
         } else {
           // Invalid or inaccessible project — clear from URL
           setSelectedProjectId(null);
-          router.replace('/projects', { scroll: false });
+          window.history.replaceState(null, '', '/projects');
         }
       }
     } catch (err) {
@@ -110,10 +110,12 @@ export default function ProjectsView() {
     [projects, tasksByProject]
   );
 
-  const visibleProjects = useMemo(
-    () => getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter, selectedArea }),
-    [projects, tasksByProject, showCompleted, activeFilter, selectedArea]
-  );
+  const visibleProjects = useMemo(() => {
+    const filtered = getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter, selectedArea });
+    if (!searchQuery.trim()) return filtered;
+    const q = searchQuery.trim().toLowerCase();
+    return filtered.filter((p) => p.name.toLowerCase().includes(q));
+  }, [projects, tasksByProject, showCompleted, activeFilter, selectedArea, searchQuery]);
 
   // For dashboard table: respects area and showCompleted but NOT active filter pill
   const dashboardProjects = useMemo(
@@ -140,7 +142,8 @@ export default function ProjectsView() {
   function selectProject(projectId) {
     setSelectedProjectId(projectId);
     setSelectedTask(null);
-    router.replace(projectId ? `/projects?id=${projectId}` : '/projects', { scroll: false });
+    const url = projectId ? `/projects?id=${projectId}` : '/projects';
+    window.history.replaceState(null, '', url);
   }
 
   function showDashboard() {
@@ -315,6 +318,8 @@ export default function ProjectsView() {
         onToggleCompleted={setShowCompleted}
         completedCount={completedCount}
         unassignedCount={unassignedTasks.length}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
 
       <main className="flex-1 overflow-y-auto px-6 py-5">

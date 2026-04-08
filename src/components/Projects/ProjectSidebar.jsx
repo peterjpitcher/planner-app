@@ -1,7 +1,7 @@
 // src/components/Projects/ProjectSidebar.jsx
 'use client';
 
-import { PlusIcon, HomeIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, HomeIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getStatusClasses, cn } from '@/lib/styleUtils';
 import { formatDate } from '@/lib/dateUtils';
 import { getAttentionType } from '@/lib/projectFilters';
@@ -132,6 +132,8 @@ export default function ProjectSidebar({
   onToggleCompleted,
   completedCount,
   unassignedCount,
+  searchQuery,
+  onSearchChange,
 }) {
   return (
     <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-gray-200 bg-gray-50/50">
@@ -157,6 +159,31 @@ export default function ProjectSidebar({
       {/* Area dropdown */}
       <AreaDropdown areas={areas} selectedArea={selectedArea} onAreaChange={onAreaChange} />
 
+      {/* Search */}
+      <div className="px-3 pb-2">
+        <div className="relative">
+          <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search projects…"
+            className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-7 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            aria-label="Search projects by name"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchChange('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              aria-label="Clear search"
+            >
+              <XMarkIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="mx-3 border-t border-gray-200" />
 
       {/* Project list */}
@@ -164,14 +191,14 @@ export default function ProjectSidebar({
         {projects.length === 0 ? (
           <div className="px-3 py-8 text-center">
             <p className="text-sm text-gray-500">
-              {activeFilter !== 'all' || selectedArea !== 'all'
+              {activeFilter !== 'all' || selectedArea !== 'all' || searchQuery
                 ? 'No projects match the current filters.'
                 : 'No projects yet. Create one to get started.'}
             </p>
-            {(activeFilter !== 'all' || selectedArea !== 'all') && (
+            {(activeFilter !== 'all' || selectedArea !== 'all' || searchQuery) && (
               <button
                 type="button"
-                onClick={() => { onFilterChange('all'); onAreaChange('all'); }}
+                onClick={() => { onFilterChange('all'); onAreaChange('all'); onSearchChange(''); }}
                 className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-700"
               >
                 Clear filters

@@ -193,7 +193,7 @@ export default function ProjectWorkspace({
               <>
                 <button
                   type="button"
-                  onClick={() => !isReadOnly && dateRef.current?.showPicker?.()}
+                  onClick={() => { if (!isReadOnly) { dateRef.current?.showPicker?.(); dateRef.current?.focus(); } }}
                   className={cn(
                     'rounded px-1.5 py-0.5 text-xs font-medium',
                     dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text,
@@ -217,7 +217,7 @@ export default function ProjectWorkspace({
             ) : (
               <button
                 type="button"
-                onClick={() => !isReadOnly && dateRef.current?.showPicker?.()}
+                onClick={() => { if (!isReadOnly) { dateRef.current?.showPicker?.(); dateRef.current?.focus(); } }}
                 className="text-xs text-gray-400 hover:text-indigo-600"
                 disabled={isReadOnly}
               >
@@ -227,7 +227,7 @@ export default function ProjectWorkspace({
             <input
               ref={dateRef}
               type="date"
-              className="absolute inset-0 h-full w-0 opacity-0"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               tabIndex={-1}
               value={project.due_date || ''}
               onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
