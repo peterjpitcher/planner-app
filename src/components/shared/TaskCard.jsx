@@ -93,7 +93,7 @@ function DueDateBadge({ dueDate, onChangeDueDate }) {
       </span>
       <input
         type="date"
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
         tabIndex={-1}
         value={typeof dueDate === 'string' ? dueDate : format(dueDate, 'yyyy-MM-dd')}
         onChange={(e) => {
@@ -119,7 +119,7 @@ function NoDueDatePicker({ onChangeDueDate }) {
       </span>
       <input
         type="date"
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
         tabIndex={-1}
         onChange={(e) => {
           e.stopPropagation();

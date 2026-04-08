@@ -202,7 +202,7 @@ export default function ProjectWorkspace({
               {!isReadOnly && (
                 <input
                   type="date"
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
                   tabIndex={-1}
                   value={project.due_date || ''}
                   onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
