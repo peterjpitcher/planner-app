@@ -113,7 +113,7 @@ export default function ProjectWorkspace({
 
   const statusClasses = getStatusClasses(project.status);
   const dueDateStatus = getDueDateStatus(project.due_date);
-  const dateRef = useRef(null);
+
 
   return (
     <div className="space-y-4">
@@ -187,51 +187,38 @@ export default function ProjectWorkspace({
         {/* Metadata row */}
         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
           {/* Due date */}
-          <span className="relative flex items-center gap-1">
+          <span className="flex items-center gap-1">
             <span className="text-gray-400">Due:</span>
-            {project.due_date ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => { if (!isReadOnly) { dateRef.current?.showPicker?.(); dateRef.current?.focus(); } }}
-                  className={cn(
-                    'rounded px-1.5 py-0.5 text-xs font-medium',
-                    dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text,
-                    !isReadOnly && 'cursor-pointer hover:ring-1 hover:ring-indigo-300'
-                  )}
-                  disabled={isReadOnly}
-                >
-                  {formatDate(project.due_date, 'MMM d, yyyy')}
-                </button>
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    onClick={() => onUpdateProject(project.id, { due_date: null })}
-                    className="text-xs text-gray-400 hover:text-red-500"
-                    aria-label="Clear due date"
-                  >
-                    ×
-                  </button>
+            <label className="relative cursor-pointer">
+              <span
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-xs font-medium',
+                  project.due_date ? [dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text] : 'text-gray-400 hover:text-indigo-600',
+                  !isReadOnly && 'cursor-pointer hover:ring-1 hover:ring-indigo-300'
                 )}
-              </>
-            ) : (
+              >
+                {project.due_date ? formatDate(project.due_date, 'MMM d, yyyy') : 'Set date'}
+              </span>
+              {!isReadOnly && (
+                <input
+                  type="date"
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  tabIndex={-1}
+                  value={project.due_date || ''}
+                  onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
+                />
+              )}
+            </label>
+            {project.due_date && !isReadOnly && (
               <button
                 type="button"
-                onClick={() => { if (!isReadOnly) { dateRef.current?.showPicker?.(); dateRef.current?.focus(); } }}
-                className="text-xs text-gray-400 hover:text-indigo-600"
-                disabled={isReadOnly}
+                onClick={() => onUpdateProject(project.id, { due_date: null })}
+                className="text-xs text-gray-400 hover:text-red-500"
+                aria-label="Clear due date"
               >
-                Set date
+                ×
               </button>
             )}
-            <input
-              ref={dateRef}
-              type="date"
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              tabIndex={-1}
-              value={project.due_date || ''}
-              onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
-            />
           </span>
 
           <span className="text-gray-300">|</span>

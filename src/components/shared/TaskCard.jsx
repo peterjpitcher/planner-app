@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { Menu, Portal } from '@headlessui/react';
 import { EllipsisVerticalIcon, Bars2Icon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
@@ -78,25 +78,20 @@ const MOVE_TARGETS = [
 // ---------------------------------------------------------------------------
 
 function DueDateBadge({ dueDate, onChangeDueDate }) {
-  const dateRef = useRef(null);
   const status = useMemo(() => getDueDateStatus(dueDate), [dueDate]);
   if (!status) return null;
 
   return (
-    <span className="relative shrink-0">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          dateRef.current?.showPicker?.();
-          dateRef.current?.focus();
-        }}
+    <label
+      className="relative shrink-0 cursor-pointer"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span
         className={`text-xs font-medium px-1.5 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-indigo-300 ${status.styles.bg} ${status.styles.text}`}
       >
         {status.label}
-      </button>
+      </span>
       <input
-        ref={dateRef}
         type="date"
         className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
         tabIndex={-1}
@@ -107,28 +102,22 @@ function DueDateBadge({ dueDate, onChangeDueDate }) {
         }}
         onClick={(e) => e.stopPropagation()}
       />
-    </span>
+    </label>
   );
 }
 
 function NoDueDatePicker({ onChangeDueDate }) {
-  const dateRef = useRef(null);
-
   return (
-    <span className="relative shrink-0">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          dateRef.current?.showPicker?.();
-          dateRef.current?.focus();
-        }}
+    <label
+      className="relative shrink-0 cursor-pointer"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span
         className="text-xs font-medium px-1.5 py-0.5 rounded cursor-pointer text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 hover:text-gray-600"
       >
         + date
-      </button>
+      </span>
       <input
-        ref={dateRef}
         type="date"
         className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
         tabIndex={-1}
@@ -138,7 +127,7 @@ function NoDueDatePicker({ onChangeDueDate }) {
         }}
         onClick={(e) => e.stopPropagation()}
       />
-    </span>
+    </label>
   );
 }
 
