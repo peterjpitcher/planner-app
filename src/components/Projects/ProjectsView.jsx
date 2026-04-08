@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { STATE } from '@/lib/constants';
@@ -138,28 +138,38 @@ export default function ProjectsView() {
     [tasksByProject, selectedProjectId]
   );
 
-  // ---- Selection handlers ----
-  function selectProject(projectId) {
+  // Refs for stable callbacks that need current values
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+  const tasksByProjectRef = useRef(tasksByProject);
+  tasksByProjectRef.current = tasksByProject;
+  const selectedProjectIdRef = useRef(selectedProjectId);
+  selectedProjectIdRef.current = selectedProjectId;
+
+  // ---- Selection handlers (stable refs for memo) ----
+  const selectProject = useCallback((projectId) => {
     setSelectedProjectId(projectId);
     setSelectedTask(null);
     const url = projectId ? `/projects?id=${projectId}` : '/projects';
     window.history.replaceState(null, '', url);
-  }
+  }, []);
 
-  function showDashboard() {
+  const showDashboard = useCallback(() => {
     selectProject(null);
-  }
+  }, [selectProject]);
 
-  function handleFilterChange(filter) {
+  const openCreateModal = useCallback(() => setIsCreateOpen(true), []);
+
+  const handleFilterChange = useCallback((filter) => {
     setActiveFilter(filter);
-    // If current project gets filtered out, clear selection
-    if (selectedProjectId && filter !== 'all') {
-      const project = projects.find((p) => p.id === selectedProjectId);
-      if (project && !matchesFilter(project, filter, tasksByProject[selectedProjectId] || [])) {
+    const prevId = selectedProjectIdRef.current;
+    if (prevId && filter !== 'all') {
+      const project = projectsRef.current.find((p) => p.id === prevId);
+      if (project && !matchesFilter(project, filter, tasksByProjectRef.current[prevId] || [])) {
         selectProject(null);
       }
     }
-  }
+  }, [selectProject]);
 
   // ---- Project mutation handlers ----
   const handleUpdateProject = useCallback(async (projectId, updates) => {
@@ -307,7 +317,7 @@ export default function ProjectsView() {
         selectedProjectId={selectedProjectId}
         onSelectProject={selectProject}
         onShowDashboard={showDashboard}
-        onCreateProject={() => setIsCreateOpen(true)}
+        onCreateProject={openCreateModal}
         activeFilter={activeFilter}
         onFilterChange={handleFilterChange}
         selectedArea={selectedArea}

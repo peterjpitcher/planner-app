@@ -1,6 +1,7 @@
 // src/components/Projects/ProjectSidebar.jsx
 'use client';
 
+import { memo } from 'react';
 import { PlusIcon, HomeIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getStatusClasses, cn } from '@/lib/styleUtils';
 import { formatDate } from '@/lib/dateUtils';
@@ -115,7 +116,7 @@ function ProjectListItem({ project, isSelected, taskCount, attentionType, onClic
   );
 }
 
-export default function ProjectSidebar({
+export default memo(function ProjectSidebar({
   projects,
   tasksByProject,
   selectedProjectId,
@@ -267,4 +268,4 @@ export default function ProjectSidebar({
       </div>
     </aside>
   );
-}
+});
