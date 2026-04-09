@@ -25,7 +25,7 @@ const SECTION_SOFT_CAP = {
 };
 
 function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onClick, onDelete }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const label = SECTION_LABELS[sectionKey] ?? sectionKey;
   const cap = SECTION_SOFT_CAP[sectionKey];
   const overCap = cap != null && tasks.length > cap;
