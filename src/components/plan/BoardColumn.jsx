@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/20/solid';
@@ -94,7 +94,10 @@ function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onCl
 // ---------------------------------------------------------------------------
 
 function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete }) {
-  const followUpDate = task.follow_up_date
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef(null);
+
+  const followUpDisplay = task.follow_up_date
     ? new Date(task.follow_up_date).toLocaleDateString('en-GB', {
         day: 'numeric',
         month: 'short',
@@ -109,27 +112,60 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete 
     task.entered_state_at &&
     (new Date() - new Date(task.entered_state_at)) / (1000 * 60 * 60 * 24) > 7;
 
+  function handleBadgeClick(e) {
+    e.stopPropagation();
+    setEditing(true);
+  }
+
+  function handleDateChange(e) {
+    const value = e.target.value || null;
+    onUpdate(task.id, { follow_up_date: value });
+    setEditing(false);
+  }
+
+  function handleDateBlur() {
+    setEditing(false);
+  }
+
   return (
     <div className="relative">
-      {(followUpDate || isStale) && (
+      {(followUpDisplay || isStale || editing) && (
         <div className="mb-0.5 flex items-center gap-1.5 px-1">
-          {followUpDate && (
-            <span
-              className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${
+          {editing ? (
+            <input
+              ref={inputRef}
+              type="date"
+              autoFocus
+              defaultValue={task.follow_up_date?.slice(0, 10) ?? ''}
+              onChange={handleDateChange}
+              onBlur={handleDateBlur}
+              onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false); }}
+              className="rounded-md border border-indigo-300 px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+          ) : followUpDisplay ? (
+            <button
+              type="button"
+              onClick={handleBadgeClick}
+              title="Click to change follow-up date"
+              className={`text-xs font-medium px-1.5 py-0.5 rounded-full cursor-pointer hover:opacity-80 transition-opacity ${
                 isOverdue
                   ? 'bg-red-50 text-red-600'
                   : 'bg-blue-50 text-blue-600'
               }`}
             >
               {isOverdue ? 'Overdue: ' : 'Follow-up: '}
-              {followUpDate}
-            </span>
-          )}
-          {isStale && !followUpDate && (
-            <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
+              {followUpDisplay}
+            </button>
+          ) : isStale ? (
+            <button
+              type="button"
+              onClick={handleBadgeClick}
+              title="Click to set a follow-up date"
+              className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 cursor-pointer hover:opacity-80 transition-opacity"
+            >
               Stale — no follow-up date
-            </span>
-          )}
+            </button>
+          ) : null}
         </div>
       )}
       <TaskCard
