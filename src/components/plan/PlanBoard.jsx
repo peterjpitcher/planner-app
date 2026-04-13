@@ -17,6 +17,7 @@ import { format, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
 import { computeSortOrder } from '@/lib/sortOrder';
+import { compareBacklogTasks } from '@/lib/taskSort';
 import BoardColumn from './BoardColumn';
 import TaskCard from '@/components/shared/TaskCard';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
@@ -249,7 +250,7 @@ export default function PlanBoard() {
     setColumns({
       [STATE.TODAY]: today ?? [],
       [STATE.THIS_WEEK]: thisWeek ?? [],
-      [STATE.BACKLOG]: backlog ?? [],
+      [STATE.BACKLOG]: backlog ? [...backlog].sort(compareBacklogTasks) : [],
       [STATE.WAITING]: waiting ?? [],
     });
 
@@ -282,7 +283,7 @@ export default function PlanBoard() {
       if (more) {
         setColumns((prev) => ({
           ...prev,
-          [STATE.BACKLOG]: [...prev[STATE.BACKLOG], ...more],
+          [STATE.BACKLOG]: [...prev[STATE.BACKLOG], ...more].sort(compareBacklogTasks),
         }));
         setBacklogHasMore(more.length >= BACKLOG_PAGE_SIZE);
         setBacklogOffset((o) => o + BACKLOG_PAGE_SIZE);
