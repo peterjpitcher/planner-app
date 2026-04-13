@@ -1,0 +1,82 @@
+'use client';
+
+import { useState } from 'react';
+import { useDroppable } from '@dnd-kit/core';
+import { cn } from '@/lib/utils';
+import CalendarTaskPill from './CalendarTaskPill';
+
+const MAX_VISIBLE = 3;
+
+export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, isToday }) {
+  const [showOverflow, setShowOverflow] = useState(false);
+  const { setNodeRef, isOver } = useDroppable({ id: `day-${dateKey}` });
+
+  const dayNumber = date.getDate();
+  const visibleTasks = tasks.slice(0, MAX_VISIBLE);
+  const overflowCount = tasks.length - MAX_VISIBLE;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'relative flex flex-col gap-0.5 border border-gray-100 p-1 min-h-[90px] lg:min-h-[110px] transition-colors',
+        !isCurrentMonth && 'bg-gray-50/50',
+        isOver && 'bg-indigo-50 ring-1 ring-indigo-300',
+        isToday && 'ring-2 ring-blue-400'
+      )}
+    >
+      {/* Day number */}
+      <span
+        className={cn(
+          'text-xs font-medium self-end w-6 h-6 flex items-center justify-center rounded-full',
+          isToday && 'bg-blue-500 text-white',
+          !isToday && isCurrentMonth && 'text-gray-700',
+          !isToday && !isCurrentMonth && 'text-gray-400'
+        )}
+      >
+        {dayNumber}
+      </span>
+
+      {/* Task pills */}
+      <div className="flex flex-col gap-0.5 flex-1 overflow-hidden">
+        {visibleTasks.map((task) => (
+          <CalendarTaskPill key={task.id} task={task} />
+        ))}
+      </div>
+
+      {/* Overflow button */}
+      {overflowCount > 0 && (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowOverflow(!showOverflow)}
+            className="text-[10px] font-medium text-indigo-600 hover:text-indigo-800 px-1"
+          >
+            +{overflowCount} more
+          </button>
+
+          {/* Overflow popover */}
+          {showOverflow && (
+            <>
+              {/* Backdrop to close popover */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowOverflow(false)}
+              />
+              <div className="absolute left-0 top-full z-50 mt-1 w-52 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  All tasks ({tasks.length})
+                </p>
+                <div className="flex flex-col gap-1">
+                  {tasks.map((task) => (
+                    <CalendarTaskPill key={task.id} task={task} />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
