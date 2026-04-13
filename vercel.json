@@ -12,6 +12,22 @@
     {
       "path": "/api/cron/office365-sync",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/demote-today-tasks",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/demote-today-tasks",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/cron/demote-week-tasks",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/demote-week-tasks",
+      "schedule": "0 20 * * *"
     }
   ]
 }
