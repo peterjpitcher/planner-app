@@ -59,7 +59,13 @@ export async function GET(request) {
       process.env.MICROSOFT_USER_EMAIL ||
       ''
     ).trim();
-    const userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
+    let userId;
+    try {
+      userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
+    } catch (err) {
+      try { await updateCronRun({ supabase, runId, patch: { status: 'failed', error: String(err.message) } }); } catch {}
+      throw err;
+    }
 
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')

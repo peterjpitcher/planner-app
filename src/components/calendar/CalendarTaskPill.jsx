@@ -48,7 +48,7 @@ function ContextMenu({ x, y, task, onClose, onMove, onComplete }) {
   const isCompleted = task.state === STATE.DONE || task.state === 'done';
 
   return (
-    <div ref={menuRef} style={style} className="w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+    <div ref={menuRef} style={style} onMouseDown={(e) => e.stopPropagation()} className="w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
       {/* Complete */}
       <button
         type="button"
