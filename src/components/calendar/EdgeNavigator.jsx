@@ -40,9 +40,8 @@ function EdgeZone({ direction, currentMonth, minMonth, maxMonth, onNavigate }) {
       className={cn(
         'absolute top-0 bottom-0 w-10 z-30 flex items-center justify-center transition-opacity',
         direction === 'prev' ? 'left-0' : 'right-0',
-        isOver && canNavigate ? 'opacity-100 bg-indigo-50/80' : 'opacity-0 pointer-events-none'
+        isOver && canNavigate ? 'opacity-100 bg-indigo-50/80' : 'opacity-0'
       )}
-      style={{ pointerEvents: isOver ? 'auto' : 'none' }}
     >
       <Icon className="h-6 w-6 text-indigo-500" />
     </div>
