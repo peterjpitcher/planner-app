@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { useState, useEffect, useCallback } from 'react';
+import { useDroppable, useDndMonitor } from '@dnd-kit/core';
 import { cn } from '@/lib/utils';
 import CalendarTaskPill from './CalendarTaskPill';
 
@@ -10,6 +10,17 @@ const MAX_VISIBLE = 3;
 export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, isToday }) {
   const [showOverflow, setShowOverflow] = useState(false);
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dateKey}` });
+
+  // Close popover when a drag starts
+  useDndMonitor({ onDragStart: useCallback(() => setShowOverflow(false), []) });
+
+  // Close popover on Escape key
+  useEffect(() => {
+    if (!showOverflow) return;
+    const handleKey = (e) => { if (e.key === 'Escape') setShowOverflow(false); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [showOverflow]);
 
   const dayNumber = date.getDate();
   const visibleTasks = tasks.slice(0, MAX_VISIBLE);
