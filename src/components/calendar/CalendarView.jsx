@@ -118,6 +118,37 @@ export default function CalendarView() {
     setActiveDragTask(null);
   }, []);
 
+  // Context menu: move task to a different state
+  const handleMoveTask = useCallback(async (taskId, targetState, targetSection) => {
+    const updates = { state: targetState };
+    if (targetSection) updates.today_section = targetSection;
+
+    // Optimistic: remove from calendar (it's moving to a different state view)
+    const previousTasks = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+    try {
+      await apiClient.updateTask(taskId, updates);
+    } catch (err) {
+      console.error('Failed to move task:', err);
+      setTasks(previousTasks);
+    }
+  }, [tasks]);
+
+  // Context menu: mark task complete
+  const handleCompleteTask = useCallback(async (taskId) => {
+    // Optimistic: remove from calendar (done tasks aren't shown)
+    const previousTasks = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+    try {
+      await apiClient.updateTask(taskId, { state: 'done' });
+    } catch (err) {
+      console.error('Failed to complete task:', err);
+      setTasks(previousTasks);
+    }
+  }, [tasks]);
+
   // Loading state
   if (isLoading) {
     return (
@@ -211,18 +242,18 @@ export default function CalendarView() {
 
           {/* Calendar grid */}
           <div className="flex-1 overflow-auto">
-            <CalendarGrid currentMonth={currentMonth} tasks={tasks} />
+            <CalendarGrid currentMonth={currentMonth} tasks={tasks} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} />
           </div>
 
           {/* Desktop sidebar */}
           <div className="hidden lg:block w-72 border-l border-gray-200 overflow-y-auto p-3">
-            <CalendarSidebar tasks={tasks} today={todayStr} />
+            <CalendarSidebar tasks={tasks} today={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} />
           </div>
         </div>
 
         {/* Mobile sidebar (below calendar) */}
         <div className="lg:hidden border-t border-gray-200 p-3 max-h-48 overflow-y-auto">
-          <CalendarSidebar tasks={tasks} today={todayStr} />
+          <CalendarSidebar tasks={tasks} today={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} />
         </div>
       </div>
 

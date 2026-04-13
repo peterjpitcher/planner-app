@@ -15,7 +15,7 @@ import CalendarDayCell from './CalendarDayCell';
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export default function CalendarGrid({ currentMonth, tasks }) {
+export default function CalendarGrid({ currentMonth, tasks, onMoveTask, onCompleteTask }) {
   // Build lookup: 'YYYY-MM-DD' -> task[]
   const tasksByDate = useMemo(() => {
     const map = {};
@@ -74,6 +74,8 @@ export default function CalendarGrid({ currentMonth, tasks }) {
               tasks={tasksByDate[dateKey] || []}
               isCurrentMonth={isSameMonth(day, currentMonth)}
               isToday={isToday(day)}
+              onMoveTask={onMoveTask}
+              onCompleteTask={onCompleteTask}
             />
           );
         })}
