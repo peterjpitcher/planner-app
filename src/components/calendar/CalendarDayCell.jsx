@@ -5,7 +5,7 @@ import { useDroppable, useDndMonitor } from '@dnd-kit/core';
 import { cn } from '@/lib/utils';
 import CalendarTaskPill from './CalendarTaskPill';
 
-const MAX_VISIBLE = 3;
+const MAX_VISIBLE = 2;
 
 export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, isToday }) {
   const [showOverflow, setShowOverflow] = useState(false);
@@ -30,7 +30,7 @@ export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, 
     <div
       ref={setNodeRef}
       className={cn(
-        'relative flex flex-col gap-0.5 border border-gray-100 p-1.5 min-h-[100px] lg:min-h-[120px] transition-colors',
+        'relative flex flex-col gap-0.5 border border-gray-100 p-1.5 min-h-[110px] lg:min-h-[130px] transition-colors',
         !isCurrentMonth && 'bg-gray-50/50',
         isOver && 'bg-indigo-50 ring-1 ring-indigo-300',
         isToday && 'ring-2 ring-blue-400'
@@ -49,9 +49,9 @@ export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, 
       </span>
 
       {/* Task pills */}
-      <div className="flex flex-col gap-0.5 flex-1 overflow-hidden">
+      <div className="flex flex-col gap-1 flex-1 overflow-hidden">
         {visibleTasks.map((task) => (
-          <CalendarTaskPill key={task.id} task={task} />
+          <CalendarTaskPill key={task.id} task={task} expanded />
         ))}
       </div>
 
