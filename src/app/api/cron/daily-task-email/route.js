@@ -1,25 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
+import { verifyCronAuth } from '@/lib/cronAuth';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
 import { buildDailyTaskEmail, fetchOutstandingTasks, resolveDigestUserId } from '@/services/dailyTaskEmailService';
 
-function isProduction() {
-  return process.env.NODE_ENV === 'production';
-}
-
-function isVercelCronRequest(request) {
-  const header = request.headers.get('x-vercel-cron');
-  return header === '1' || header === 'true';
-}
-
 function parseNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function getBooleanSearchParam(url, name) {
-  return url.searchParams.get(name) === 'true';
 }
 
 function getDigestTimeZone() {
@@ -58,7 +46,6 @@ async function claimDailyRun({ supabase, userId, runDateKey, toEmail, counts }) 
         return { claimed: false, reason: 'already_sent' };
       }
 
-      // Allow sending even if the tracking table is not deployed yet.
       if (String(error.message || '').toLowerCase().includes('does not exist')) {
         return { claimed: true, runId: null, reason: 'no_tracking_table' };
       }
@@ -82,26 +69,10 @@ async function updateDailyRun({ supabase, runId, patch }) {
 
 export async function GET(request) {
   try {
-    const url = new URL(request.url);
-    const isCron = isVercelCronRequest(request);
-    const dryRun = getBooleanSearchParam(url, 'dryRun');
-    const force = getBooleanSearchParam(url, 'force');
-
-    const manualToken = url.searchParams.get('token');
-    const manualTokenValid = Boolean(
-      process.env.CRON_MANUAL_TOKEN &&
-      manualToken &&
-      manualToken === process.env.CRON_MANUAL_TOKEN
-    );
-    const allowManualControls = !isProduction() || manualTokenValid;
-
-    const cronSecret = process.env.CRON_SECRET;
-    const providedSecret = request.headers.get('x-cron-secret');
-    if (cronSecret && !manualTokenValid && providedSecret !== cronSecret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    if (!cronSecret && isProduction() && !isCron && !manualTokenValid) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const auth = verifyCronAuth(request);
+    if (!auth.authorized) {
+      const msg = auth.status === 401 ? 'Unauthorized' : 'Forbidden';
+      return NextResponse.json({ error: msg }, { status: auth.status });
     }
 
     const digestTimeZone = getDigestTimeZone();
@@ -111,7 +82,7 @@ export async function GET(request) {
 
     const now = new Date();
     const shouldSendNow =
-      (allowManualControls && force) ||
+      auth.force ||
       isTimeWindowInZone({
         date: now,
         hour: sendHour,
@@ -168,7 +139,7 @@ export async function GET(request) {
 
     const counts = { dueToday: dueToday.length, overdue: overdue.length };
 
-    if (allowManualControls && dryRun) {
+    if (auth.dryRun) {
       return NextResponse.json({ sent: false, dryRun: true, counts }, { status: 200 });
     }
 
