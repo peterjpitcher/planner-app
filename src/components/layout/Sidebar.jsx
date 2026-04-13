@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
     CalendarCheck,
+    Calendar,
     Columns3,
     FolderOpen,
     Lightbulb,
@@ -18,6 +19,7 @@ import { signOut } from 'next-auth/react';
 const navigation = [
     { name: 'Today', href: '/today', icon: CalendarCheck },
     { name: 'Plan', href: '/plan', icon: Columns3 },
+    { name: 'Calendar', href: '/calendar', icon: Calendar },
     { name: 'Projects', href: '/projects', icon: FolderOpen },
     { name: 'Ideas', href: '/ideas', icon: Lightbulb },
     { name: 'Reports', href: '/completed-report', icon: PieChart },
