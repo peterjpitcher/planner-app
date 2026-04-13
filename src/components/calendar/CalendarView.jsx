@@ -215,7 +215,7 @@ export default function CalendarView() {
           </div>
 
           {/* Desktop sidebar */}
-          <div className="hidden lg:block w-56 border-l border-gray-200 overflow-y-auto p-3">
+          <div className="hidden lg:block w-72 border-l border-gray-200 overflow-y-auto p-3">
             <CalendarSidebar tasks={tasks} today={todayStr} />
           </div>
         </div>

@@ -53,9 +53,9 @@ export default function CalendarSidebar({ tasks, today }) {
           </h3>
           <div className="flex flex-col gap-1">
             {overdueTasks.map((task) => (
-              <div key={task.id}>
-                <CalendarTaskPill task={task} />
-                <span className="text-[10px] text-gray-400 ml-2">
+              <div key={task.id} className="flex flex-col">
+                <CalendarTaskPill task={task} expanded />
+                <span className="text-[10px] text-red-400 ml-2 mt-0.5">
                   was {format(parseISO(typeof task.due_date === 'string' ? task.due_date.slice(0, 10) : task.due_date), 'dd MMM')}
                 </span>
               </div>
@@ -72,7 +72,7 @@ export default function CalendarSidebar({ tasks, today }) {
           </h3>
           <div className="flex flex-col gap-1">
             {undatedTasks.map((task) => (
-              <CalendarTaskPill key={task.id} task={task} />
+              <CalendarTaskPill key={task.id} task={task} expanded />
             ))}
           </div>
         </div>

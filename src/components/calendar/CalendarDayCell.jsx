@@ -30,7 +30,7 @@ export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, 
     <div
       ref={setNodeRef}
       className={cn(
-        'relative flex flex-col gap-0.5 border border-gray-100 p-1 min-h-[90px] lg:min-h-[110px] transition-colors',
+        'relative flex flex-col gap-0.5 border border-gray-100 p-1.5 min-h-[100px] lg:min-h-[120px] transition-colors',
         !isCurrentMonth && 'bg-gray-50/50',
         isOver && 'bg-indigo-50 ring-1 ring-indigo-300',
         isToday && 'ring-2 ring-blue-400'
@@ -74,13 +74,13 @@ export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, 
                 className="fixed inset-0 z-40"
                 onClick={() => setShowOverflow(false)}
               />
-              <div className="absolute left-0 top-full z-50 mt-1 w-52 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              <div className="absolute left-0 top-full z-50 mt-1 w-64 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2.5 shadow-lg">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                   All tasks ({tasks.length})
                 </p>
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1.5">
                   {tasks.map((task) => (
-                    <CalendarTaskPill key={task.id} task={task} />
+                    <CalendarTaskPill key={task.id} task={task} expanded />
                   ))}
                 </div>
               </div>
