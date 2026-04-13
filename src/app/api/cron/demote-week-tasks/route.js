@@ -40,12 +40,17 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const runDate = getLondonDateKey();
 
-    const claim = await claimCronRun({ supabase, operation: 'demote_week', runDate });
-    if (!claim.claimed) {
-      return NextResponse.json(
-        { skipped: true, reason: claim.reason },
-        { status: 200 }
-      );
+    // Dry runs skip the idempotency claim so they don't block the real cron
+    let runId = null;
+    if (!auth.dryRun) {
+      const claim = await claimCronRun({ supabase, operation: 'demote_week', runDate });
+      if (!claim.claimed) {
+        return NextResponse.json(
+          { skipped: true, reason: claim.reason },
+          { status: 200 }
+        );
+      }
+      runId = claim.runId;
     }
 
     const digestUserEmail = (
@@ -63,20 +68,12 @@ export async function GET(request) {
       .eq('user_id', userId);
 
     if (fetchError) {
-      await updateCronRun({
-        supabase,
-        runId: claim.runId,
-        patch: { status: 'failed', error: String(fetchError.message) },
-      });
+      try { await updateCronRun({ supabase, runId, patch: { status: 'failed', error: String(fetchError.message) } }); } catch {}
       throw fetchError;
     }
 
     if (!tasks || tasks.length === 0) {
-      await updateCronRun({
-        supabase,
-        runId: claim.runId,
-        patch: { tasks_affected: 0, status: 'success' },
-      });
+      try { await updateCronRun({ supabase, runId, patch: { tasks_affected: 0, status: 'success' } }); } catch {}
       return NextResponse.json(
         { skipped: true, reason: 'no_tasks' },
         { status: 200 }
@@ -84,11 +81,6 @@ export async function GET(request) {
     }
 
     if (auth.dryRun) {
-      await updateCronRun({
-        supabase,
-        runId: claim.runId,
-        patch: { tasks_affected: tasks.length, status: 'dry_run' },
-      });
       return NextResponse.json(
         { dryRun: true, tasksCount: tasks.length },
         { status: 200 }
@@ -159,7 +151,7 @@ export async function GET(request) {
     try {
       await updateCronRun({
         supabase,
-        runId: claim.runId,
+        runId,
         patch: { tasks_affected: demotedCount, status: finalStatus },
       });
     } catch (runUpdateError) {
