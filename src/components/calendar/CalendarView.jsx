@@ -123,9 +123,17 @@ export default function CalendarView() {
     const updates = { state: targetState };
     if (targetSection) updates.today_section = targetSection;
 
-    // Optimistic: remove from calendar (it's moving to a different state view)
     const previousTasks = tasks;
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    // Calendar shows today/this_week/backlog/waiting — update in place for those,
+    // only remove if moving to a state not shown (e.g. done)
+    const calendarStates = new Set(['today', 'this_week', 'backlog', 'waiting']);
+    if (calendarStates.has(targetState)) {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, state: targetState, today_section: targetSection || null } : t))
+      );
+    } else {
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    }
 
     try {
       await apiClient.updateTask(taskId, updates);

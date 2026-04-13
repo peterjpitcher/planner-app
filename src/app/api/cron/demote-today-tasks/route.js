@@ -86,7 +86,7 @@ export async function GET(request) {
       );
     }
 
-    let demotedCount = 0;
+    const demotedTasks = [];
     for (const task of tasks) {
       const result = await updateTask({
         supabase,
@@ -96,7 +96,7 @@ export async function GET(request) {
         options: { skipProjectTouch: true },
       });
       if (!result.error) {
-        demotedCount++;
+        demotedTasks.push(task);
       }
     }
 
@@ -112,8 +112,8 @@ export async function GET(request) {
     ).trim();
 
     let emailStatus = 'no_email';
-    if (fromEmail && toEmail) {
-      const taskListHtml = tasks
+    if (fromEmail && toEmail && demotedTasks.length > 0) {
+      const taskListHtml = demotedTasks
         .map((t) => {
           const projectName = t.projects?.name ? ` (${escapeHtml(t.projects.name)})` : '';
           const dueDate = t.due_date ? ` &mdash; due ${escapeHtml(t.due_date)}` : '';
@@ -121,9 +121,9 @@ export async function GET(request) {
         })
         .join('\n');
 
-      const subject = `Daily Review: ${demotedCount} task${demotedCount !== 1 ? 's' : ''} moved from Today to This Week`;
+      const subject = `Daily Review: ${demotedTasks.length} task${demotedTasks.length !== 1 ? 's' : ''} moved from Today to This Week`;
       const html = `<p>${subject}</p>\n<ul>\n${taskListHtml}\n</ul>`;
-      const text = tasks
+      const text = demotedTasks
         .map((t) => {
           const projectName = t.projects?.name ? ` (${t.projects.name})` : '';
           const dueDate = t.due_date ? ` - due ${t.due_date}` : '';
@@ -151,14 +151,14 @@ export async function GET(request) {
       await updateCronRun({
         supabase,
         runId,
-        patch: { tasks_affected: demotedCount, status: finalStatus },
+        patch: { tasks_affected: demotedTasks.length, status: finalStatus },
       });
     } catch (runUpdateError) {
       console.error('Failed to update cron_runs status:', runUpdateError);
     }
 
     return NextResponse.json(
-      { demoted: demotedCount, emailStatus },
+      { demoted: demotedTasks.length, emailStatus },
       { status: 200 }
     );
   } catch (error) {
