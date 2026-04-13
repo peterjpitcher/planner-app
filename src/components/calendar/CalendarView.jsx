@@ -20,6 +20,7 @@ import CalendarSidebar from './CalendarSidebar';
 import CalendarTaskPill from './CalendarTaskPill';
 import MonthStrip from './MonthStrip';
 import EdgeNavigator from './EdgeNavigator';
+import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 
 export default function CalendarView() {
   const now = useMemo(() => new Date(), []);
@@ -32,6 +33,7 @@ export default function CalendarView() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeDragTask, setActiveDragTask] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
 
   // DnD sensor
   const sensors = useSensors(
@@ -117,6 +119,50 @@ export default function CalendarView() {
   const handleDragCancel = useCallback(() => {
     setActiveDragTask(null);
   }, []);
+
+  // Task click: open detail drawer
+  const handleClick = useCallback((taskId) => {
+    const found = tasks.find((t) => t.id === taskId);
+    if (found) setSelectedTask(found);
+  }, [tasks]);
+
+  // Drawer: update task field(s)
+  const handleDrawerUpdate = useCallback(async (taskId, updates) => {
+    const previousTasks = tasks;
+    // Optimistic update
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, ...updates } : t))
+    );
+    setSelectedTask((prev) =>
+      prev && prev.id === taskId ? { ...prev, ...updates } : prev
+    );
+
+    try {
+      await apiClient.updateTask(taskId, updates);
+    } catch (err) {
+      console.error('Failed to update task:', err);
+      setTasks(previousTasks);
+      setSelectedTask((prev) =>
+        prev && prev.id === taskId
+          ? previousTasks.find((t) => t.id === taskId) ?? prev
+          : prev
+      );
+    }
+  }, [tasks]);
+
+  // Drawer: delete task
+  const handleDeleteTask = useCallback(async (taskId) => {
+    const previousTasks = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    setSelectedTask(null);
+
+    try {
+      await apiClient.deleteTask(taskId);
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      setTasks(previousTasks);
+    }
+  }, [tasks]);
 
   // Context menu: move task to a different state
   const handleMoveTask = useCallback(async (taskId, targetState, targetSection) => {
@@ -250,18 +296,18 @@ export default function CalendarView() {
 
           {/* Calendar grid */}
           <div className="flex-1 overflow-auto">
-            <CalendarGrid currentMonth={currentMonth} tasks={tasks} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} />
+            <CalendarGrid currentMonth={currentMonth} tasks={tasks} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} onTaskClick={handleClick} />
           </div>
 
           {/* Desktop sidebar */}
           <div className="hidden lg:block w-72 border-l border-gray-200 overflow-y-auto p-3">
-            <CalendarSidebar tasks={tasks} today={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} />
+            <CalendarSidebar tasks={tasks} today={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} onTaskClick={handleClick} />
           </div>
         </div>
 
         {/* Mobile sidebar (below calendar) */}
         <div className="lg:hidden border-t border-gray-200 p-3 max-h-48 overflow-y-auto">
-          <CalendarSidebar tasks={tasks} today={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} />
+          <CalendarSidebar tasks={tasks} today={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} onTaskClick={handleClick} />
         </div>
       </div>
 
@@ -271,6 +317,15 @@ export default function CalendarView() {
           <CalendarTaskPill task={activeDragTask} isDragOverlay />
         ) : null}
       </DragOverlay>
+
+      {/* Task detail drawer */}
+      <TaskDetailDrawer
+        task={selectedTask}
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={handleDrawerUpdate}
+        onDelete={handleDeleteTask}
+      />
     </DndContext>
   );
 }

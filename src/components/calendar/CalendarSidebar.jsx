@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { parseISO, format } from 'date-fns';
 import CalendarTaskPill from './CalendarTaskPill';
 
-export default function CalendarSidebar({ tasks, today, onMoveTask, onCompleteTask }) {
+export default function CalendarSidebar({ tasks, today, onMoveTask, onCompleteTask, onTaskClick }) {
   const { overdueTasks, undatedTasks } = useMemo(() => {
     const overdue = [];
     const undated = [];
@@ -54,7 +54,7 @@ export default function CalendarSidebar({ tasks, today, onMoveTask, onCompleteTa
           <div className="flex flex-col gap-1">
             {overdueTasks.map((task) => (
               <div key={task.id} className="flex flex-col">
-                <CalendarTaskPill task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} />
+                <CalendarTaskPill task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} onClick={onTaskClick} />
                 <span className="text-[10px] text-red-400 ml-2 mt-0.5">
                   was {format(parseISO(typeof task.due_date === 'string' ? task.due_date.slice(0, 10) : task.due_date), 'dd MMM')}
                 </span>
@@ -72,7 +72,7 @@ export default function CalendarSidebar({ tasks, today, onMoveTask, onCompleteTa
           </h3>
           <div className="flex flex-col gap-1">
             {undatedTasks.map((task) => (
-              <CalendarTaskPill key={task.id} task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} />
+              <CalendarTaskPill key={task.id} task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} onClick={onTaskClick} />
             ))}
           </div>
         </div>

@@ -89,7 +89,7 @@ function ContextMenu({ x, y, task, onClose, onMove, onComplete }) {
   );
 }
 
-export default function CalendarTaskPill({ task, isDragOverlay = false, expanded = false, onMove, onComplete }) {
+export default function CalendarTaskPill({ task, isDragOverlay = false, expanded = false, onMove, onComplete, onClick }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
     data: { task },
@@ -113,11 +113,13 @@ export default function CalendarTaskPill({ task, isDragOverlay = false, expanded
       {...(!isDragOverlay ? attributes : {})}
       {...(!isDragOverlay ? listeners : {})}
       onContextMenu={!isDragOverlay ? handleContextMenu : undefined}
+      onClick={!isDragOverlay && onClick ? () => onClick(task.id) : undefined}
       className={cn(
         'flex flex-col rounded border-l-[3px] bg-white px-2 py-1.5 text-xs shadow-sm cursor-grab active:cursor-grabbing',
         borderColor,
         isDragging && !isDragOverlay && 'opacity-30',
-        isDragOverlay && 'shadow-lg ring-2 ring-indigo-300 rotate-2'
+        isDragOverlay && 'shadow-lg ring-2 ring-indigo-300 rotate-2',
+        !isDragOverlay && onClick && 'hover:ring-1 hover:ring-indigo-200'
       )}
     >
       <span className="font-medium text-gray-800 leading-tight line-clamp-2">
@@ -135,12 +137,14 @@ export default function CalendarTaskPill({ task, isDragOverlay = false, expanded
       {...(!isDragOverlay ? attributes : {})}
       {...(!isDragOverlay ? listeners : {})}
       onContextMenu={!isDragOverlay ? handleContextMenu : undefined}
+      onClick={!isDragOverlay && onClick ? () => onClick(task.id) : undefined}
       title={`${task.name}${task.project_name ? ` — ${task.project_name}` : ''}`}
       className={cn(
         'flex items-center gap-1.5 rounded border-l-[3px] bg-white px-1.5 py-1 text-xs shadow-sm cursor-grab active:cursor-grabbing',
         borderColor,
         isDragging && !isDragOverlay && 'opacity-30',
-        isDragOverlay && 'shadow-lg ring-2 ring-indigo-300 rotate-2'
+        isDragOverlay && 'shadow-lg ring-2 ring-indigo-300 rotate-2',
+        !isDragOverlay && onClick && 'hover:ring-1 hover:ring-indigo-200'
       )}
     >
       <span className="truncate font-medium text-gray-800 flex-1 min-w-0">

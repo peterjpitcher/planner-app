@@ -7,7 +7,7 @@ import CalendarTaskPill from './CalendarTaskPill';
 
 const MAX_VISIBLE = 2;
 
-export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, isToday, onMoveTask, onCompleteTask }) {
+export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, isToday, onMoveTask, onCompleteTask, onTaskClick }) {
   const [showOverflow, setShowOverflow] = useState(false);
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dateKey}` });
 
@@ -51,7 +51,7 @@ export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, 
       {/* Task pills */}
       <div className="flex flex-col gap-1 flex-1 overflow-hidden">
         {visibleTasks.map((task) => (
-          <CalendarTaskPill key={task.id} task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} />
+          <CalendarTaskPill key={task.id} task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} onClick={onTaskClick} />
         ))}
       </div>
 
@@ -80,7 +80,14 @@ export default function CalendarDayCell({ date, dateKey, tasks, isCurrentMonth, 
                 </p>
                 <div className="flex flex-col gap-1.5">
                   {tasks.map((task) => (
-                    <CalendarTaskPill key={task.id} task={task} expanded onMove={onMoveTask} onComplete={onCompleteTask} />
+                    <CalendarTaskPill
+                      key={task.id}
+                      task={task}
+                      expanded
+                      onMove={onMoveTask}
+                      onComplete={onCompleteTask}
+                      onClick={onTaskClick ? (taskId) => { setShowOverflow(false); onTaskClick(taskId); } : undefined}
+                    />
                   ))}
                 </div>
               </div>
