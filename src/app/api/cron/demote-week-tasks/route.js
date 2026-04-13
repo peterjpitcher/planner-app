@@ -156,11 +156,15 @@ export async function GET(request) {
     }
 
     const finalStatus = emailStatus === 'failed' ? 'partial' : 'success';
-    await updateCronRun({
-      supabase,
-      runId: claim.runId,
-      patch: { tasks_affected: demotedCount, status: finalStatus },
-    });
+    try {
+      await updateCronRun({
+        supabase,
+        runId: claim.runId,
+        patch: { tasks_affected: demotedCount, status: finalStatus },
+      });
+    } catch (runUpdateError) {
+      console.error('Failed to update cron_runs status:', runUpdateError);
+    }
 
     return NextResponse.json(
       { demoted: demotedCount, emailStatus },
