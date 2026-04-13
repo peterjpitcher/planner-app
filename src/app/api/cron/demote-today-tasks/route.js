@@ -108,7 +108,7 @@ export async function GET(request) {
       ''
     ).trim();
     const toEmail = (
-      process.env.DEMOTE_EMAIL_TO ||
+      process.env.DIGEST_USER_EMAIL ||
       process.env.DAILY_TASK_EMAIL_TO ||
       ''
     ).trim();
