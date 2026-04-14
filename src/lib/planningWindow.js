@@ -129,7 +129,8 @@ export function getActivePlanningWindow(settings = {}, now = new Date()) {
 export function getMondayOfWeek(dateKey) {
   const d = new Date(dateKey + 'T12:00:00Z');
   const day = d.getUTCDay(); // 0=Sun, 1=Mon, ...
-  const diff = day === 0 ? 1 : day === 1 ? 0 : 8 - day;
+  // Go backwards to Monday: Sun(-6), Mon(0), Tue(-1), Wed(-2), Thu(-3), Fri(-4), Sat(-5)
+  const diff = day === 0 ? -6 : -(day - 1);
   d.setUTCDate(d.getUTCDate() + diff);
   return d.toISOString().slice(0, 10);
 }

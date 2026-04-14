@@ -27,9 +27,15 @@ export function usePlanningPrompt() {
   const settingsRef = useRef(null);
   const lastCheckRef = useRef(null);
   const sessionCandidateCountRef = useRef(null);
+  const manualOverrideRef = useRef(false);
 
   const checkPlanningState = useCallback(async () => {
     try {
+      // Skip auto-check while a manual planning session is active
+      if (manualOverrideRef.current) {
+        return;
+      }
+
       // 1. Fetch settings (cache in ref)
       if (!settingsRef.current) {
         settingsRef.current = await apiClient.getUserSettings();
@@ -109,7 +115,10 @@ export function usePlanningPrompt() {
   }, [checkPlanningState]);
 
   const openModal = useCallback(() => setShowModal(true), []);
-  const closeModal = useCallback(() => setShowModal(false), []);
+  const closeModal = useCallback(() => {
+    setShowModal(false);
+    manualOverrideRef.current = false;
+  }, []);
 
   const refreshSettings = useCallback(() => {
     settingsRef.current = null;
@@ -142,6 +151,7 @@ export function usePlanningPrompt() {
       const session = await apiClient.getPlanningSession(type, computedDate);
       setIsPlanned(!!session);
 
+      manualOverrideRef.current = true;
       setShowModal(true);
     } catch (err) {
       console.error('Manual planning trigger failed:', err);
@@ -152,6 +162,7 @@ export function usePlanningPrompt() {
 
   const onPlanningComplete = useCallback(async () => {
     setShowModal(false);
+    manualOverrideRef.current = false;
     setIsPlanned(true);
     setHasNewTasks(false);
     // Store current candidate count so re-checks only flag truly new tasks
