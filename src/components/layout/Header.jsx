@@ -67,7 +67,7 @@ export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu
                                 onClick={() => { setShowPlanMenu(false); onPlanTomorrow?.(); }}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted"
                             >
-                                Plan Tomorrow
+                                Plan Today
                             </button>
                             <button
                                 type="button"

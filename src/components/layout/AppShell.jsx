@@ -103,6 +103,7 @@ export default function AppShell({ children }) {
           windowType={planning.windowType}
           windowDate={planning.windowDate}
           tasks={planning.tasks}
+          isManual={planning.isManual}
         />
       )}
       {isTabRoute && <QuickCapture />}

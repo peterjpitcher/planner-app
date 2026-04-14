@@ -17,6 +17,7 @@ export function usePlanningPrompt() {
     isActive: false,
     windowType: null,
     windowDate: null,
+    isManual: false,
   });
   const [isPlanned, setIsPlanned] = useState(false);
   const [tasks, setTasks] = useState(null);
@@ -37,7 +38,7 @@ export function usePlanningPrompt() {
       // 2. Determine active window
       const planningWindow = getActivePlanningWindow(settingsRef.current);
 
-      setWindowState(planningWindow);
+      setWindowState({ ...planningWindow, isManual: false });
 
       if (!planningWindow.isActive) {
         setIsLoading(false);
@@ -126,18 +127,16 @@ export function usePlanningPrompt() {
 
       let computedDate;
       if (type === 'weekly') {
-        // Monday of the current week (or next Monday if today is Sunday)
+        // Monday of the current week
         computedDate = getMondayOfWeek(today);
       } else {
-        // Tomorrow
-        const d = new Date(today + 'T12:00:00Z');
-        d.setUTCDate(d.getUTCDate() + 1);
-        computedDate = d.toISOString().slice(0, 10);
+        // Today — manual daily planning targets the current day
+        computedDate = today;
       }
 
       const candidates = await apiClient.getPlanningCandidates(type, computedDate);
       setTasks(candidates);
-      setWindowState({ isActive: true, windowType: type, windowDate: computedDate });
+      setWindowState({ isActive: true, windowType: type, windowDate: computedDate, isManual: true });
 
       // Check if already planned for this window
       const session = await apiClient.getPlanningSession(type, computedDate);
@@ -172,6 +171,7 @@ export function usePlanningPrompt() {
   return {
     isLoading,
     isActive: windowState.isActive,
+    isManual: windowState.isManual,
     windowType: windowState.windowType,
     windowDate: windowState.windowDate,
     isPlanned,

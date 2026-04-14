@@ -21,6 +21,7 @@ export default function PlanningModal({
   windowType,
   windowDate,
   tasks,
+  isManual = false,
 }) {
   // Combined flow: Sunday starts with weekly, then transitions to daily (Monday)
   const isSundayCombined = windowType === WINDOW_TYPE.WEEKLY;
@@ -166,9 +167,10 @@ export default function PlanningModal({
     }
   };
 
+  const dailyLabel = isManual ? 'Plan Your Day' : 'Plan Your Tomorrow';
   const title = step === 'weekly'
     ? `Plan Your Week — ${formatWeekRange(windowDate)}`
-    : `Plan Your Tomorrow — ${formatWindowDate(windowDate)}`;
+    : `${dailyLabel} — ${formatWindowDate(windowDate)}`;
 
   const stepIndicator = isSundayCombined
     ? step === 'weekly'
@@ -183,7 +185,7 @@ export default function PlanningModal({
         { label: 'Overdue', tasks: tasks?.overdue || [] },
       ]
     : [
-        { label: 'Due Tomorrow', tasks: activeTasks?.dueTomorrow || [] },
+        { label: isManual ? 'Due Today' : 'Due Tomorrow', tasks: activeTasks?.dueTomorrow || [] },
         { label: 'Overdue', tasks: activeTasks?.overdue || [] },
         { label: 'Available This Week', tasks: activeTasks?.undatedThisWeek || [] },
       ];
