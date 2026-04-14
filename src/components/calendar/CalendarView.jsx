@@ -41,25 +41,31 @@ export default function CalendarView() {
   );
 
   // Fetch tasks
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchTasks() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const data = await apiClient.getAllTasks(null, {
-          states: 'today,this_week,backlog,waiting',
-        });
-        if (!cancelled) setTasks(data);
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load tasks');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
+  const fetchTasks = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await apiClient.getAllTasks(null, {
+        states: 'today,this_week,backlog,waiting',
+      });
+      setTasks(data);
+    } catch (err) {
+      setError(err.message || 'Failed to load tasks');
+    } finally {
+      setIsLoading(false);
     }
-    fetchTasks();
-    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // Refetch when planning is completed
+  useEffect(() => {
+    const handlePlanningComplete = () => { fetchTasks(); };
+    window.addEventListener('planning-complete', handlePlanningComplete);
+    return () => window.removeEventListener('planning-complete', handlePlanningComplete);
+  }, [fetchTasks]);
 
   // Month navigation
   const navigateMonth = useCallback((target) => {

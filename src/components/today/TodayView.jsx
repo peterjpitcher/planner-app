@@ -169,6 +169,13 @@ export default function TodayView() {
     loadData();
   }, [loadData]);
 
+  // Refetch when planning is completed
+  useEffect(() => {
+    const handlePlanningComplete = () => { loadData(); };
+    window.addEventListener('planning-complete', handlePlanningComplete);
+    return () => window.removeEventListener('planning-complete', handlePlanningComplete);
+  }, [loadData]);
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------

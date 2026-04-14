@@ -268,6 +268,13 @@ export default function PlanBoard() {
     loadAllColumns();
   }, [loadAllColumns]);
 
+  // Refetch when planning is completed
+  useEffect(() => {
+    const handlePlanningComplete = () => { loadAllColumns(); };
+    window.addEventListener('planning-complete', handlePlanningComplete);
+    return () => window.removeEventListener('planning-complete', handlePlanningComplete);
+  }, [loadAllColumns]);
+
   // ---------------------------------------------------------------------------
   // Load more backlog
   // ---------------------------------------------------------------------------
