@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 
 const DEFAULT_SETTINGS = {
-  daily_start: '06:00',
-  daily_end: '10:00',
-  weekly_start: '06:00',
-  weekly_end: '10:00',
+  daily_plan_start: '20:05',
+  daily_plan_end: '20:00',
+  weekly_plan_start: '20:05',
+  weekly_plan_end: '20:00',
 };
 
 export default function PlanningSettingsClient() {
@@ -19,13 +19,13 @@ export default function PlanningSettingsClient() {
   useEffect(() => {
     async function loadSettings() {
       try {
-        const data = await apiClient.getPlanningSettings();
+        const data = await apiClient.getUserSettings();
         if (data) {
           setSettings({
-            daily_start: data.daily_start ?? DEFAULT_SETTINGS.daily_start,
-            daily_end: data.daily_end ?? DEFAULT_SETTINGS.daily_end,
-            weekly_start: data.weekly_start ?? DEFAULT_SETTINGS.weekly_start,
-            weekly_end: data.weekly_end ?? DEFAULT_SETTINGS.weekly_end,
+            daily_plan_start: data.daily_plan_start ?? DEFAULT_SETTINGS.daily_plan_start,
+            daily_plan_end: data.daily_plan_end ?? DEFAULT_SETTINGS.daily_plan_end,
+            weekly_plan_start: data.weekly_plan_start ?? DEFAULT_SETTINGS.weekly_plan_start,
+            weekly_plan_end: data.weekly_plan_end ?? DEFAULT_SETTINGS.weekly_plan_end,
           });
         }
       } catch {
@@ -47,7 +47,7 @@ export default function PlanningSettingsClient() {
     setIsSaving(true);
     setFeedback(null);
     try {
-      await apiClient.updatePlanningSettings(settings);
+      await apiClient.updateUserSettings(settings);
       setFeedback({ type: 'success', message: 'Planning settings saved.' });
     } catch (err) {
       setFeedback({ type: 'error', message: err.message || 'Failed to save settings.' });
@@ -78,26 +78,26 @@ export default function PlanningSettingsClient() {
           <legend className="text-sm font-medium text-foreground mb-3">Daily Planning Window</legend>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="daily_start" className="block text-xs text-muted-foreground mb-1">
+              <label htmlFor="daily_plan_start" className="block text-xs text-muted-foreground mb-1">
                 Start time
               </label>
               <input
-                id="daily_start"
+                id="daily_plan_start"
                 type="time"
-                value={settings.daily_start}
-                onChange={(e) => handleChange('daily_start', e.target.value)}
+                value={settings.daily_plan_start}
+                onChange={(e) => handleChange('daily_plan_start', e.target.value)}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
             <div>
-              <label htmlFor="daily_end" className="block text-xs text-muted-foreground mb-1">
+              <label htmlFor="daily_plan_end" className="block text-xs text-muted-foreground mb-1">
                 End time
               </label>
               <input
-                id="daily_end"
+                id="daily_plan_end"
                 type="time"
-                value={settings.daily_end}
-                onChange={(e) => handleChange('daily_end', e.target.value)}
+                value={settings.daily_plan_end}
+                onChange={(e) => handleChange('daily_plan_end', e.target.value)}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
@@ -109,26 +109,26 @@ export default function PlanningSettingsClient() {
           <legend className="text-sm font-medium text-foreground mb-3">Weekly Planning Window</legend>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="weekly_start" className="block text-xs text-muted-foreground mb-1">
+              <label htmlFor="weekly_plan_start" className="block text-xs text-muted-foreground mb-1">
                 Start time
               </label>
               <input
-                id="weekly_start"
+                id="weekly_plan_start"
                 type="time"
-                value={settings.weekly_start}
-                onChange={(e) => handleChange('weekly_start', e.target.value)}
+                value={settings.weekly_plan_start}
+                onChange={(e) => handleChange('weekly_plan_start', e.target.value)}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
             <div>
-              <label htmlFor="weekly_end" className="block text-xs text-muted-foreground mb-1">
+              <label htmlFor="weekly_plan_end" className="block text-xs text-muted-foreground mb-1">
                 End time
               </label>
               <input
-                id="weekly_end"
+                id="weekly_plan_end"
                 type="time"
-                value={settings.weekly_end}
-                onChange={(e) => handleChange('weekly_end', e.target.value)}
+                value={settings.weekly_plan_end}
+                onChange={(e) => handleChange('weekly_plan_end', e.target.value)}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
