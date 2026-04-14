@@ -9,6 +9,7 @@ const TASK_UPDATE_FIELDS = new Set([
   'due_date',
   'state',
   'today_section',
+  'sort_order',
   'area',
   'task_type',
   'chips',
