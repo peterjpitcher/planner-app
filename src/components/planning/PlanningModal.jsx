@@ -6,6 +6,8 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { STATE, TODAY_SECTION, SOFT_CAPS, WINDOW_TYPE } from '@/lib/constants';
+import { getMondayOfWeek } from '@/lib/planningWindow';
+import { getLondonDateKey } from '@/lib/timezone';
 import PlanningTaskRow from './PlanningTaskRow';
 
 /**
@@ -30,6 +32,7 @@ export default function PlanningModal({
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skippedIds, setSkippedIds] = useState(new Set());
+  const [dailyTasks, setDailyTasks] = useState(null);
 
   // Fetch current today section counts for soft cap warnings
   useEffect(() => {
@@ -70,25 +73,21 @@ export default function PlanningModal({
   }, []);
 
   const handleAssign = useCallback(async (taskId, updates) => {
-    try {
-      const maxSort = await getMaxSortOrder(
-        updates.state,
-        updates.today_section || null
-      );
-      await apiClient.updateTask(taskId, {
-        ...updates,
-        sort_order: maxSort + 1,
-      });
+    const maxSort = await getMaxSortOrder(
+      updates.state,
+      updates.today_section || null
+    );
+    await apiClient.updateTask(taskId, {
+      ...updates,
+      sort_order: maxSort + 1,
+    });
 
-      // Update section counts if assigning to today
-      if (updates.today_section) {
-        setSectionCounts((prev) => ({
-          ...prev,
-          [updates.today_section]: (prev[updates.today_section] || 0) + 1,
-        }));
-      }
-    } catch (err) {
-      console.error('Failed to assign task:', err);
+    // Update section counts if assigning to today
+    if (updates.today_section) {
+      setSectionCounts((prev) => ({
+        ...prev,
+        [updates.today_section]: (prev[updates.today_section] || 0) + 1,
+      }));
     }
   }, [getMaxSortOrder]);
 
@@ -97,22 +96,19 @@ export default function PlanningModal({
   }, []);
 
   const handleDefer = useCallback(async (taskId, newDate) => {
-    try {
-      // If new date is outside current week, move to backlog
-      const weekEnd = new Date(windowDate + 'T12:00:00Z');
-      weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-      const weekEndStr = weekEnd.toISOString().slice(0, 10);
+    // Compute actual week boundary from Monday of the current week
+    const monday = getMondayOfWeek(getLondonDateKey());
+    const sundayDate = new Date(monday + 'T12:00:00Z');
+    sundayDate.setUTCDate(sundayDate.getUTCDate() + 6);
+    const weekEndStr = sundayDate.toISOString().slice(0, 10);
 
-      const updates = { due_date: newDate };
-      if (newDate > weekEndStr) {
-        updates.state = STATE.BACKLOG;
-      }
-
-      await apiClient.updateTask(taskId, updates);
-    } catch (err) {
-      console.error('Failed to defer task:', err);
+    const updates = { due_date: newDate };
+    if (newDate > weekEndStr) {
+      updates.state = STATE.BACKLOG;
     }
-  }, [windowDate]);
+
+    await apiClient.updateTask(taskId, updates);
+  }, []);
 
   const handleFinish = useCallback(async () => {
     setIsSubmitting(true);
@@ -120,6 +116,9 @@ export default function PlanningModal({
       if (isSundayCombined && step === 'weekly') {
         // Record weekly session, transition to daily step
         await apiClient.createPlanningSession(WINDOW_TYPE.WEEKLY, windowDate);
+        // Fetch daily candidates for step 2
+        const dailyCandidates = await apiClient.getPlanningCandidates('daily', windowDate);
+        setDailyTasks(dailyCandidates);
         setStep('daily');
         setSkippedIds(new Set());
         setIsSubmitting(false);
@@ -138,9 +137,11 @@ export default function PlanningModal({
   }, [isSundayCombined, step, windowType, windowDate, onComplete]);
 
   // Determine which tasks to show for the current step
+  // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
+  const activeTasks = (isSundayCombined && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...(tasks?.dueTomorrow || []), ...(tasks?.overdue || []), ...(tasks?.undatedThisWeek || [])];
+    : [...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
 
   const formatWindowDate = (dateStr) => {
     try {
@@ -178,9 +179,9 @@ export default function PlanningModal({
         { label: 'Overdue', tasks: tasks?.overdue || [] },
       ]
     : [
-        { label: 'Due Tomorrow', tasks: tasks?.dueTomorrow || [] },
-        { label: 'Overdue', tasks: tasks?.overdue || [] },
-        { label: 'Available This Week', tasks: tasks?.undatedThisWeek || [] },
+        { label: 'Due Tomorrow', tasks: activeTasks?.dueTomorrow || [] },
+        { label: 'Overdue', tasks: activeTasks?.overdue || [] },
+        { label: 'Available This Week', tasks: activeTasks?.undatedThisWeek || [] },
       ];
 
   return (
