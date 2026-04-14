@@ -23,6 +23,10 @@ export async function GET(request) {
     if (!windowDate || !/^\d{4}-\d{2}-\d{2}$/.test(windowDate)) {
       return NextResponse.json({ error: 'Invalid windowDate — must be YYYY-MM-DD' }, { status: 400 });
     }
+    const parsedDate = new Date(windowDate + 'T12:00:00Z');
+    if (isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== windowDate) {
+      return NextResponse.json({ error: 'Invalid windowDate — not a real calendar date' }, { status: 400 });
+    }
 
     const supabase = getSupabaseServiceRole();
     const userId = session.user.id;

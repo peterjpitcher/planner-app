@@ -20,6 +20,10 @@ export async function GET(request) {
     if (!windowDate || !/^\d{4}-\d{2}-\d{2}$/.test(windowDate)) {
       return NextResponse.json({ error: 'Invalid windowDate' }, { status: 400 });
     }
+    const parsedGetDate = new Date(windowDate + 'T12:00:00Z');
+    if (isNaN(parsedGetDate.getTime()) || parsedGetDate.toISOString().slice(0, 10) !== windowDate) {
+      return NextResponse.json({ error: 'Invalid windowDate — not a real calendar date' }, { status: 400 });
+    }
 
     const supabase = getSupabaseServiceRole();
     const { data, error } = await supabase
@@ -58,6 +62,10 @@ export async function POST(request) {
     }
     if (!windowDate || !/^\d{4}-\d{2}-\d{2}$/.test(windowDate)) {
       return NextResponse.json({ error: 'Invalid windowDate' }, { status: 400 });
+    }
+    const parsedPostDate = new Date(windowDate + 'T12:00:00Z');
+    if (isNaN(parsedPostDate.getTime()) || parsedPostDate.toISOString().slice(0, 10) !== windowDate) {
+      return NextResponse.json({ error: 'Invalid windowDate — not a real calendar date' }, { status: 400 });
     }
 
     const supabase = getSupabaseServiceRole();
