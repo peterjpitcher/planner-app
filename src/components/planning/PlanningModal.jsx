@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
-import apiClient from '@/lib/apiClient';
+import { apiClient } from '@/lib/apiClient';
 import { STATE, TODAY_SECTION, SOFT_CAPS, WINDOW_TYPE } from '@/lib/constants';
 import PlanningTaskRow from './PlanningTaskRow';
 
