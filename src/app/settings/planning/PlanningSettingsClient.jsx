@@ -49,6 +49,8 @@ export default function PlanningSettingsClient() {
     try {
       await apiClient.updateUserSettings(settings);
       setFeedback({ type: 'success', message: 'Planning settings saved.' });
+      // Notify the planning hook to refresh its cached settings
+      window.dispatchEvent(new CustomEvent('planning-settings-updated'));
     } catch (err) {
       setFeedback({ type: 'error', message: err.message || 'Failed to save settings.' });
     } finally {

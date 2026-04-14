@@ -96,6 +96,16 @@ export function usePlanningPrompt() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [checkPlanningState]);
 
+  // Refresh when planning settings are saved from the settings page
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      settingsRef.current = null;
+      checkPlanningState();
+    };
+    window.addEventListener('planning-settings-updated', handleSettingsUpdate);
+    return () => window.removeEventListener('planning-settings-updated', handleSettingsUpdate);
+  }, [checkPlanningState]);
+
   const openModal = useCallback(() => setShowModal(true), []);
   const closeModal = useCallback(() => setShowModal(false), []);
 
