@@ -1,15 +1,15 @@
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
+import { PLANNING_DEFAULTS } from '@/lib/constants';
 
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-// Inline defaults — will be replaced by PLANNING_DEFAULTS from constants.js once that export is available
 const DEFAULTS = {
-  daily_plan_start: '20:05',
-  daily_plan_end: '20:00',
-  weekly_plan_start: '20:05',
-  weekly_plan_end: '20:00',
+  daily_plan_start: PLANNING_DEFAULTS.DAILY_START,
+  daily_plan_end: PLANNING_DEFAULTS.DAILY_END,
+  weekly_plan_start: PLANNING_DEFAULTS.WEEKLY_START,
+  weekly_plan_end: PLANNING_DEFAULTS.WEEKLY_END,
 };
 
 // GET /api/user-settings — returns user's planning settings or defaults
