@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { verifyCronAuth, isLondonHour, claimCronRun, updateCronRun } from '@/lib/cronAuth';
+import { verifyCronAuth, claimCronRun, updateCronRun } from '@/lib/cronAuth';
+import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
 import { getLondonDateKey } from '@/lib/timezone';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
@@ -23,7 +24,8 @@ export async function GET(request) {
       return NextResponse.json({ error: msg }, { status: auth.status });
     }
 
-    if (!auth.force && !isLondonHour(20)) {
+    const londonHour = getTimeZoneParts(new Date(), LONDON_TIME_ZONE).hour;
+    if (!auth.force && (londonHour < 18 || londonHour > 20)) {
       return NextResponse.json(
         { skipped: true, reason: 'outside_window' },
         { status: 200 }
