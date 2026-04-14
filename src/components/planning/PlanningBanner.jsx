@@ -21,8 +21,8 @@ export default function PlanningBanner({
   if (!isPlanned || hasNewTasks) {
     const count = totalCandidates;
     const message = hasNewTasks
-      ? `${count} new task${count !== 1 ? 's' : ''} due ${timeLabel}`
-      : `You have ${count} task${count !== 1 ? 's' : ''} due ${timeLabel}`;
+      ? `${count} new task${count !== 1 ? 's' : ''} to plan for ${timeLabel}`
+      : `You have ${count} task${count !== 1 ? 's' : ''} to plan for ${timeLabel}`;
 
     return (
       <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm">
