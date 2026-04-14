@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
-import { getActivePlanningWindow } from '@/lib/planningWindow';
+import { getActivePlanningWindow, getMondayOfWeek } from '@/lib/planningWindow';
+import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
 
 /**
  * Central orchestrator for planning prompts.
@@ -113,6 +114,43 @@ export function usePlanningPrompt() {
     settingsRef.current = null;
   }, []);
 
+  /**
+   * Manually trigger the planning modal for a given mode, regardless of the time window.
+   * @param {'daily' | 'weekly'} type
+   */
+  const triggerManualPlanning = useCallback(async (type) => {
+    try {
+      setIsLoading(true);
+      const londonParts = getTimeZoneParts(new Date(), LONDON_TIME_ZONE);
+      const today = londonParts.dateKey;
+
+      let computedDate;
+      if (type === 'weekly') {
+        // Monday of the current week (or next Monday if today is Sunday)
+        computedDate = getMondayOfWeek(today);
+      } else {
+        // Tomorrow
+        const d = new Date(today + 'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() + 1);
+        computedDate = d.toISOString().slice(0, 10);
+      }
+
+      const candidates = await apiClient.getPlanningCandidates(type, computedDate);
+      setTasks(candidates);
+      setWindowState({ isActive: true, windowType: type, windowDate: computedDate });
+
+      // Check if already planned for this window
+      const session = await apiClient.getPlanningSession(type, computedDate);
+      setIsPlanned(!!session);
+
+      setShowModal(true);
+    } catch (err) {
+      console.error('Manual planning trigger failed:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const onPlanningComplete = useCallback(async () => {
     setShowModal(false);
     setIsPlanned(true);
@@ -145,5 +183,6 @@ export function usePlanningPrompt() {
     closeModal,
     onPlanningComplete,
     refreshSettings,
+    triggerManualPlanning,
   };
 }

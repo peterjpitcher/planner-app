@@ -75,6 +75,8 @@ export default function AppShell({ children }) {
       <Header
         isMobileMenuOpen={isMobileMenuOpen}
         onToggleMobileMenu={() => setIsMobileMenuOpen((open) => !open)}
+        onPlanTomorrow={() => planning.triggerManualPlanning('daily')}
+        onPlanWeek={() => planning.triggerManualPlanning('weekly')}
       />
       <main className="min-h-screen pl-0 pt-14 lg:pl-[240px]">
         {isTabRoute && <TabBar />}
@@ -93,7 +95,7 @@ export default function AppShell({ children }) {
           {children}
         </div>
       </main>
-      {planning.isActive && !planning.isLoading && (
+      {(planning.isActive || planning.showModal) && !planning.isLoading && (
         <PlanningModal
           isOpen={planning.showModal}
           onClose={planning.closeModal}
