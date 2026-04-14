@@ -306,6 +306,40 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  // Planning
+  async getPlanningCandidates(windowType, windowDate) {
+    const params = new URLSearchParams({ windowType, windowDate });
+    const response = await this.fetchWithAuth(`/api/planning-candidates?${params}`);
+    return response.data || {};
+  }
+
+  async getPlanningSession(windowType, windowDate) {
+    const params = new URLSearchParams({ windowType, windowDate });
+    const response = await this.fetchWithAuth(`/api/planning-sessions?${params}`);
+    return response.data;
+  }
+
+  async createPlanningSession(windowType, windowDate) {
+    const response = await this.fetchWithAuth('/api/planning-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ windowType, windowDate }),
+    });
+    return response.data;
+  }
+
+  async getUserSettings() {
+    const response = await this.fetchWithAuth('/api/user-settings');
+    return response.data;
+  }
+
+  async updateUserSettings(settings) {
+    const response = await this.fetchWithAuth('/api/user-settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
+    });
+    return response.data;
+  }
+
   // Areas
   async getAreas() {
     const response = await this.fetchWithAuth('/api/areas');
