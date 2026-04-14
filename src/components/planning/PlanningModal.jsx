@@ -35,6 +35,9 @@ export default function PlanningModal({
   const [dailyTasks, setDailyTasks] = useState(null);
 
   // Fetch current today section counts for soft cap warnings
+  // TODO: This hits /api/tasks which triggers Office365 auto-sync as a side effect.
+  // Acceptable for now since the sync has a min-interval guard (default 2 min).
+  // A future optimisation could add section counts to /api/planning-candidates.
   useEffect(() => {
     async function fetchCounts() {
       try {
@@ -58,6 +61,7 @@ export default function PlanningModal({
   }, [isOpen]);
 
   // Compute max sort_order for appending
+  // TODO: Same O365 sync side effect as fetchCounts above.
   const getMaxSortOrder = useCallback(async (state, section = null) => {
     try {
       const stateTasks = await apiClient.getTasks(null, { state });
