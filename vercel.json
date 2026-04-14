@@ -15,15 +15,7 @@
     },
     {
       "path": "/api/cron/demote-today-tasks",
-      "schedule": "55 18 * * *"
-    },
-    {
-      "path": "/api/cron/demote-today-tasks",
       "schedule": "55 19 * * *"
-    },
-    {
-      "path": "/api/cron/demote-week-tasks",
-      "schedule": "55 18 * * *"
     },
     {
       "path": "/api/cron/demote-week-tasks",

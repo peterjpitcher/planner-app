@@ -32,7 +32,7 @@ export async function GET(request) {
     }
 
     const londonHour = getTimeZoneParts(new Date(), LONDON_TIME_ZONE).hour;
-    if (!auth.force && (londonHour < 18 || londonHour > 20)) {
+    if (!auth.force && (londonHour < 19 || londonHour > 20)) {
       return NextResponse.json(
         { skipped: true, reason: 'outside_window' },
         { status: 200 }
