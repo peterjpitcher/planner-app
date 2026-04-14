@@ -24,6 +24,7 @@ export function usePlanningPrompt() {
 
   const settingsRef = useRef(null);
   const lastCheckRef = useRef(null);
+  const sessionCandidateCountRef = useRef(null);
 
   const checkPlanningState = useCallback(async () => {
     try {
@@ -42,6 +43,7 @@ export function usePlanningPrompt() {
         setIsPlanned(false);
         setTasks(null);
         setHasNewTasks(false);
+        sessionCandidateCountRef.current = null;
         return;
       }
 
@@ -54,10 +56,10 @@ export function usePlanningPrompt() {
       const candidates = await apiClient.getPlanningCandidates(planningWindow.windowType, planningWindow.windowDate);
       setTasks(candidates);
 
-      // 5. Detect new tasks after planning
+      // 5. Detect new tasks after planning — only flag if count increased since session
+      const currentCount = Object.values(candidates).reduce((sum, arr) => sum + (arr?.length || 0), 0);
       if (planned) {
-        const hasCandidates = Object.values(candidates).some((arr) => arr && arr.length > 0);
-        setHasNewTasks(hasCandidates);
+        setHasNewTasks(currentCount > (sessionCandidateCountRef.current ?? 0));
       } else {
         setHasNewTasks(false);
       }
@@ -105,11 +107,15 @@ export function usePlanningPrompt() {
     setShowModal(false);
     setIsPlanned(true);
     setHasNewTasks(false);
+    // Store current candidate count so re-checks only flag truly new tasks
+    sessionCandidateCountRef.current = tasks
+      ? Object.values(tasks).reduce((sum, arr) => sum + (arr?.length || 0), 0)
+      : 0;
     // Emit event for views to refetch their data
     window.dispatchEvent(new CustomEvent('planning-complete'));
     // Re-check candidates (some may have moved, new ones may exist)
     await checkPlanningState();
-  }, [checkPlanningState]);
+  }, [checkPlanningState, tasks]);
 
   const totalCandidates = tasks
     ? Object.values(tasks).reduce((sum, arr) => sum + (arr?.length || 0), 0)
