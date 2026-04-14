@@ -4,22 +4,19 @@ CREATE TABLE IF NOT EXISTS planning_sessions (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   window_type text NOT NULL CHECK (window_type IN ('daily', 'weekly')),
   window_date date NOT NULL,
-  started_at timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz,
-  dismissed_at timestamptz,
-  tasks_promoted integer DEFAULT 0,
-  tasks_added integer DEFAULT 0,
+  completed_at timestamptz NOT NULL DEFAULT now(),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, window_type, window_date)
 );
 
--- user_settings: per-user preferences (e.g. planning prompt opt-out)
+-- user_settings: per-user preferences for planning windows
 CREATE TABLE IF NOT EXISTS user_settings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
-  daily_planning_enabled boolean NOT NULL DEFAULT true,
-  weekly_planning_enabled boolean NOT NULL DEFAULT true,
-  planning_snooze_until timestamptz,
+  daily_plan_start time NOT NULL DEFAULT '20:05',
+  daily_plan_end time NOT NULL DEFAULT '20:00',
+  weekly_plan_start time NOT NULL DEFAULT '20:05',
+  weekly_plan_end time NOT NULL DEFAULT '20:00',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
