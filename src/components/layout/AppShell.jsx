@@ -78,7 +78,7 @@ export default function AppShell({ children }) {
       />
       <main className="min-h-screen pl-0 pt-14 lg:pl-[240px]">
         {isTabRoute && <TabBar />}
-        {showPlanningBanner && planning.isActive && !planning.isLoading && planning.totalCandidates > 0 && (
+        {showPlanningBanner && planning.isActive && !planning.isLoading && (
           <div className="mb-4 px-4 sm:px-6 pt-4">
             <PlanningBanner
               isPlanned={planning.isPlanned}
