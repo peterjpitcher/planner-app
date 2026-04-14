@@ -6,8 +6,12 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { TabBar } from './TabBar';
 import QuickCapture from '@/components/shared/QuickCapture';
+import { usePlanningPrompt } from '@/hooks/usePlanningPrompt';
+import PlanningModal from '@/components/planning/PlanningModal';
+import PlanningBanner from '@/components/planning/PlanningBanner';
 
-const TAB_ROUTES = ['/today', '/plan', '/projects', '/ideas'];
+const TAB_ROUTES = ['/today', '/plan', '/projects', '/ideas', '/calendar'];
+const PLANNING_BANNER_ROUTES = ['/today', '/plan', '/calendar'];
 
 export default function AppShell({ children }) {
   const pathname = usePathname();
@@ -15,7 +19,11 @@ export default function AppShell({ children }) {
   const isTabRoute = TAB_ROUTES.some(
     (route) => pathname === route || pathname?.startsWith(route + '/')
   );
+  const showPlanningBanner = PLANNING_BANNER_ROUTES.some(
+    (route) => pathname === route || pathname?.startsWith(route + '/')
+  );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const planning = usePlanningPrompt();
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -70,10 +78,31 @@ export default function AppShell({ children }) {
       />
       <main className="min-h-screen pl-0 pt-14 lg:pl-[240px]">
         {isTabRoute && <TabBar />}
+        {showPlanningBanner && planning.isActive && !planning.isLoading && planning.totalCandidates > 0 && (
+          <div className="mb-4 px-4 sm:px-6 pt-4">
+            <PlanningBanner
+              isPlanned={planning.isPlanned}
+              hasNewTasks={planning.hasNewTasks}
+              totalCandidates={planning.totalCandidates}
+              windowType={planning.windowType}
+              onPlanNow={planning.openModal}
+            />
+          </div>
+        )}
         <div className={isTabRoute ? 'w-full p-4 sm:p-6 pb-20 lg:pb-6' : 'w-full p-4 sm:p-6'}>
           {children}
         </div>
       </main>
+      {planning.isActive && !planning.isLoading && (
+        <PlanningModal
+          isOpen={planning.showModal}
+          onClose={planning.closeModal}
+          onComplete={planning.onPlanningComplete}
+          windowType={planning.windowType}
+          windowDate={planning.windowDate}
+          tasks={planning.tasks}
+        />
+      )}
       {isTabRoute && <QuickCapture />}
     </div>
   );

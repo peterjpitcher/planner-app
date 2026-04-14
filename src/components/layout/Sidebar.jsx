@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import {
     CalendarCheck,
     Calendar,
+    Clock,
     Columns3,
     FolderOpen,
     Lightbulb,
@@ -24,6 +25,7 @@ const navigation = [
     { name: 'Ideas', href: '/ideas', icon: Lightbulb },
     { name: 'Reports', href: '/completed-report', icon: PieChart },
     { name: 'Integrations', href: '/settings/integrations', icon: Plug },
+    { name: 'Planning', href: '/settings/planning', icon: Clock },
 ];
 
 export function Sidebar({ isMobileMenuOpen = false, onCloseMobileMenu }) {
