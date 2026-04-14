@@ -49,6 +49,8 @@ export default function PlanningTaskRow({
   const [showDefer, setShowDefer] = useState(false);
   const [isActioned, setIsActioned] = useState(false);
   const [actionLabel, setActionLabel] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
   const dueDateStatus = task.due_date ? getDueDateStatus(task.due_date) : null;
 
   if (isActioned) {
@@ -61,16 +63,32 @@ export default function PlanningTaskRow({
     );
   }
 
-  const handleAssignSection = (section) => {
-    onAssign(task.id, { state: 'today', today_section: section });
-    setIsActioned(true);
-    setActionLabel(`→ ${SECTION_LABELS[section]}`);
+  const handleAssignSection = async (section) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onAssign(task.id, { state: 'today', today_section: section });
+      setIsActioned(true);
+      setActionLabel(`→ ${SECTION_LABELS[section]}`);
+    } catch (err) {
+      setError('Failed to assign');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleAcceptWeekly = () => {
-    onAssign(task.id, { state: 'this_week' });
-    setIsActioned(true);
-    setActionLabel('→ This Week');
+  const handleAcceptWeekly = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onAssign(task.id, { state: 'this_week' });
+      setIsActioned(true);
+      setActionLabel('→ This Week');
+    } catch (err) {
+      setError('Failed to accept');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSkip = () => {
@@ -79,11 +97,19 @@ export default function PlanningTaskRow({
     setActionLabel('Skipped');
   };
 
-  const handleDefer = (newDate) => {
-    onDefer(task.id, newDate);
-    setIsActioned(true);
-    setActionLabel(`Deferred → ${newDate}`);
-    setShowDefer(false);
+  const handleDefer = async (newDate) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onDefer(task.id, newDate);
+      setIsActioned(true);
+      setActionLabel(`Deferred → ${newDate}`);
+      setShowDefer(false);
+    } catch (err) {
+      setError('Failed to defer');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -113,6 +139,11 @@ export default function PlanningTaskRow({
         </div>
       </div>
 
+      {/* Error message */}
+      {error && (
+        <p className="mt-2 text-xs text-red-600">{error}</p>
+      )}
+
       {/* Action buttons */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {mode === 'daily' ? (
@@ -126,8 +157,9 @@ export default function PlanningTaskRow({
                 <div key={section} className="flex flex-col items-start">
                   <button
                     type="button"
+                    disabled={isLoading}
                     onClick={() => handleAssignSection(section)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-80 ${SECTION_COLORS[section]}`}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-50 ${SECTION_COLORS[section]}`}
                   >
                     {label}
                   </button>
@@ -144,8 +176,9 @@ export default function PlanningTaskRow({
           // Weekly: Accept button
           <button
             type="button"
+            disabled={isLoading}
             onClick={handleAcceptWeekly}
-            className="rounded-full border border-blue-200 bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 transition-colors hover:opacity-80"
+            className="rounded-full border border-blue-200 bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 transition-colors hover:opacity-80 disabled:opacity-50"
           >
             Accept
           </button>
@@ -153,16 +186,18 @@ export default function PlanningTaskRow({
 
         <button
           type="button"
+          disabled={isLoading}
           onClick={handleSkip}
-          className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80"
+          className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 disabled:opacity-50"
         >
           Skip
         </button>
 
         <button
           type="button"
+          disabled={isLoading}
           onClick={() => setShowDefer(!showDefer)}
-          className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80"
+          className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 disabled:opacity-50"
         >
           <CalendarDaysIcon className="mr-1 inline h-3 w-3" />
           Defer
