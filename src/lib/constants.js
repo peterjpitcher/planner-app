@@ -56,6 +56,20 @@ export const IDEA_STATE = {
   PROMOTED: 'promoted'
 };
 
+// Planning Window Types
+export const WINDOW_TYPE = {
+  DAILY: 'daily',
+  WEEKLY: 'weekly'
+};
+
+// Default planning window times
+export const PLANNING_DEFAULTS = {
+  DAILY_START: '20:05',
+  DAILY_END: '20:00',
+  WEEKLY_START: '20:05',
+  WEEKLY_END: '20:00'
+};
+
 // Soft Caps per section
 export const SOFT_CAPS = {
   MUST_DO: 5,
