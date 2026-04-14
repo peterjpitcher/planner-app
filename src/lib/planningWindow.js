@@ -83,26 +83,26 @@ export function getActivePlanningWindow(settings = {}, now = new Date()) {
   const weeklyStart = settings.weekly_plan_start || PLANNING_DEFAULTS.WEEKLY_START;
   const weeklyEnd = settings.weekly_plan_end || PLANNING_DEFAULTS.WEEKLY_END;
 
-  // Sunday check for weekly window
+  // Weekly window check — explicit day-of-week logic (no isInsideWindow)
   const isSunday = dayOfWeek === 0;
-  // After midnight but before end on Monday counts as Sunday's weekly window
-  const isMondayBeforeEnd = dayOfWeek === 1 && toMinutes(londonParts) < toMinutes(parseTime(weeklyEnd));
+  const isMonday = dayOfWeek === 1;
+  const nowMinutesWeekly = toMinutes(londonParts);
 
-  // Check weekly window first (Sunday evening or still inside on Monday morning)
-  if (isSunday || isMondayBeforeEnd) {
-    if (isSunday && isInsideWindow(londonParts, weeklyStart, weeklyEnd)) {
-      // Window date = tomorrow (Monday) as the anchor for the week
-      const tomorrow = getDatePlusDays(londonParts.dateKey, 1);
-      return { isActive: true, windowType: WINDOW_TYPE.WEEKLY, windowDate: tomorrow };
-    }
-    if (isMondayBeforeEnd && toMinutes(londonParts) < toMinutes(parseTime(weeklyEnd))) {
-      // Still in the weekly window that started Sunday evening
-      // Window date = today (Monday)
-      return { isActive: true, windowType: WINDOW_TYPE.WEEKLY, windowDate: londonParts.dateKey };
-    }
+  if (isSunday && nowMinutesWeekly >= toMinutes(parseTime(weeklyStart))) {
+    // Sunday at or after weekly start time → weekly window active
+    const tomorrow = getDatePlusDays(londonParts.dateKey, 1);
+    return { isActive: true, windowType: WINDOW_TYPE.WEEKLY, windowDate: tomorrow };
   }
 
-  // Check daily window (every day except Sunday before weekly start)
+  if (isMonday && nowMinutesWeekly < toMinutes(parseTime(weeklyEnd))) {
+    // Monday before weekly end time → still in Sunday's weekly window
+    return { isActive: true, windowType: WINDOW_TYPE.WEEKLY, windowDate: londonParts.dateKey };
+  }
+
+  // On Sunday before the weekly start, fall through to daily check
+  // (user may still be in Saturday's daily window that wraps past midnight)
+
+  // Check daily window (handles overnight wrap correctly)
   if (isInsideWindow(londonParts, dailyStart, dailyEnd)) {
     // Compute tomorrow's date as the window_date
     const nowMinutes = toMinutes(londonParts);
