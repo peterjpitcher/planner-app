@@ -45,6 +45,7 @@ export default function PlanningTaskRow({
   onAssign, // (taskId, { state, today_section }) => void
   onSkip, // (taskId) => void
   onDefer, // (taskId, newDate) => void
+  onMarkDone, // (taskId) => Promise<void>
 }) {
   const [showDefer, setShowDefer] = useState(false);
   const [isActioned, setIsActioned] = useState(false);
@@ -95,6 +96,21 @@ export default function PlanningTaskRow({
     onSkip(task.id);
     setIsActioned(true);
     setActionLabel('Skipped');
+  };
+
+  const handleMarkDone = async () => {
+    if (!onMarkDone) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onMarkDone(task.id);
+      setIsActioned(true);
+      setActionLabel('Completed');
+    } catch (err) {
+      setError('Failed to mark complete');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDefer = async (newDate) => {
@@ -181,6 +197,19 @@ export default function PlanningTaskRow({
             className="rounded-full border border-blue-200 bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 transition-colors hover:opacity-80 disabled:opacity-50"
           >
             Accept
+          </button>
+        )}
+
+        {onMarkDone && (
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={handleMarkDone}
+            title="Already done — mark complete"
+            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+          >
+            <CheckCircleIcon className="mr-1 inline h-3 w-3" />
+            Complete
           </button>
         )}
 

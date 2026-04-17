@@ -119,6 +119,14 @@ export default function PlanningModal({
     setActionedCount((prev) => prev + 1);
   }, []);
 
+  const handleMarkDone = useCallback(async (taskId) => {
+    // Let the user retrospectively mark a forgotten-but-done task as complete
+    // from inside the planning modal. updateTask on state=done sets completed_at
+    // server-side.
+    await apiClient.updateTask(taskId, { state: STATE.DONE });
+    setActionedCount((prev) => prev + 1);
+  }, []);
+
   const handleDefer = useCallback(async (taskId, newDate) => {
     // Base the "this week" boundary on the planning target, not today's date.
     // During Sunday evening weekly planning the target week starts next Monday,
@@ -264,8 +272,8 @@ export default function PlanningModal({
             {currentTasks.length > 0 && (
               <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 {step === 'weekly'
-                  ? 'Tap Accept on each task you want on this week\u2019s plan, or Defer/Skip to set it aside for this session. Nothing is added until you pick an action.'
-                  : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Defer changes the due date; Skip sets it aside for this session. Finish Planning only records the session — tasks won\u2019t move on their own.`}
+                  ? 'Tap Accept on each task you want on this week\u2019s plan. Complete marks tasks you\u2019ve already done; Defer changes the due date; Skip sets it aside for this session. Nothing is added until you pick an action.'
+                  : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Complete marks tasks you\u2019ve already done; Defer changes the due date; Skip sets it aside for this session. Finish Planning only records the session — tasks won\u2019t move on their own.`}
               </p>
             )}
             {taskSections.map((section) => {
@@ -285,6 +293,7 @@ export default function PlanningModal({
                         onAssign={handleAssign}
                         onSkip={handleSkip}
                         onDefer={handleDefer}
+                        onMarkDone={handleMarkDone}
                       />
                     ))}
                   </div>
