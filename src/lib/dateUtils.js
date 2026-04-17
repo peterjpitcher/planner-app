@@ -7,7 +7,6 @@ import {
   setDay,
   startOfWeek,
   differenceInCalendarDays,
-  isPast,
   parseISO,
   isToday,
   isTomorrow,
@@ -78,8 +77,11 @@ export function getDueDateStatus(dueDate) {
   const date = typeof dueDate === 'string' ? parseISO(dueDate) : dueDate;
   const today = new Date();
   const daysDiff = differenceInCalendarDays(date, today);
-  
-  if (daysDiff < 0 || (daysDiff === 0 && isPast(date))) {
+
+  // Date-only due dates (YYYY-MM-DD) parse to local midnight. Treating them as
+  // "past" after midnight misclassifies same-day tasks as Overdue — handle
+  // daysDiff < 0 only; daysDiff === 0 is caught by the isToday branch below.
+  if (daysDiff < 0) {
     return {
       type: 'OVERDUE',
       label: 'Overdue',

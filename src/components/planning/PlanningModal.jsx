@@ -34,6 +34,20 @@ export default function PlanningModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skippedIds, setSkippedIds] = useState(new Set());
   const [dailyTasks, setDailyTasks] = useState(null);
+  // Count of tasks the user acted on in this session (assign / accept / defer / skip),
+  // so Finish Planning can warn only when the user truly did nothing.
+  const [actionedCount, setActionedCount] = useState(0);
+
+  // Reset wizard state whenever the modal opens for a new window. The modal
+  // stays mounted in AppShell, so without this a reopened session inherits
+  // stale step / counter / skipped values.
+  useEffect(() => {
+    if (!isOpen) return;
+    setStep(isSundayCombined ? 'weekly' : windowType);
+    setSkippedIds(new Set());
+    setDailyTasks(null);
+    setActionedCount(0);
+  }, [isOpen, isSundayCombined, windowType, windowDate]);
 
   // Fetch current today section counts for soft cap warnings
   // TODO: This hits /api/tasks which triggers Office365 auto-sync as a side effect.
@@ -93,16 +107,25 @@ export default function PlanningModal({
         ...prev,
         [updates.today_section]: (prev[updates.today_section] || 0) + 1,
       }));
+      setActionedCount((prev) => prev + 1);
+    } else if (updates.state === STATE.THIS_WEEK) {
+      // Weekly step acceptance also counts as a real action
+      setActionedCount((prev) => prev + 1);
     }
   }, [getMaxSortOrder]);
 
   const handleSkip = useCallback((taskId) => {
     setSkippedIds((prev) => new Set(prev).add(taskId));
+    setActionedCount((prev) => prev + 1);
   }, []);
 
   const handleDefer = useCallback(async (taskId, newDate) => {
-    // Compute actual week boundary from Monday of the current week
-    const monday = getMondayOfWeek(getLondonDateKey());
+    // Base the "this week" boundary on the planning target, not today's date.
+    // During Sunday evening weekly planning the target week starts next Monday,
+    // so using today's week would wrongly demote valid target-week defers to
+    // backlog.
+    const weekBase = step === 'weekly' ? windowDate : getLondonDateKey();
+    const monday = getMondayOfWeek(weekBase);
     const sundayDate = new Date(monday + 'T12:00:00Z');
     sundayDate.setUTCDate(sundayDate.getUTCDate() + 6);
     const weekEndStr = sundayDate.toISOString().slice(0, 10);
@@ -113,9 +136,31 @@ export default function PlanningModal({
     }
 
     await apiClient.updateTask(taskId, updates);
-  }, []);
+    setActionedCount((prev) => prev + 1);
+  }, [step, windowDate]);
+
+  // Determine which tasks to show for the current step
+  // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
+  const activeTasks = (isSundayCombined && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
+  const currentTasks = step === 'weekly'
+    ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
+    : [...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
 
   const handleFinish = useCallback(async () => {
+    // Guard against finishing before the user has done anything. Any row
+    // action (pill, Accept, Skip, Defer) counts; we only warn on true inaction.
+    const hasCandidates = currentTasks.length > 0;
+    if (hasCandidates && actionedCount === 0) {
+      const confirmed = typeof window !== 'undefined'
+        ? window.confirm(
+            step === 'weekly'
+              ? 'You haven\u2019t reviewed any tasks yet. Accept, Defer or Skip each one, or confirm to finish with nothing recorded.'
+              : 'You haven\u2019t reviewed any tasks yet. Pick a section, Defer, or Skip each one, or confirm to finish with nothing recorded.'
+          )
+        : true;
+      if (!confirmed) return;
+    }
+
     setIsSubmitting(true);
     try {
       if (isSundayCombined && step === 'weekly') {
@@ -126,6 +171,7 @@ export default function PlanningModal({
         setDailyTasks(dailyCandidates);
         setStep('daily');
         setSkippedIds(new Set());
+        setActionedCount(0);
         setIsSubmitting(false);
         return;
       }
@@ -139,14 +185,7 @@ export default function PlanningModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSundayCombined, step, windowType, windowDate, onComplete]);
-
-  // Determine which tasks to show for the current step
-  // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
-  const activeTasks = (isSundayCombined && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
-  const currentTasks = step === 'weekly'
-    ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
+  }, [isSundayCombined, step, windowType, windowDate, onComplete, actionedCount, currentTasks.length]);
 
   const formatWindowDate = (dateStr) => {
     try {
@@ -167,7 +206,12 @@ export default function PlanningModal({
     }
   };
 
-  const dailyLabel = isManual ? 'Plan Your Day' : 'Plan Your Tomorrow';
+  // Decide "Today" vs "Tomorrow" wording based on the actual target date,
+  // not just isManual. The auto-trigger after midnight sets windowDate=today,
+  // so "Plan Your Tomorrow" over today's date is misleading.
+  const todayLondon = getLondonDateKey();
+  const targetIsToday = step !== 'weekly' && windowDate === todayLondon;
+  const dailyLabel = targetIsToday ? 'Plan Your Day' : 'Plan Your Tomorrow';
   const title = step === 'weekly'
     ? `Plan Your Week — ${formatWeekRange(windowDate)}`
     : `${dailyLabel} — ${formatWindowDate(windowDate)}`;
@@ -185,7 +229,7 @@ export default function PlanningModal({
         { label: 'Overdue', tasks: tasks?.overdue || [] },
       ]
     : [
-        { label: isManual ? 'Due Today' : 'Due Tomorrow', tasks: activeTasks?.dueTomorrow || [] },
+        { label: targetIsToday ? 'Due Today' : 'Due Tomorrow', tasks: activeTasks?.dueTomorrow || [] },
         { label: 'Overdue', tasks: activeTasks?.overdue || [] },
         { label: 'Available This Week', tasks: activeTasks?.undatedThisWeek || [] },
       ];
@@ -217,6 +261,13 @@ export default function PlanningModal({
 
           {/* Task list */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
+            {currentTasks.length > 0 && (
+              <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                {step === 'weekly'
+                  ? 'Tap Accept on each task you want on this week\u2019s plan, or Defer/Skip to set it aside for this session. Nothing is added until you pick an action.'
+                  : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Defer changes the due date; Skip sets it aside for this session. Finish Planning only records the session — tasks won\u2019t move on their own.`}
+              </p>
+            )}
             {taskSections.map((section) => {
               if (section.tasks.length === 0) return null;
               return (
