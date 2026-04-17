@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { TODAY_SECTION, SOFT_CAPS, CHIP_VALUES, TASK_TYPE } from '@/lib/constants';
 import { getDueDateStatus, quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
 import {
@@ -46,6 +47,7 @@ export default function PlanningTaskRow({
   onSkip, // (taskId) => void
   onDefer, // (taskId, newDate) => void
   onMarkDone, // (taskId) => Promise<void>
+  onProjectNavigate, // () => void — invoked before the project link navigates so the parent modal can close
 }) {
   const [showDefer, setShowDefer] = useState(false);
   const [isActioned, setIsActioned] = useState(false);
@@ -136,7 +138,17 @@ export default function PlanningTaskRow({
           <p className="font-medium text-foreground">{task.name}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {task.project_name && (
-              <span className="rounded bg-muted px-1.5 py-0.5">{task.project_name}</span>
+              task.project_id ? (
+                <Link
+                  href={`/projects?id=${task.project_id}`}
+                  onClick={() => onProjectNavigate?.()}
+                  className="rounded bg-muted px-1.5 py-0.5 hover:bg-muted/70 hover:text-foreground hover:underline focus:outline-none focus-visible:underline"
+                >
+                  {task.project_name}
+                </Link>
+              ) : (
+                <span className="rounded bg-muted px-1.5 py-0.5">{task.project_name}</span>
+              )
             )}
             {task.task_type && (
               <span className="rounded bg-muted px-1.5 py-0.5">{TYPE_LABELS[task.task_type] || task.task_type}</span>

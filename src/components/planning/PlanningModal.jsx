@@ -294,6 +294,7 @@ export default function PlanningModal({
                         onSkip={handleSkip}
                         onDefer={handleDefer}
                         onMarkDone={handleMarkDone}
+                        onProjectNavigate={onClose}
                       />
                     ))}
                   </div>

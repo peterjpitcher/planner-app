@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import Link from 'next/link';
 import { Menu, Portal } from '@headlessui/react';
 import { EllipsisVerticalIcon, Bars2Icon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
@@ -230,7 +231,19 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
         {/* Project + area labels */}
         {(task.project_name || task.area) && (
           <p className="mt-0.5 text-xs text-gray-400">
-            {task.project_name && <span>{task.project_name}</span>}
+            {task.project_name && (
+              task.project_id ? (
+                <Link
+                  href={`/projects?id=${task.project_id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:text-indigo-600 hover:underline focus:outline-none focus-visible:underline"
+                >
+                  {task.project_name}
+                </Link>
+              ) : (
+                <span>{task.project_name}</span>
+              )
+            )}
             {task.project_name && task.area && <span> · </span>}
             {task.area && <span>{task.area}</span>}
           </p>
