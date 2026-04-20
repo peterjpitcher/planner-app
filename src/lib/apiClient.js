@@ -3,6 +3,12 @@
 
 import { dedupedFetch, clearCache, clearCacheByPrefix } from './requestCache';
 
+function dispatchTasksChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tasks-changed'));
+  }
+}
+
 class APIClient {
   async fetchWithAuth(url, options = {}) {
     const response = await fetch(url, {
@@ -163,6 +169,7 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    dispatchTasksChanged();
     return result?.data ?? result;
   }
 
@@ -181,13 +188,16 @@ class APIClient {
       method: 'PATCH',
       body: JSON.stringify({ id: taskId, ...cleanUpdates }),
     });
+    dispatchTasksChanged();
     return result?.data ?? result;
   }
 
   async deleteTask(taskId) {
-    return this.fetchWithAuth(`/api/tasks/${taskId}`, {
+    const result = await this.fetchWithAuth(`/api/tasks/${taskId}`, {
       method: 'DELETE',
     });
+    dispatchTasksChanged();
+    return result;
   }
 
   // Update sort order for a list of tasks

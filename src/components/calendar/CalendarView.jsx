@@ -60,11 +60,15 @@ export default function CalendarView() {
     fetchTasks();
   }, [fetchTasks]);
 
-  // Refetch when planning is completed
+  // Refetch when planning completes or any task mutates
   useEffect(() => {
-    const handlePlanningComplete = () => { fetchTasks(); };
-    window.addEventListener('planning-complete', handlePlanningComplete);
-    return () => window.removeEventListener('planning-complete', handlePlanningComplete);
+    const handle = () => { fetchTasks(); };
+    window.addEventListener('planning-complete', handle);
+    window.addEventListener('tasks-changed', handle);
+    return () => {
+      window.removeEventListener('planning-complete', handle);
+      window.removeEventListener('tasks-changed', handle);
+    };
   }, [fetchTasks]);
 
   // Month navigation
