@@ -29,8 +29,11 @@ export function verifyCronAuth(request) {
 
   const cronSecret = process.env.CRON_SECRET;
   const providedSecret = request.headers.get('x-cron-secret');
+  const authHeader = request.headers.get('authorization') || '';
+  const bearerSecret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const secretValid = cronSecret && (providedSecret === cronSecret || bearerSecret === cronSecret);
 
-  if (cronSecret && !manualTokenValid && providedSecret !== cronSecret) {
+  if (cronSecret && !manualTokenValid && !secretValid) {
     return { authorized: false, dryRun: false, force: false, status: 401 };
   }
 
