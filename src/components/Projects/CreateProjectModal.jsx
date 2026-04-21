@@ -17,7 +17,7 @@ import { apiClient } from '@/lib/apiClient';
  * @param {{
  *   isOpen: boolean,
  *   onClose: () => void,
- *   onCreated: () => void,
+ *   onCreated: (project: object) => void,
  * }} props
  */
 export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
@@ -65,7 +65,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
     setError(null);
 
     try {
-      await apiClient.createProject({
+      const data = await apiClient.createProject({
         name: trimmedName,
         description: description.trim() || null,
         due_date: dueDate || null,
@@ -73,7 +73,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
         status,
       });
       resetForm();
-      onCreated();
+      onCreated(data);
     } catch (err) {
       setError(err.message || 'Failed to create project. Please try again.');
     } finally {
