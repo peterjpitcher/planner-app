@@ -195,10 +195,11 @@ export default function ProjectsView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData, selectedProjectId]);
 
-  const handleProjectCreated = useCallback(() => {
+  const handleProjectCreated = useCallback((newProject) => {
     setIsCreateOpen(false);
+    selectProject(newProject.id);
     loadData(); // Full reload to get the new project with server-generated fields
-  }, [loadData]);
+  }, [loadData, selectProject]);
 
   // ---- Task mutation handlers ----
   const handleTaskAdded = useCallback((newTask, projectId) => {
