@@ -10,10 +10,11 @@ import {
   pointerWithin,
 } from '@dnd-kit/core';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
-import { addMonths, format, startOfMonth, isBefore, isAfter, isSameMonth } from 'date-fns';
+import { addMonths, format, startOfMonth, isBefore, isAfter, isSameMonth, parseISO } from 'date-fns';
 
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
+import { getLondonDateKey } from '@/lib/timezone';
 import { cn } from '@/lib/utils';
 
 import CalendarGrid from './CalendarGrid';
@@ -24,12 +25,29 @@ import EdgeNavigator from './EdgeNavigator';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 
 export default function CalendarView() {
-  const now = useMemo(() => new Date(), []);
+  // "Today" as a London date key, held in state so the today highlight, overdue
+  // list and month bounds refresh when the tab is left open across London
+  // midnight instead of freezing at mount (FF-037).
+  const [todayStr, setTodayStr] = useState(() => getLondonDateKey());
+
+  useEffect(() => {
+    const refresh = () => setTodayStr(getLondonDateKey());
+    const interval = setInterval(refresh, 60 * 1000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
+  const now = useMemo(() => parseISO(todayStr), [todayStr]);
   const minMonth = useMemo(() => startOfMonth(now), [now]);
   const maxMonth = useMemo(() => startOfMonth(addMonths(now, 11)), [now]);
-  const todayStr = useMemo(() => format(now, 'yyyy-MM-dd'), [now]);
 
-  const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(now));
+  const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(parseISO(getLondonDateKey())));
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -141,11 +159,11 @@ export default function CalendarView() {
     try {
       await apiClient.updateTask(taskId, { due_date: newDueDate });
     } catch (err) {
-      // Revert on error
+      // Revert on error and tell the user the reschedule did not save (FF-046)
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, due_date: task.due_date } : t))
       );
-      console.error('Failed to update task due date:', err);
+      alert(`Failed to update task due date: ${err.message}`);
     }
   }, [tasks]);
 
@@ -173,13 +191,14 @@ export default function CalendarView() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
-      console.error('Failed to update task:', err);
+      // Revert and surface the failure so the edit is not silently lost (FF-046)
       setTasks(previousTasks);
       setSelectedTask((prev) =>
         prev && prev.id === taskId
           ? previousTasks.find((t) => t.id === taskId) ?? prev
           : prev
       );
+      alert(`Failed to update task: ${err.message}`);
     }
   }, [tasks]);
 
@@ -192,8 +211,9 @@ export default function CalendarView() {
     try {
       await apiClient.deleteTask(taskId);
     } catch (err) {
-      console.error('Failed to delete task:', err);
+      // Revert and surface the failure so the delete is not silently lost (FF-046)
       setTasks(previousTasks);
+      alert(`Failed to delete task: ${err.message}`);
     }
   }, [tasks]);
 
@@ -217,8 +237,9 @@ export default function CalendarView() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
-      console.error('Failed to move task:', err);
+      // Revert and surface the failure so the move is not silently lost (FF-046)
       setTasks(previousTasks);
+      alert(`Failed to move task: ${err.message}`);
     }
   }, [tasks]);
 
@@ -231,8 +252,9 @@ export default function CalendarView() {
     try {
       await apiClient.updateTask(taskId, { state: 'done' });
     } catch (err) {
-      console.error('Failed to complete task:', err);
+      // Revert and surface the failure so the completion is not silently lost (FF-046)
       setTasks(previousTasks);
+      alert(`Failed to complete task: ${err.message}`);
     }
   }, [tasks]);
 

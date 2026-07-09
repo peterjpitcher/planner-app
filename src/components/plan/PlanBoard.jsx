@@ -17,7 +17,7 @@ import { format, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
 import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
-import { computeSortOrder } from '@/lib/sortOrder';
+import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { compareBacklogTasks } from '@/lib/taskSort';
 import BoardColumn from './BoardColumn';
 import TaskCard from '@/components/shared/TaskCard';
@@ -546,22 +546,39 @@ export default function PlanBoard() {
         reordered.splice(oldIndex, 1);
         reordered.splice(newIndex, 0, task);
 
-        setColumns((prev) => ({ ...prev, [sourceColumn]: reordered }));
+        // Compute a new sort_order for the MOVED task only, from its new
+        // neighbours, and fall back to a full reindex when the gap is too small
+        // to fit a midpoint. Rewriting every row from stale neighbour values
+        // corrupted the persisted order (FF-003) — this mirrors the proven
+        // TodayView pattern.
+        const above = reordered[newIndex - 1]?.sort_order ?? null;
+        const below = reordered[newIndex + 1]?.sort_order ?? null;
+
+        let updatedItems;
+        if (needsReindex(above, below)) {
+          updatedItems = reindex(reordered);
+        } else {
+          const newOrder = computeSortOrder(above, below);
+          updatedItems = reordered.map((t, i) =>
+            i === newIndex ? { ...t, sort_order: newOrder } : t
+          );
+        }
+
+        // Optimistic update with the corrected sort_order values
+        setColumns((prev) => ({ ...prev, [sourceColumn]: updatedItems }));
 
         // Debounced write
         if (sortDebounceRef.current) clearTimeout(sortDebounceRef.current);
         sortDebounceRef.current = setTimeout(() => {
-          const items = reordered.map((t, i) => {
-            const above = i > 0 ? reordered[i - 1].sort_order ?? (i - 1) * 1000 : null;
-            const below =
-              i < reordered.length - 1
-                ? reordered[i + 1].sort_order ?? (i + 1) * 1000
-                : null;
-            return { id: t.id, sort_order: computeSortOrder(above, below) };
-          });
-          apiClient.updateSortOrder(items).catch(() => {
-            // Non-critical — ignore silently
-          });
+          apiClient
+            .updateSortOrder(updatedItems.map((t) => ({ id: t.id, sort_order: t.sort_order })))
+            .catch((err) => {
+              // Reconcile with server truth so a failed write does not leave the
+              // board showing an order that was never persisted, and tell the
+              // user the reorder did not save (FF-003).
+              loadAllColumns({ silent: true });
+              alert(`Failed to save order: ${err.message}`);
+            });
         }, 300);
       }
       return;

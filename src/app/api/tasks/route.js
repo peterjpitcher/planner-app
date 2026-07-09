@@ -86,10 +86,21 @@ export async function GET(request) {
       query = query.gte('completed_at', completedSince);
     }
 
-    // Default ordering: sort_order ASC, created_at ASC
-    query = query
-      .order('sort_order', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: true });
+    // Ordering. The backlog is ordered due_date first (nulls last) then
+    // sort_order so the earliest-due tasks lead globally — this must happen in
+    // the query before range() or pagination pages return the wrong tasks
+    // (FF-051). It matches compareBacklogTasks (src/lib/taskSort.js). All other
+    // states keep the default sort_order ASC, created_at ASC ordering.
+    if (state === 'backlog') {
+      query = query
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true });
+    } else {
+      query = query
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true });
+    }
 
     // Apply pagination
     query = query.range(offset, offset + limit - 1);

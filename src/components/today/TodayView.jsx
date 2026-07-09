@@ -17,6 +17,7 @@ import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
 import { TODAY_SECTION_ORDER, SOFT_CAPS } from '@/lib/constants';
 import { getStartOfTodayLondon } from '@/lib/dateUtils';
+import { getLondonDateKey } from '@/lib/timezone';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
 import TaskCard from '@/components/shared/TaskCard';
@@ -142,10 +143,13 @@ export default function TodayView() {
       try {
         const waitingTasks = await apiClient.getTasks(null, { state: 'waiting' });
         if (loadGuardRef.current.isStale(token)) return;
-        const today = new Date();
+        // Compare the follow-up date key lexically against today's London date
+        // key so a follow-up due today is not flagged overdue from 00:00 UTC
+        // (FF-036), matching dailyTaskEmailService.
+        const todayKey = getLondonDateKey();
         const overdue = waitingTasks.filter((t) => {
           if (!t.follow_up_date) return false;
-          return new Date(t.follow_up_date) < today;
+          return t.follow_up_date.slice(0, 10) < todayKey;
         });
         setOverdueFollowUps(overdue.length);
       } catch {
