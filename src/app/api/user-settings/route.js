@@ -58,6 +58,25 @@ export async function PATCH(request) {
     const body = await request.json();
     const { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end } = body;
 
+    const supabase = getSupabaseServiceRole();
+
+    // Fetch the user's existing settings so cross-field validation (start !=
+    // end) checks provided values against what is actually stored, not
+    // hardcoded defaults — otherwise a partial update merged over stale
+    // defaults could persist a zero-length planning window (FF-055).
+    const { data: existingSettings, error: fetchError } = await supabase
+      .from('user_settings')
+      .select('daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('User settings lookup error:', fetchError);
+      return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
+    }
+
+    const storedSettings = existingSettings || DEFAULTS;
+
     // Validate all four fields
     const fields = { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end };
     const errors = {};
@@ -68,14 +87,16 @@ export async function PATCH(request) {
       }
     }
 
-    // Check start != end for daily and weekly pairs
+    // Check start != end for daily and weekly pairs, merging provided values
+    // over the user's stored settings (falling back to defaults only when no
+    // row exists yet).
     const effectiveDaily = {
-      start: daily_plan_start || DEFAULTS.daily_plan_start,
-      end: daily_plan_end || DEFAULTS.daily_plan_end,
+      start: daily_plan_start !== undefined ? daily_plan_start : storedSettings.daily_plan_start,
+      end: daily_plan_end !== undefined ? daily_plan_end : storedSettings.daily_plan_end,
     };
     const effectiveWeekly = {
-      start: weekly_plan_start || DEFAULTS.weekly_plan_start,
-      end: weekly_plan_end || DEFAULTS.weekly_plan_end,
+      start: weekly_plan_start !== undefined ? weekly_plan_start : storedSettings.weekly_plan_start,
+      end: weekly_plan_end !== undefined ? weekly_plan_end : storedSettings.weekly_plan_end,
     };
     if (effectiveDaily.start === effectiveDaily.end) {
       errors.daily_plan_start = 'Start and end times cannot be the same';
@@ -99,7 +120,6 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServiceRole();
     const { data, error } = await supabase
       .from('user_settings')
       .upsert(

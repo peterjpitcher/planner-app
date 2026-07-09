@@ -8,13 +8,12 @@ import {
   startOfWeek,
   differenceInCalendarDays,
   parseISO,
-  isToday,
-  isTomorrow,
-  isThisWeek,
+  isSameWeek,
   startOfDay
 } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { DUE_DATE_STYLES } from './styleUtils';
+import { getLondonDateKey } from './timezone';
 
 export const quickPickOptions = [
   {
@@ -73,14 +72,20 @@ export function toDateInputValue(value) {
  */
 export function getDueDateStatus(dueDate) {
   if (!dueDate) return null;
-  
+
   const date = typeof dueDate === 'string' ? parseISO(dueDate) : dueDate;
-  const today = new Date();
+
+  // Anchor "today" to the Europe/London calendar date rather than the
+  // runtime's local clock, so client, SSR and server logic (crons, digests,
+  // planning windows) always agree on Today/Tomorrow/Overdue — see FF-038.
+  // Parsed the same way date-only due dates are (local midnight) so the two
+  // values compare on equal footing regardless of the runtime's timezone.
+  const today = new Date(`${getLondonDateKey()}T00:00:00`);
   const daysDiff = differenceInCalendarDays(date, today);
 
   // Date-only due dates (YYYY-MM-DD) parse to local midnight. Treating them as
   // "past" after midnight misclassifies same-day tasks as Overdue — handle
-  // daysDiff < 0 only; daysDiff === 0 is caught by the isToday branch below.
+  // daysDiff < 0 only; daysDiff === 0 is caught by the TODAY branch below.
   if (daysDiff < 0) {
     return {
       type: 'OVERDUE',
@@ -88,21 +93,21 @@ export function getDueDateStatus(dueDate) {
       daysDiff,
       styles: DUE_DATE_STYLES.OVERDUE
     };
-  } else if (isToday(date)) {
+  } else if (daysDiff === 0) {
     return {
       type: 'TODAY',
       label: 'Due Today',
       daysDiff: 0,
       styles: DUE_DATE_STYLES.TODAY
     };
-  } else if (isTomorrow(date)) {
+  } else if (daysDiff === 1) {
     return {
       type: 'TOMORROW',
       label: 'Due Tomorrow',
       daysDiff: 1,
       styles: DUE_DATE_STYLES.TOMORROW
     };
-  } else if (isThisWeek(date, { weekStartsOn: 1 })) {
+  } else if (isSameWeek(date, today, { weekStartsOn: 1 })) {
     return {
       type: 'THIS_WEEK',
       label: `Due ${format(date, 'EEEE')}`,
