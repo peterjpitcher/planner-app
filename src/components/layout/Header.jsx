@@ -1,12 +1,30 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, Menu, X, CalendarCheck } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { Menu, X, CalendarCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/** Derive avatar initials from the signed-in user's name, falling back to their email. */
+function getInitials(user) {
+    if (!user) return '';
+    const name = user.name?.trim();
+    if (name) {
+        const parts = name.split(/\s+/);
+        return parts.length === 1
+            ? parts[0].slice(0, 2).toUpperCase()
+            : (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    const email = user.email?.trim();
+    return email ? email.slice(0, 2).toUpperCase() : '';
+}
+
 export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu, onPlanTomorrow, onPlanWeek }) {
+    const { data: session } = useSession();
     const [showPlanMenu, setShowPlanMenu] = useState(false);
     const planMenuRef = useRef(null);
+    const initials = getInitials(session?.user);
+    const identityLabel = session?.user?.name || session?.user?.email || 'Signed in user';
 
     useEffect(() => {
         if (!showPlanMenu) return;
@@ -39,16 +57,6 @@ export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2 sm:gap-3">
-                {/* Search */}
-                <div className="relative hidden sm:block">
-                    <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-                    <input
-                        type="text"
-                        placeholder="Search..."
-                        className="h-9 w-44 rounded-md border-0 bg-secondary/50 pl-9 pr-4 text-sm transition-all placeholder:text-muted-foreground focus:bg-white focus:ring-1 focus:ring-ring md:w-64"
-                    />
-                </div>
-
                 {/* Plan button */}
                 <div className="relative" ref={planMenuRef}>
                     <button
@@ -80,15 +88,14 @@ export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu
                     )}
                 </div>
 
-                {/* Notifications */}
-                <button className="relative flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary">
-                    <Bell className="w-4 h-4" />
-                    <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-primary border border-white"></span>
-                </button>
-
                 {/* User Avatar */}
-                <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center border border-primary/20">
-                    <span className="text-xs font-bold text-primary">JD</span>
+                <div
+                    className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center border border-primary/20"
+                    role="img"
+                    aria-label={`Signed in as ${identityLabel}`}
+                    title={identityLabel}
+                >
+                    <span className="text-xs font-bold text-primary">{initials}</span>
                 </div>
             </div>
         </header>
