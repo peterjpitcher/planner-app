@@ -99,7 +99,10 @@ export default function ProjectWorkspace({
   onTaskClick,
 }) {
   const sensors = useSensors(useSensor(PointerSensor));
-  const isReadOnly = project.status === 'Completed' || project.status === 'Cancelled';
+  // A null project means this pane is showing the unassigned-tasks list (FF-017)
+  // rather than a real project, so project-only fields/actions are skipped below.
+  const isUnassigned = !project;
+  const isReadOnly = !isUnassigned && (project.status === 'Completed' || project.status === 'Cancelled');
 
   const tasksByState = useMemo(() => {
     const grouped = {};
@@ -111,8 +114,8 @@ export default function ProjectWorkspace({
     return grouped;
   }, [tasks]);
 
-  const statusClasses = getStatusClasses(project.status);
-  const dueDateStatus = getDueDateStatus(project.due_date);
+  const statusClasses = getStatusClasses(project?.status);
+  const dueDateStatus = getDueDateStatus(project?.due_date);
 
 
   return (
@@ -125,160 +128,167 @@ export default function ProjectWorkspace({
       )}
 
       {/* Header */}
-      <div>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <InlineEdit
-              value={project.name}
-              onSave={(name) => name && onUpdateProject(project.id, { name })}
-              as="h1"
-              className="text-xl font-bold text-gray-900"
-              inputClassName="text-xl font-bold"
-              placeholder="Project name"
-              maxLength={255}
-              disabled={isReadOnly}
-            />
-            <select
-              value={project.status}
-              onChange={(e) => onUpdateProject(project.id, { status: e.target.value })}
-              disabled={isReadOnly}
-              className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500', statusClasses)}
-            >
-              {Object.values(PROJECT_STATUS).map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+      {isUnassigned ? (
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Unassigned</h1>
+          <p className="mt-1 text-sm text-gray-500">Tasks that aren&apos;t linked to a project.</p>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <InlineEdit
+                value={project.name}
+                onSave={(name) => name && onUpdateProject(project.id, { name })}
+                as="h1"
+                className="text-xl font-bold text-gray-900"
+                inputClassName="text-xl font-bold"
+                placeholder="Project name"
+                maxLength={255}
+                disabled={isReadOnly}
+              />
+              <select
+                value={project.status}
+                onChange={(e) => onUpdateProject(project.id, { status: e.target.value })}
+                disabled={isReadOnly}
+                className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500', statusClasses)}
+              >
+                {Object.values(PROJECT_STATUS).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project actions menu */}
+            <Menu as="div" className="relative shrink-0">
+              <Menu.Button className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Project actions">
+                <EllipsisVerticalIcon className="h-5 w-5" />
+              </Menu.Button>
+              <Menu.Items anchor="bottom end" className="z-50 w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
+                <Menu.Item>
+                  {({ active }) => (
+                    <a href="/plan" className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm', active ? 'bg-gray-50 text-gray-900' : 'text-gray-700')}>
+                      View in Plan board
+                    </a>
+                  )}
+                </Menu.Item>
+                <div className="my-1 border-t border-gray-100" />
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Delete this project? Tasks will become unassigned.')) {
+                          onDeleteProject(project.id);
+                        }
+                      }}
+                      className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600', active && 'bg-red-50')}
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      Delete project
+                    </button>
+                  )}
+                </Menu.Item>
+              </Menu.Items>
+            </Menu>
           </div>
 
-          {/* Project actions menu */}
-          <Menu as="div" className="relative shrink-0">
-            <Menu.Button className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Project actions">
-              <EllipsisVerticalIcon className="h-5 w-5" />
-            </Menu.Button>
-            <Menu.Items anchor="bottom end" className="z-50 w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
-              <Menu.Item>
-                {({ active }) => (
-                  <a href="/plan" className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm', active ? 'bg-gray-50 text-gray-900' : 'text-gray-700')}>
-                    View in Plan board
-                  </a>
+          {/* Metadata row */}
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
+            {/* Due date */}
+            <span className="flex items-center gap-1">
+              <span className="text-gray-400">Due:</span>
+              <label className="relative cursor-pointer">
+                <span
+                  className={cn(
+                    'rounded px-1.5 py-0.5 text-xs font-medium',
+                    project.due_date ? [dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text] : 'text-gray-400 hover:text-indigo-600',
+                    !isReadOnly && 'cursor-pointer hover:ring-1 hover:ring-indigo-300'
+                  )}
+                >
+                  {project.due_date ? formatDate(project.due_date, 'MMM d, yyyy') : 'Set date'}
+                </span>
+                {!isReadOnly && (
+                  <input
+                    type="date"
+                    className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    tabIndex={-1}
+                    value={project.due_date || ''}
+                    onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
+                  />
                 )}
-              </Menu.Item>
-              <div className="my-1 border-t border-gray-100" />
-              <Menu.Item>
-                {({ active }) => (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm('Delete this project? Tasks will become unassigned.')) {
-                        onDeleteProject(project.id);
-                      }
-                    }}
-                    className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600', active && 'bg-red-50')}
-                  >
-                    <TrashIcon className="h-4 w-4" />
-                    Delete project
-                  </button>
-                )}
-              </Menu.Item>
-            </Menu.Items>
-          </Menu>
-        </div>
-
-        {/* Metadata row */}
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
-          {/* Due date */}
-          <span className="flex items-center gap-1">
-            <span className="text-gray-400">Due:</span>
-            <label className="relative cursor-pointer">
-              <span
-                className={cn(
-                  'rounded px-1.5 py-0.5 text-xs font-medium',
-                  project.due_date ? [dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text] : 'text-gray-400 hover:text-indigo-600',
-                  !isReadOnly && 'cursor-pointer hover:ring-1 hover:ring-indigo-300'
-                )}
-              >
-                {project.due_date ? formatDate(project.due_date, 'MMM d, yyyy') : 'Set date'}
-              </span>
-              {!isReadOnly && (
-                <input
-                  type="date"
-                  className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                  tabIndex={-1}
-                  value={project.due_date || ''}
-                  onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
-                />
+              </label>
+              {project.due_date && !isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateProject(project.id, { due_date: null })}
+                  className="text-xs text-gray-400 hover:text-red-500"
+                  aria-label="Clear due date"
+                >
+                  ×
+                </button>
               )}
-            </label>
-            {project.due_date && !isReadOnly && (
-              <button
-                type="button"
-                onClick={() => onUpdateProject(project.id, { due_date: null })}
-                className="text-xs text-gray-400 hover:text-red-500"
-                aria-label="Clear due date"
-              >
-                ×
-              </button>
-            )}
-          </span>
+            </span>
 
-          <span className="text-gray-300">|</span>
+            <span className="text-gray-300">|</span>
 
-          {/* Area */}
-          <span className="flex items-center gap-1">
-            <span className="text-gray-400">Area:</span>
+            {/* Area */}
+            <span className="flex items-center gap-1">
+              <span className="text-gray-400">Area:</span>
+              <InlineEdit
+                value={project.area}
+                onSave={(area) => onUpdateProject(project.id, { area })}
+                placeholder="Add area"
+                maxLength={255}
+                disabled={isReadOnly}
+              />
+            </span>
+
+            <span className="text-gray-300">|</span>
+
+            {/* Stakeholders */}
+            <span className="flex items-center gap-1">
+              <span className="text-gray-400">Stakeholders:</span>
+              <InlineEdit
+                value={(project.stakeholders || []).join(', ')}
+                onSave={(val) => {
+                  const parsed = val ? val.split(',').map((s) => s.trim()).filter(Boolean) : [];
+                  onUpdateProject(project.id, { stakeholders: parsed });
+                }}
+                placeholder="Add stakeholders"
+                disabled={isReadOnly}
+              />
+            </span>
+          </div>
+
+          {/* Description */}
+          <div className="mt-3">
             <InlineEdit
-              value={project.area}
-              onSave={(area) => onUpdateProject(project.id, { area })}
-              placeholder="Add area"
-              maxLength={255}
+              value={project.description}
+              onSave={(description) => onUpdateProject(project.id, { description })}
+              as="div"
+              className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600"
+              inputClassName="w-full text-sm"
+              placeholder="Add a description…"
+              maxLength={5000}
+              multiline
               disabled={isReadOnly}
             />
-          </span>
-
-          <span className="text-gray-300">|</span>
-
-          {/* Stakeholders */}
-          <span className="flex items-center gap-1">
-            <span className="text-gray-400">Stakeholders:</span>
-            <InlineEdit
-              value={(project.stakeholders || []).join(', ')}
-              onSave={(val) => {
-                const parsed = val ? val.split(',').map((s) => s.trim()).filter(Boolean) : [];
-                onUpdateProject(project.id, { stakeholders: parsed });
-              }}
-              placeholder="Add stakeholders"
-              disabled={isReadOnly}
-            />
-          </span>
+          </div>
         </div>
-
-        {/* Description */}
-        <div className="mt-3">
-          <InlineEdit
-            value={project.description}
-            onSave={(description) => onUpdateProject(project.id, { description })}
-            as="div"
-            className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600"
-            inputClassName="w-full text-sm"
-            placeholder="Add a description…"
-            maxLength={5000}
-            multiline
-            disabled={isReadOnly}
-          />
-        </div>
-      </div>
+      )}
 
       <div className="border-t border-gray-100" />
 
-      {/* Two-column body */}
-      <div className="flex gap-6" style={{ minHeight: '400px' }}>
+      {/* Two-column body — stacks on mobile, side-by-side from md up (FF-016) */}
+      <div className="flex flex-col gap-6 md:flex-row" style={{ minHeight: '400px' }}>
         {/* Left: Tasks */}
-        <div className="flex-[3] min-w-0 overflow-y-auto">
+        <div className="min-w-0 overflow-y-auto md:flex-[3]">
           <h3 className="mb-3 text-sm font-semibold text-gray-700">Tasks ({tasks.length})</h3>
 
           {!isReadOnly && (
             <div className="mb-3">
-              <AddTaskInput projectId={project.id} onTaskAdded={onTaskAdded} />
+              <AddTaskInput projectId={isUnassigned ? null : project.id} onTaskAdded={onTaskAdded} />
             </div>
           )}
 
@@ -321,10 +331,12 @@ export default function ProjectWorkspace({
           )}
         </div>
 
-        {/* Right: Notes */}
-        <div className="flex-[2] min-w-0 overflow-y-auto">
-          <ProjectNotes projectId={project.id} disabled={isReadOnly} />
-        </div>
+        {/* Right: Notes — unassigned tasks have no project to attach notes to */}
+        {!isUnassigned && (
+          <div className="min-w-0 overflow-y-auto md:flex-[2]">
+            <ProjectNotes projectId={project.id} disabled={isReadOnly} />
+          </div>
+        )}
       </div>
     </div>
   );

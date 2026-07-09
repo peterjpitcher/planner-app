@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
+import { cn } from '@/lib/styleUtils';
 import { STATE } from '@/lib/constants';
 import {
   computeAttentionCounts,
@@ -20,13 +22,13 @@ import ProjectWorkspace from './ProjectWorkspace';
 function ProjectsViewSkeleton() {
   return (
     <div className="flex h-full animate-pulse">
-      <div className="w-[280px] shrink-0 border-r border-gray-200 bg-gray-50/50 p-3 space-y-3">
+      <div className="w-full shrink-0 border-r border-gray-200 bg-gray-50/50 p-3 space-y-3 md:w-[280px]">
         <div className="h-9 rounded-md bg-gray-200" />
         <div className="flex gap-1.5">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-6 w-14 rounded-full bg-gray-200" />)}</div>
         <div className="h-8 rounded-md bg-gray-200" />
         <div className="space-y-2 pt-2">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-12 rounded-lg bg-gray-200" />)}</div>
       </div>
-      <div className="flex-1 p-6 space-y-4">
+      <div className="hidden flex-1 p-6 space-y-4 md:block">
         <div className="grid grid-cols-4 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-20 rounded-lg bg-gray-100" />)}</div>
         <div className="h-64 rounded-lg bg-gray-100" />
       </div>
@@ -46,6 +48,10 @@ export default function ProjectsView() {
 
   // Selection & filters
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('id') || null);
+  // Mobile list/detail toggle (FF-016): below md, the sidebar list and the
+  // workspace/dashboard detail are mutually exclusive full-width panes. Starts
+  // open when a deep link already points at a project so it renders directly.
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(() => !!searchParams.get('id'));
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedArea, setSelectedArea] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -194,9 +200,22 @@ export default function ProjectsView() {
     window.history.replaceState(null, '', url);
   }, []);
 
-  const showDashboard = useCallback(() => {
-    selectProject(null);
+  // Explicit "view detail" navigation (project row, Unassigned entry, Dashboard
+  // link, project creation) also opens the mobile detail pane. Kept separate
+  // from selectProject so the defensive deselect in handleFilterChange below
+  // doesn't yank a browsing user on mobile into the detail view (FF-016).
+  const openProjectDetail = useCallback((projectId) => {
+    selectProject(projectId);
+    setMobileDetailOpen(true);
   }, [selectProject]);
+
+  const showDashboard = useCallback(() => {
+    openProjectDetail(null);
+  }, [openProjectDetail]);
+
+  const showProjectsList = useCallback(() => {
+    setMobileDetailOpen(false);
+  }, []);
 
   const openCreateModal = useCallback(() => setIsCreateOpen(true), []);
 
@@ -235,9 +254,9 @@ export default function ProjectsView() {
 
   const handleProjectCreated = useCallback((newProject) => {
     setIsCreateOpen(false);
-    selectProject(newProject.id);
+    openProjectDetail(newProject.id);
     loadData(); // Full reload to get the new project with server-generated fields
-  }, [loadData, selectProject]);
+  }, [loadData, openProjectDetail]);
 
   // ---- Task mutation handlers ----
   const handleTaskAdded = useCallback((newTask, projectId) => {
@@ -402,13 +421,15 @@ export default function ProjectsView() {
     );
   }
 
+  const isUnassignedSelected = selectedProjectId === '__unassigned__';
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       <ProjectSidebar
         projects={visibleProjects}
         tasksByProject={tasksByProject}
         selectedProjectId={selectedProjectId}
-        onSelectProject={selectProject}
+        onSelectProject={openProjectDetail}
         onShowDashboard={showDashboard}
         onCreateProject={openCreateModal}
         activeFilter={activeFilter}
@@ -423,10 +444,37 @@ export default function ProjectsView() {
         unassignedCount={unassignedTasks.length}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        hideOnMobile={mobileDetailOpen}
       />
 
-      <main className="flex-1 overflow-y-auto px-6 py-5">
-        {selectedProject ? (
+      <main
+        className={cn(
+          'flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5',
+          mobileDetailOpen ? 'block' : 'hidden md:block'
+        )}
+      >
+        {/* Mobile-only back control (FF-016) — desktop always shows both panes */}
+        <button
+          type="button"
+          onClick={showProjectsList}
+          className="mb-3 flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 md:hidden"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back to projects
+        </button>
+
+        {isUnassignedSelected ? (
+          <ProjectWorkspace
+            project={null}
+            tasks={unassignedTasks}
+            onTaskAdded={handleTaskAdded}
+            onCompleteTask={handleCompleteTask}
+            onMoveTask={handleMoveTask}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            onTaskClick={handleTaskClick}
+          />
+        ) : selectedProject ? (
           <ProjectWorkspace
             project={selectedProject}
             tasks={selectedProjectTasks}
@@ -445,7 +493,7 @@ export default function ProjectsView() {
             projects={dashboardProjects}
             tasksByProject={tasksByProject}
             onFilterClick={(filter) => { setActiveFilter(filter); }}
-            onSelectProject={selectProject}
+            onSelectProject={openProjectDetail}
           />
         )}
       </main>

@@ -119,7 +119,7 @@ export default function QuickCapture() {
         aria-label={isOpen ? 'Close quick capture' : 'Open quick capture'}
         onClick={() => (isOpen ? handleClose() : setIsOpen(true))}
         className={`
-          fixed bottom-6 right-6 z-50
+          fixed bottom-20 right-6 z-50 lg:bottom-6
           flex h-14 w-14 items-center justify-center
           rounded-full shadow-lg
           transition-all duration-200
@@ -143,7 +143,7 @@ export default function QuickCapture() {
           role="dialog"
           aria-label="Quick capture"
           className="
-            fixed bottom-24 right-6 z-40
+            fixed bottom-[9.5rem] right-6 z-40 lg:bottom-24
             w-[min(22rem,calc(100vw-3rem))]
             rounded-2xl border border-[#0496c7]/20
             bg-white shadow-lg
