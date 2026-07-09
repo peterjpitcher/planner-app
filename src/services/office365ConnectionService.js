@@ -7,6 +7,43 @@ function toIsoTimestamp(valueMs) {
   return new Date(valueMs).toISOString();
 }
 
+// User-facing message stored on office365_connections.sync_error when the
+// Microsoft refresh token is expired or revoked (FF-011). British English.
+const OFFICE365_RECONNECT_MESSAGE =
+  'Your Microsoft connection has expired or been revoked. Please reconnect to resume syncing.';
+
+// Best-effort: record a persistent reconnect prompt on the connection. Wrapped
+// so a secondary failure (e.g. the sync_error columns not migrated yet) never
+// masks the original token error we are already throwing.
+async function markOffice365SyncError({ userId }) {
+  try {
+    const supabase = getSupabaseServiceRole();
+    await supabase
+      .from('office365_connections')
+      .update({
+        sync_error: OFFICE365_RECONNECT_MESSAGE,
+        sync_error_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+  } catch (persistError) {
+    console.warn('Failed to record Office365 sync error state:', persistError);
+  }
+}
+
+// Best-effort: clear a previously recorded reconnect prompt after a successful
+// refresh or (re)connect. Wrapped for the same reason as markOffice365SyncError.
+async function clearOffice365SyncError({ userId }) {
+  try {
+    const supabase = getSupabaseServiceRole();
+    await supabase
+      .from('office365_connections')
+      .update({ sync_error: null, sync_error_at: null })
+      .eq('user_id', userId);
+  } catch (clearError) {
+    console.warn('Failed to clear Office365 sync error state:', clearError);
+  }
+}
+
 function parseScopes(scopeValue) {
   if (!scopeValue) return [];
   if (Array.isArray(scopeValue)) return scopeValue.map(String);
@@ -75,6 +112,10 @@ export async function upsertOffice365ConnectionFromTokenResponse({
     .single();
 
   if (error) throw error;
+
+  // A fresh connect/reconnect clears any stale reconnect prompt (FF-011).
+  await clearOffice365SyncError({ userId });
+
   return data;
 }
 
@@ -116,13 +157,25 @@ export async function getValidOffice365AccessToken({ userId }) {
   }
 
   const tenantId = (connection.microsoft_tenant_id || getOffice365TenantId()).trim();
-  const tokenResponse = await refreshOffice365AccessToken({
-    tenantId,
-    clientId: getOffice365ClientId(),
-    clientSecret: getOffice365ClientSecret(),
-    refreshToken,
-    scopes: getOffice365Scopes(),
-  });
+  let tokenResponse;
+  try {
+    tokenResponse = await refreshOffice365AccessToken({
+      tenantId,
+      clientId: getOffice365ClientId(),
+      clientSecret: getOffice365ClientSecret(),
+      refreshToken,
+      scopes: getOffice365Scopes(),
+    });
+  } catch (err) {
+    // FF-011: a non-retryable token error (invalid_grant / interaction_required)
+    // means the refresh token is expired or revoked and the user must reconnect.
+    // Persist an error state so the status endpoint/UI can prompt reconnection
+    // instead of retrying silently forever.
+    if (err?.nonRetryable) {
+      await markOffice365SyncError({ userId });
+    }
+    throw err;
+  }
 
   const nextRefreshToken = tokenResponse?.refresh_token || refreshToken;
   const nextAccessToken = tokenResponse?.access_token;
@@ -150,6 +203,9 @@ export async function getValidOffice365AccessToken({ userId }) {
     .eq('user_id', userId);
 
   if (error) throw error;
+
+  // Successful refresh — clear any previously recorded reconnect prompt (FF-011).
+  await clearOffice365SyncError({ userId });
 
   return nextAccessToken;
 }

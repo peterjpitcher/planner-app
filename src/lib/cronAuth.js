@@ -6,18 +6,20 @@ function isProduction() {
 
 /**
  * Multi-layer cron authentication check.
- * Checks x-vercel-cron header, CRON_SECRET via x-cron-secret, and optional
- * CRON_MANUAL_TOKEN for manual testing.
+ *
+ * Auth model:
+ *  - If CRON_SECRET is set it is mandatory: the request must present it via the
+ *    `x-cron-secret` header or an `Authorization: Bearer <secret>` header
+ *    (Vercel Cron sends the Bearer form), or carry a valid CRON_MANUAL_TOKEN.
+ *  - If CRON_SECRET is NOT set we fail closed in production. A client-settable
+ *    `x-vercel-cron` header is spoofable and is no longer trusted as proof of
+ *    origin (FF-018). Non-production stays open so local/dev cron testing works.
  *
  * @param {Request} request
  * @returns {{ authorized: boolean, dryRun: boolean, force: boolean, status?: number }}
  */
 export function verifyCronAuth(request) {
   const url = new URL(request.url);
-  const isCron = (() => {
-    const header = request.headers.get('x-vercel-cron');
-    return header === '1' || header === 'true';
-  })();
 
   const manualToken = url.searchParams.get('token');
   const manualTokenValid = Boolean(
@@ -37,7 +39,10 @@ export function verifyCronAuth(request) {
     return { authorized: false, dryRun: false, force: false, status: 401 };
   }
 
-  if (!cronSecret && isProduction() && !isCron && !manualTokenValid) {
+  // Fail closed in production when no secret is configured. A spoofable
+  // x-vercel-cron header must never authenticate on its own (FF-018); only a
+  // valid manual token (itself a configured secret) is accepted here.
+  if (!cronSecret && isProduction() && !manualTokenValid) {
     return { authorized: false, dryRun: false, force: false, status: 403 };
   }
 
@@ -94,6 +99,36 @@ export async function claimCronRun({ supabase, operation, runDate }) {
 
     if (error) {
       if (error.code === '23505') {
+        // A row already exists for this (operation, run_date). If the previous
+        // attempt FAILED, allow a retry to reclaim it so one transient error
+        // doesn't skip the whole day (FF-022). Otherwise the day is done.
+        const { data: existing, error: fetchError } = await supabase
+          .from('cron_runs')
+          .select('id, status')
+          .eq('operation', operation)
+          .eq('run_date', runDate)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        if (existing?.status === 'failed') {
+          // Conditional update on status='failed' makes the reclaim atomic:
+          // if a concurrent retry flipped it to 'claimed' first, no row matches
+          // and we fall through to already_run.
+          const { data: reclaimed, error: reclaimError } = await supabase
+            .from('cron_runs')
+            .update({ status: 'claimed', error: null })
+            .eq('id', existing.id)
+            .eq('status', 'failed')
+            .select('id')
+            .maybeSingle();
+
+          if (reclaimError) throw reclaimError;
+          if (reclaimed?.id) {
+            return { claimed: true, runId: reclaimed.id, reason: 'reclaimed' };
+          }
+        }
+
         return { claimed: false, runId: null, reason: 'already_run' };
       }
 
