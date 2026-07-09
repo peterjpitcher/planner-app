@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, defaultExclude } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
@@ -6,6 +6,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/lib/__tests__/setup.js'],
+    // Ignore git worktrees created under .claude/ (e.g. background-task sessions)
+    // so their duplicate copies of the test files are not discovered.
+    exclude: [...defaultExclude, '**/.claude/**'],
   },
   resolve: {
     alias: {

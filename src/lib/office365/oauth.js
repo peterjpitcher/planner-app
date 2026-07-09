@@ -2,6 +2,12 @@ import crypto from 'crypto';
 
 const MS_LOGIN_BASE_URL = 'https://login.microsoftonline.com';
 
+// OAuth error codes that mean the refresh token is no longer usable and the
+// user must re-authenticate — retrying will never succeed. The connection
+// service uses the `nonRetryable` flag to surface a "reconnect needed" state
+// instead of failing silently forever (FF-011).
+const NON_RETRYABLE_TOKEN_ERRORS = new Set(['invalid_grant', 'interaction_required']);
+
 function requireEnv(name) {
   const value = process.env[name];
   if (!value) {
@@ -136,7 +142,21 @@ export async function refreshOffice365AccessToken({
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
-    throw new Error(`Office365 token refresh failed (${response.status}): ${errorBody || response.statusText}`);
+    let oauthError = null;
+    let oauthErrorDescription = null;
+    try {
+      const parsed = JSON.parse(errorBody);
+      oauthError = parsed?.error || null;
+      oauthErrorDescription = parsed?.error_description || null;
+    } catch {
+      // Non-JSON error body — leave the parsed fields null.
+    }
+    const detail = oauthErrorDescription || oauthError || errorBody || response.statusText;
+    const err = new Error(`Office365 token refresh failed (${response.status}): ${detail}`);
+    err.status = response.status;
+    err.oauthError = oauthError;
+    err.nonRetryable = Boolean(oauthError && NON_RETRYABLE_TOKEN_ERRORS.has(oauthError));
+    throw err;
   }
 
   return response.json();

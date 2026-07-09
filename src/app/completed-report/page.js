@@ -9,7 +9,7 @@ import {
   addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, format, parseISO,
   getWeekOfMonth
 } from 'date-fns';
-import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, ClipboardDocumentIcon, FunnelIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, ClipboardDocumentIcon, FunnelIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import NoteList from '@/components/Notes/NoteList';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -143,10 +143,47 @@ const CompletedReportPage = () => {
     else setCurrentDate(d => addMonths(d, 1));
   };
 
+  const buildReportText = () => {
+    const dateKeys = Object.keys(groupItems).sort((a, b) => new Date(a) - new Date(b));
+    const lines = [
+      `Completed Items Report: ${format(dateRange.startDate, 'MMM d')} - ${format(dateRange.endDate, 'MMM d, yyyy')}`,
+      ''
+    ];
+
+    if (dateKeys.length === 0) {
+      lines.push('No items found for this period.');
+      return lines.join('\n');
+    }
+
+    dateKeys.forEach(dateKey => {
+      lines.push(format(parseISO(dateKey), 'EEEE, MMMM do'));
+      groupItems[dateKey].forEach(item => {
+        const time = format(item.type === 'note' ? parseISO(item.created_at) : item.date, 'h:mm a');
+        const title = item.name || item.content?.substring(0, 100) || '(untitled)';
+        const projectSuffix = (item.type === 'task' && item.project) ? ` (Project: ${item.project.name})` : '';
+        lines.push(`  [${item.type.toUpperCase()}] ${title}${projectSuffix} - ${time}`);
+        if (item.description) lines.push(`    ${item.description}`);
+      });
+      lines.push('');
+    });
+
+    return lines.join('\n').trim();
+  };
+
   const handleCopyReport = async () => {
-    // Simplified copy logic for brevity
-    setCopyStatusMessage('Copied!');
-    setTimeout(() => setCopyStatusMessage('Copy to Clipboard'), 2000);
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      setCopyStatusMessage('Clipboard unavailable');
+      setTimeout(() => setCopyStatusMessage('Copy to Clipboard'), 2000);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(buildReportText());
+      setCopyStatusMessage('Copied!');
+    } catch (err) {
+      setCopyStatusMessage('Copy failed');
+    } finally {
+      setTimeout(() => setCopyStatusMessage('Copy to Clipboard'), 2000);
+    }
   };
 
   if (status === 'loading') return <div className="p-8">Loading...</div>;
@@ -221,7 +258,22 @@ const CompletedReportPage = () => {
 
           {/* Results */}
           <div className="space-y-6">
-            {Object.keys(groupItems).length > 0 ? (
+            {error ? (
+              <div className="max-w-2xl rounded-lg border border-red-200 bg-red-50 p-4 flex items-start gap-3">
+                <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-red-500 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-red-700">{error}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchCompletedItems}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                >
+                  <ArrowPathIcon className="h-3.5 w-3.5" />
+                  Retry
+                </button>
+              </div>
+            ) : Object.keys(groupItems).length > 0 ? (
               Object.keys(groupItems).sort((a, b) => new Date(a) - new Date(b)).map(dateKey => (
                 <div key={dateKey}>
                   <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3 pl-1">
@@ -233,10 +285,12 @@ const CompletedReportPage = () => {
                 </div>
               ))
             ) : (
-              <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
-                <CalendarDaysIcon className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
-                <p className="text-muted-foreground font-medium">No items found for this period.</p>
-              </div>
+              !isLoading && !error && (
+                <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
+                  <CalendarDaysIcon className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+                  <p className="text-muted-foreground font-medium">No items found for this period.</p>
+                </div>
+              )
             )}
           </div>
         </div>

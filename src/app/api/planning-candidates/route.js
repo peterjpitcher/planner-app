@@ -85,24 +85,29 @@ export async function GET(request) {
     const weekEndStr = weekEnd.toISOString().slice(0, 10);
 
     const [dueThisWeek, overdue] = await Promise.all([
-      // 1. Due in target week, not in today/done
+      // 1. Due in target week, not already accepted (this_week) or today/done.
+      //    Excluding this_week here stops tasks accepted earlier in the session
+      //    reappearing as unactioned candidates on reopen (FF-052).
       supabase
         .from('tasks')
         .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
         .eq('user_id', userId)
         .gte('due_date', windowDate)
         .lte('due_date', weekEndStr)
-        .not('state', 'in', '("today","done")')
+        .not('state', 'in', '("this_week","today","done")')
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true }),
 
-      // 2. Overdue: due before Monday, not in this_week/today/done
+      // 2. Overdue / carried over: due before Monday, not in today/done.
+      //    Includes this_week tasks left over from a previous week (e.g. when a
+      //    Sunday demote cron misses a run) so they are not stranded out of the
+      //    weekly planning flow (FF-049).
       supabase
         .from('tasks')
         .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
         .eq('user_id', userId)
         .lt('due_date', windowDate)
-        .not('state', 'in', '("this_week","today","done")')
+        .not('state', 'in', '("today","done")')
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true }),
     ]);

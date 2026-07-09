@@ -9,6 +9,12 @@ function dispatchTasksChanged() {
   }
 }
 
+function dispatchIdeasChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ideas-changed'));
+  }
+}
+
 class APIClient {
   async fetchWithAuth(url, options = {}) {
     const response = await fetch(url, {
@@ -84,9 +90,13 @@ class APIClient {
   }
 
   async deleteProject(projectId) {
-    return this.fetchWithAuth(`/api/projects/${projectId}`, {
+    const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
       method: 'DELETE',
     });
+    // Clear project cache after deletion (mirrors create/update)
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result;
   }
 
   // Tasks
@@ -292,6 +302,9 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    // Notify idea views (e.g. IdeaVault) so QuickCapture-created ideas appear
+    // without a manual reload
+    dispatchIdeasChanged();
     return result?.data ?? result;
   }
 

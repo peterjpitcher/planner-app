@@ -1,8 +1,21 @@
 // Simple in-memory rate limiter for API routes.
-// NOTE: In serverless environments (Vercel), each function instance has its own
-// in-memory state. This limiter is effective within a single instance but cannot
-// enforce limits across concurrent instances. For production-grade rate limiting,
-// replace the Map with a shared store (e.g. Upstash Redis).
+//
+// ACCEPTED TECH DEBT: In serverless environments (Vercel), each function
+// instance keeps its own in-memory Map, so limits are enforced per-instance
+// only and are not shared across concurrent instances. Closing that gap needs
+// a shared store (e.g. Upstash Redis), which is out of scope for this pass —
+// this is a single-user app, so cross-instance bypass is a low-value attack
+// and the in-memory limiter still stops the common single-instance case.
+// Revisit if this app ever serves multiple untrusted users.
+//
+// What IS fixed here: the rate-limit *key*. Keying on client-supplied IP
+// headers (x-forwarded-for/x-real-ip/cf-connecting-ip) is spoofable — a
+// caller can rotate the header value on every request to get a fresh bucket.
+// For any route that knows the authenticated user (i.e. runs after an auth
+// check), always call getClientIdentifier(request, userId) with that user's
+// id so the limit is keyed on something the caller cannot forge. Only omit
+// userId (falling back to the IP-derived identifier) for endpoints that must
+// rate-limit *before* authentication is established (e.g. login).
 
 const rateLimit = new Map();
 
@@ -42,11 +55,16 @@ export function checkRateLimit(identifier, maxRequests = 10, windowMs = 60000) {
   return { allowed: true };
 }
 
-// Helper to get client identifier from request
+// Helper to get a rate-limit identifier for a request.
+// Pass the authenticated user id whenever it is known — it cannot be spoofed
+// by the caller, unlike the IP headers below. Only relies on IP when userId
+// is not yet available (pre-auth endpoints).
 export function getClientIdentifier(request, userId = null) {
   if (userId) return `user:${userId}`;
 
-  // Try to get IP from various headers (considering proxies)
+  // Fallback for pre-auth requests only: IP derived from proxy headers.
+  // These headers are client-controlled and can be rotated per request, so
+  // this path gives weaker protection — never use it once a user id exists.
   const forwarded = request.headers.get('x-forwarded-for');
   const realIp = request.headers.get('x-real-ip');
   const cfConnectingIp = request.headers.get('cf-connecting-ip');

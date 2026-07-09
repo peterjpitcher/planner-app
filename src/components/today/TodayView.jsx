@@ -14,8 +14,10 @@ import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';
 import { ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { TODAY_SECTION_ORDER, SOFT_CAPS } from '@/lib/constants';
 import { getStartOfTodayLondon } from '@/lib/dateUtils';
+import { getLondonDateKey } from '@/lib/timezone';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
 import TaskCard from '@/components/shared/TaskCard';
@@ -98,6 +100,13 @@ export default function TodayView() {
   // Track in-flight optimistic task ids to avoid double-firing
   const pendingRef = useRef(new Set());
 
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
+  // Gate silent refetches until the first load has completed, so a background
+  // refetch can never supersede the in-flight initial load (R2).
+  const hasLoadedRef = useRef(false);
+
   // ---------------------------------------------------------------------------
   // DnD sensors
   // ---------------------------------------------------------------------------
@@ -110,9 +119,14 @@ export default function TodayView() {
   // Data loading
   // ---------------------------------------------------------------------------
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  // loadData({ silent }): silent refetches revalidate in the background without
+  // flipping the view to the skeleton or clobbering the current view on failure.
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       const [todayTasks, doneTasks] = await Promise.all([
         apiClient.getTasks(null, { state: 'today' }),
@@ -122,16 +136,23 @@ export default function TodayView() {
         }),
       ]);
 
+      // Ignore out-of-order responses — a newer refetch has superseded this one
+      if (loadGuardRef.current.isStale(token)) return;
+
       setSections(groupBySection(todayTasks));
       setCompletedToday(doneTasks);
 
       // Overdue follow-ups (waiting tasks with past follow_up_date)
       try {
         const waitingTasks = await apiClient.getTasks(null, { state: 'waiting' });
-        const today = new Date();
+        if (loadGuardRef.current.isStale(token)) return;
+        // Compare the follow-up date key lexically against today's London date
+        // key so a follow-up due today is not flagged overdue from 00:00 UTC
+        // (FF-036), matching dailyTaskEmailService.
+        const todayKey = getLondonDateKey();
         const overdue = waitingTasks.filter((t) => {
           if (!t.follow_up_date) return false;
-          return new Date(t.follow_up_date) < today;
+          return t.follow_up_date.slice(0, 10) < todayKey;
         });
         setOverdueFollowUps(overdue.length);
       } catch {
@@ -142,6 +163,7 @@ export default function TodayView() {
       if (typeof window !== 'undefined' && !localStorage.getItem(FIRST_RUN_KEY)) {
         try {
           const backlog = await apiClient.getTasks(null, { state: 'backlog' });
+          if (loadGuardRef.current.isStale(token)) return;
           const now = new Date();
           const weekFromNow = new Date(now);
           weekFromNow.setDate(weekFromNow.getDate() + 7);
@@ -159,9 +181,11 @@ export default function TodayView() {
         }
       }
     } catch (err) {
-      setError(err.message || 'Failed to load today\'s tasks.');
+      // Silent refetch failures keep the current view rather than blanking it
+      if (!silent) setError(err.message || 'Failed to load today\'s tasks.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
@@ -169,14 +193,28 @@ export default function TodayView() {
     loadData();
   }, [loadData]);
 
-  // Refetch when planning completes or any task mutates
+  // Refetch quietly when planning completes, any task mutates, or the tab regains
+  // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
-    const handle = () => { loadData(); };
-    window.addEventListener('planning-complete', handle);
-    window.addEventListener('tasks-changed', handle);
+    const scheduleRefetch = () => {
+      // Never let a silent background refetch supersede the very first load — a
+      // superseded initial load skips its setState and can leave an empty view
+      // with no spinner/error (R2).
+      if (!hasLoadedRef.current) return;
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { loadData({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('planning-complete', handle);
-      window.removeEventListener('tasks-changed', handle);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadData]);
 
@@ -184,11 +222,35 @@ export default function TodayView() {
   // Handlers
   // ---------------------------------------------------------------------------
 
+  // Toggle completion. A task in the "Completed today" list is un-completed
+  // (restored to Today / Good to Do); any other task is completed (FF-005).
   const handleComplete = useCallback(async (taskId) => {
     if (pendingRef.current.has(taskId)) return;
     pendingRef.current.add(taskId);
 
-    // Optimistically move task out of sections and into completedToday
+    const doneTask = completedToday.find((t) => t.id === taskId);
+
+    if (doneTask) {
+      // Un-complete: restore to Today / Good to Do
+      const restoreSection = 'good_to_do';
+      const restored = { ...doneTask, state: 'today', today_section: restoreSection, completed_at: null };
+      setCompletedToday((prev) => prev.filter((t) => t.id !== taskId));
+      setSections((prev) => ({ ...prev, [restoreSection]: [...prev[restoreSection], restored] }));
+
+      try {
+        await apiClient.updateTask(taskId, { state: 'today', today_section: restoreSection });
+      } catch (err) {
+        // Revert on failure
+        setSections((prev) => ({ ...prev, [restoreSection]: prev[restoreSection].filter((t) => t.id !== taskId) }));
+        setCompletedToday((prev) => [doneTask, ...prev]);
+        alert(`Failed to un-complete task: ${err.message}`);
+      } finally {
+        pendingRef.current.delete(taskId);
+      }
+      return;
+    }
+
+    // Complete: optimistically move task out of sections and into completedToday
     let movedTask = null;
     setSections((prev) => {
       const next = { must_do: [...prev.must_do], good_to_do: [...prev.good_to_do], quick_wins: [...prev.quick_wins] };
@@ -221,7 +283,7 @@ export default function TodayView() {
     } finally {
       pendingRef.current.delete(taskId);
     }
-  }, []);
+  }, [completedToday]);
 
   const handleMove = useCallback(async (taskId, targetState, targetSection) => {
     // Find task across sections or completedToday
@@ -284,9 +346,12 @@ export default function TodayView() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
+      // Reload to restore server truth so the UI does not keep showing an unsaved
+      // value the server rejected (FF-032). Silent so the view does not blank out.
       alert(`Failed to update task: ${err.message}`);
+      loadData({ silent: true });
     }
-  }, []);
+  }, [loadData]);
 
   const handleDeleteTask = useCallback(async (taskId) => {
     // Remove from sections
@@ -303,7 +368,7 @@ export default function TodayView() {
       await apiClient.deleteTask(taskId);
     } catch (err) {
       alert(`Failed to delete task: ${err.message}`);
-      loadData(); // Reload on failure
+      loadData({ silent: true }); // Reload on failure without blanking the view
     }
   }, [loadData]);
 

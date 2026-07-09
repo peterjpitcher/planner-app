@@ -118,11 +118,13 @@ export async function POST(request) {
     }
     
     const body = await request.json();
+    // FF-029: allowlist client-supplied columns so mass assignment cannot set
+    // id, user_id, timestamps or completed_at. user_id is owned by the server.
     const projectData = {
-      ...body,
+      ...stripUndefined(pickProjectUpdates(body)),
       user_id: session.user.id
     };
-    
+
     // Validate project data
     const validation = validateProject(projectData);
     if (!validation.isValid) {

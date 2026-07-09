@@ -1,5 +1,7 @@
+import { fromZonedTime } from 'date-fns-tz';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { office365GraphRequest } from '@/lib/office365/graph';
+import { getLondonDateKey } from '@/lib/timezone';
 import { getOffice365Connection, getValidOffice365AccessToken } from '@/services/office365ConnectionService';
 
 const TODO_TASK_SELECT_FULL = [
@@ -42,9 +44,40 @@ function toGraphDueDateTime(dueDate) {
   return { dateTime: `${dateString}T12:00:00`, timeZone: 'UTC' };
 }
 
-function fromGraphDueDateTime(dueDateTime) {
+// Graph returns a due date as a wall-clock `dateTime` paired with a `timeZone`.
+// When the zone is a named, non-UTC zone we must resolve the wall-clock time in
+// that zone to an absolute instant and then read its Europe/London calendar
+// date — otherwise a task created in Outlook/To Do under another zone can land a
+// day early (FF-039). Returns a `YYYY-MM-DD` key, or null if the zone is
+// unrecognised (Graph can send Windows zone names, which Intl cannot parse).
+function convertGraphDateTimeToLondonDateKey(rawDateTime, timeZone) {
+  try {
+    // Graph wall-clock strings look like `2026-07-09T00:00:00.0000000`; take the
+    // zoneless `YYYY-MM-DDTHH:MM:SS` portion before resolving it in `timeZone`.
+    const wallClock = String(rawDateTime).slice(0, 19);
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(wallClock)) return null;
+    const instant = fromZonedTime(wallClock, timeZone);
+    if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) return null;
+    return getLondonDateKey(instant);
+  } catch {
+    return null;
+  }
+}
+
+export function fromGraphDueDateTime(dueDateTime) {
   const raw = dueDateTime?.dateTime;
   if (!raw) return null;
+
+  // If the zone is absent or UTC, preserve the existing behaviour: the outbound
+  // path writes noon UTC (see toGraphDueDateTime), which round-trips safely, so
+  // slicing the date component is correct for our own writes.
+  const timeZone = typeof dueDateTime?.timeZone === 'string' ? dueDateTime.timeZone.trim() : '';
+  if (timeZone && timeZone.toUpperCase() !== 'UTC') {
+    const converted = convertGraphDateTimeToLondonDateKey(raw, timeZone);
+    if (converted) return converted;
+    // Unrecognised zone — fall through to the plain slice below.
+  }
+
   const dateString = String(raw).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return null;
   return dateString;
@@ -377,7 +410,7 @@ async function todoTaskExists({ accessToken, listId, todoTaskId }) {
   throw lastError || new Error('Office365 todoTaskExists failed');
 }
 
-async function ensureProjectList({ supabase, accessToken, userId, project, existingMap }) {
+async function ensureProjectList({ supabase, accessToken, userId, project, existingMap, recreatedListIds }) {
   const current = existingMap?.get(project.id) || null;
   if (!current) {
     const created = await createTodoList({ accessToken, displayName: project.name });
@@ -418,6 +451,26 @@ async function ensureProjectList({ supabase, accessToken, userId, project, exist
           .single();
 
         if (error) throw error;
+
+        // FF-012: the remote list was deleted, so every office365_task_items row
+        // for it points at a list that no longer exists. Drop those stale
+        // mappings so the tasks are re-pushed to the recreated list on this same
+        // sync, and record the old list id so the two-way delete pass does NOT
+        // misread the vanished list as per-task remote deletions and hard-delete
+        // the local tasks. Never let a recreated list cause local task loss.
+        const oldListId = current.list_id;
+        if (oldListId) {
+          const { error: mappingCleanupError } = await supabase
+            .from('office365_task_items')
+            .delete()
+            .eq('user_id', userId)
+            .eq('list_id', oldListId);
+          if (mappingCleanupError) {
+            console.warn('Office365 sync: failed to clear task mappings for recreated list:', mappingCleanupError);
+          }
+          recreatedListIds?.add(oldListId);
+        }
+
         existingMap?.set(project.id, data);
         return data;
       }
@@ -528,8 +581,116 @@ async function ensureTaskItem({
   }
 }
 
+// FF-041: hard per-user serialisation for the whole sync.
+//
+// The every-minute cron, the fire-and-forget auto-sync fired by GET /api/tasks,
+// and per-mutation syncs can otherwise overlap and create duplicate remote
+// tasks/lists (Graph creates are not idempotent). A Postgres session/advisory
+// lock cannot be held across the sync because supabase-js speaks to PostgREST
+// over pooled, per-request transactions, so we claim a lock ROW in the existing
+// cron_runs table at the top of the sync and release it in a finally block.
+//
+// The lock lives in one stable slot per user (`operation` carries the user id;
+// `run_date` is a fixed sentinel so the mutex never rolls over at midnight). A
+// stale claim left by a crashed run can be stolen after SYNC_LOCK_TTL_MS so a
+// single hard crash cannot wedge syncing forever. Any unexpected lock error
+// fails open — a broken lock must never stop syncing outright.
+const SYNC_LOCK_OPERATION_PREFIX = 'office365-sync-lock:';
+const SYNC_LOCK_RUN_DATE = '1970-01-01';
+const SYNC_LOCK_TTL_MS = 10 * 60 * 1000;
+
+async function acquireSyncLock({ supabase, userId }) {
+  const operation = `${SYNC_LOCK_OPERATION_PREFIX}${userId}`;
+  try {
+    const { data, error } = await supabase
+      .from('cron_runs')
+      .insert({ operation, run_date: SYNC_LOCK_RUN_DATE, status: 'claimed' })
+      .select('id, created_at')
+      .single();
+
+    if (!error) {
+      return { acquired: true, lockId: data?.id || null, createdAt: data?.created_at || null, operation };
+    }
+
+    if (isUniqueConstraintError(error)) {
+      // Another run holds the lock — unless it is stale, in which case steal it.
+      const { data: existing, error: fetchError } = await supabase
+        .from('cron_runs')
+        .select('id, created_at')
+        .eq('operation', operation)
+        .eq('run_date', SYNC_LOCK_RUN_DATE)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+      if (!existing) {
+        // Row vanished between insert and read; let the next tick retry cleanly.
+        return { acquired: false, reason: 'race' };
+      }
+
+      const ageMs = Date.now() - new Date(existing.created_at).getTime();
+      if (!(Number.isFinite(ageMs) && ageMs > SYNC_LOCK_TTL_MS)) {
+        return { acquired: false, reason: 'held' };
+      }
+
+      // Conditional update on the observed created_at makes the steal atomic: if
+      // a concurrent run stole it first, no row matches and we back off.
+      const stealCreatedAt = new Date().toISOString();
+      const { data: stolen, error: stealError } = await supabase
+        .from('cron_runs')
+        .update({ created_at: stealCreatedAt, status: 'claimed', error: null })
+        .eq('id', existing.id)
+        .eq('created_at', existing.created_at)
+        .select('id, created_at')
+        .maybeSingle();
+      if (stealError) throw stealError;
+      if (stolen?.id) {
+        return { acquired: true, lockId: stolen.id, createdAt: stolen.created_at || stealCreatedAt, operation, stolen: true };
+      }
+      return { acquired: false, reason: 'held' };
+    }
+
+    if (String(error.message || '').toLowerCase().includes('does not exist')) {
+      // No cron_runs table (e.g. a fresh environment): fail open.
+      return { acquired: true, lockId: null, operation, unlocked: true };
+    }
+
+    throw error;
+  } catch (err) {
+    console.warn('Office365 sync: failed to acquire per-user lock, proceeding unlocked:', err);
+    return { acquired: true, lockId: null, operation, unlocked: true };
+  }
+}
+
+async function releaseSyncLock({ supabase, lock }) {
+  if (!lock || !lock.lockId) return;
+  try {
+    // Ownership-guarded delete: only remove the lock if we still hold it. If
+    // another run stole it after our TTL lapsed (bumping created_at), this
+    // matches no row and we leave their live lock intact (FF-041 steal race).
+    let query = supabase.from('cron_runs').delete().eq('id', lock.lockId);
+    if (lock.createdAt) query = query.eq('created_at', lock.createdAt);
+    await query;
+  } catch (err) {
+    console.warn('Office365 sync: failed to release per-user lock:', err);
+  }
+}
+
 export async function syncOffice365All({ userId }) {
   const supabase = getSupabaseServiceRole();
+
+  // FF-041: serialise the whole sync per user; skip if another run holds the lock.
+  const lock = await acquireSyncLock({ supabase, userId });
+  if (!lock.acquired) {
+    return { skipped: 'locked' };
+  }
+
+  try {
+    return await performFullSync({ supabase, userId });
+  } finally {
+    await releaseSyncLock({ supabase, lock });
+  }
+}
+
+async function performFullSync({ supabase, userId }) {
   const connection = await getOffice365Connection({ userId });
   const lastSyncedMs = toTimestampMs(connection?.last_synced_at);
   const hasLastSync = Boolean(connection?.last_synced_at);
@@ -586,6 +747,13 @@ export async function syncOffice365All({ userId }) {
   let pulledCreatedTasks = 0;
   let pulledUpdatedTasks = 0;
   let pulledDeletedTasks = 0;
+  // FF-001: surface pull-side insert failures in the summary instead of only
+  // console.warn, so a broken import is visible rather than silent.
+  let pullFailedTasks = 0;
+  // FF-012: list ids whose remote To Do list was deleted (404) and recreated on
+  // this run. Their old task mappings have been purged in the DB; the two-way
+  // delete pass must skip them so local tasks are re-pushed, not deleted.
+  const recreatedListIds = new Set();
 
   for (const project of activeProjects) {
     const before = projectMapByProjectId.get(project.id);
@@ -595,9 +763,24 @@ export async function syncOffice365All({ userId }) {
       userId,
       project,
       existingMap: projectMapByProjectId,
+      recreatedListIds,
     });
     if (!before && ensured) {
       createdLists += 1;
+    }
+  }
+
+  // FF-012: for any list recreated after a remote 404, drop its now-stale task
+  // mappings from the in-memory maps too (they were deleted in the DB by
+  // ensureProjectList). This makes the push phase treat those tasks as unmapped
+  // and re-create them on the new list rather than updating a deleted mapping.
+  if (recreatedListIds.size > 0) {
+    for (const [taskId, mapping] of taskMapByTaskId) {
+      if (recreatedListIds.has(mapping.list_id)) {
+        taskMapByTaskId.delete(taskId);
+        const staleKey = makeTodoTaskKey({ listId: mapping.list_id, todoTaskId: mapping.todo_task_id });
+        if (staleKey) taskMapByTodoTaskKey.delete(staleKey);
+      }
     }
   }
 
@@ -637,9 +820,14 @@ export async function syncOffice365All({ userId }) {
           project_id: projectId,
           name: remoteTask.title || 'New task',
           description: remoteTask?.body?.content ? String(remoteTask.body.content) : null,
-          due_date: fromGraphDueDateTime(remoteTask?.dueDateTime) || new Date().toISOString().slice(0, 10),
-          // Map Graph status to local state; inbound importance is ignored (no local priority field).
-          state: remoteIsCompleted ? 'done' : 'todo',
+          // FF-040: due_date is nullable — store NULL when the remote task has no
+          // dueDateTime rather than fabricating today's date, which would lose
+          // conflict resolution and get PATCHed back onto Microsoft.
+          due_date: fromGraphDueDateTime(remoteTask?.dueDateTime),
+          // FF-001: map Graph status to a VALID local state. 'todo' violates
+          // tasks_state_check (today/this_week/backlog/waiting/done); use
+          // 'backlog'. Inbound importance is ignored (no local priority field).
+          state: remoteIsCompleted ? 'done' : 'backlog',
           completed_at:
             remoteIsCompleted
               ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())
@@ -653,6 +841,8 @@ export async function syncOffice365All({ userId }) {
           .select('*')
           .single();
         if (createdTaskError) {
+          // FF-001: count the failure so a broken import surfaces in the summary.
+          pullFailedTasks += 1;
           console.warn('Office365 pull: failed to create local task:', createdTaskError);
           continue;
         }
@@ -702,6 +892,19 @@ export async function syncOffice365All({ userId }) {
             }
           }
 
+          // FF-042: any other mapping failure (a non-unique error, or a unique
+          // violation with no adoptable existing row) would strand an unmapped
+          // local task that duplicates the remote task on the next sync. Roll
+          // the just-created local task back so no orphan remains.
+          const { error: cleanupError } = await supabase
+            .from('tasks')
+            .delete()
+            .eq('id', createdTask.id)
+            .eq('user_id', userId);
+          if (cleanupError) {
+            console.warn('Office365 pull: failed to roll back local task after mapping failure:', cleanupError);
+          }
+          pullFailedTasks += 1;
           console.warn('Office365 pull: failed to create mapping:', mappingError);
           continue;
         }
@@ -855,6 +1058,9 @@ export async function syncOffice365All({ userId }) {
   // Delete local tasks for items removed remotely (two-way deletes).
   for (const mapping of taskMaps || []) {
     if (!activeProjectIds.has(mapping.project_id)) continue;
+    // FF-012: never delete local tasks because their remote LIST was deleted.
+    // A recreated list means the tasks should be re-pushed, not destroyed.
+    if (recreatedListIds.has(mapping.list_id)) continue;
     const mappingRemoteKey = makeTodoTaskKey({
       listId: mapping.list_id,
       todoTaskId: mapping.todo_task_id,
@@ -1118,6 +1324,7 @@ export async function syncOffice365All({ userId }) {
     pulledCreatedTasks,
     pulledUpdatedTasks,
     pulledDeletedTasks,
+    pullFailedTasks,
     dedupedTaskMappings: removedDuplicateMappings,
     totalProjects: projects?.length || 0,
     totalTasks: tasks?.length || 0,

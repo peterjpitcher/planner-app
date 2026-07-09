@@ -1,8 +1,15 @@
-import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
+import { getDueDateStatus as getSharedDueDateStatus } from './dateUtils';
 
+// Delegates the Today/Tomorrow/Overdue classification to the shared,
+// Europe/London-anchored dateUtils.getDueDateStatus (see FF-038) and only
+// maps it to this module's own text/class/sortKey presentation.
 export const getDueDateStatus = (dateString, isEditing = false, currentDueDateValue = '') => {
   const dateToConsider = isEditing && currentDueDateValue ? currentDueDateValue : dateString;
   if (!dateToConsider) return { text: 'No due date', classes: 'text-[#2f617a]/70 text-xs', sortKey: Infinity, fullDate: '' };
+
+  const status = getSharedDueDateStatus(dateToConsider);
+  if (!status) return { text: 'No due date', classes: 'text-[#2f617a]/70 text-xs', sortKey: Infinity, fullDate: '' };
 
   let date;
   if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -10,36 +17,19 @@ export const getDueDateStatus = (dateString, isEditing = false, currentDueDateVa
   } else {
     date = startOfDay(new Date(dateToConsider));
   }
-
-  const today = startOfDay(new Date());
-  const daysDiff = differenceInDays(date, today);
-  let text = `Due ${format(date, 'EEEE, MMM do')}`;
-  let classes = 'text-[#036586]';
-  let sortKey = daysDiff;
   const fullDateText = format(date, 'EEEE, MMM do, yyyy');
+  const daysDiff = status.daysDiff;
 
-  if (isToday(date)) {
-    text = `Due Today`;
-    classes = 'text-red-500 font-semibold';
-    sortKey = 0;
-  } else if (isTomorrow(date)) {
-    text = `Due Tomorrow`;
-    classes = 'text-amber-500 font-semibold';
-    sortKey = 1;
-  } else if (isPast(date) && !isToday(date)) {
-    text = `Overdue: ${format(date, 'EEEE, MMM do')}`;
-    classes = 'text-red-500 font-semibold';
-    sortKey = -Infinity + daysDiff;
-  } else if (daysDiff < 0) {
-    text = `Due ${format(date, 'EEEE, MMM do')}`;
-    classes = 'text-[#2f617a]/70 italic';
-  } else if (daysDiff >= 0 && daysDiff <= 7) {
-    text = `Due ${format(date, 'EEEE, MMM do')}`;
-  } else if (daysDiff > 7) {
-    text = `Due ${format(date, 'EEEE, MMM do')}`;
+  switch (status.type) {
+    case 'TODAY':
+      return { text: 'Due Today', classes: 'text-red-500 font-semibold', sortKey: 0, fullDate: fullDateText };
+    case 'TOMORROW':
+      return { text: 'Due Tomorrow', classes: 'text-amber-500 font-semibold', sortKey: 1, fullDate: fullDateText };
+    case 'OVERDUE':
+      return { text: `Overdue: ${format(date, 'EEEE, MMM do')}`, classes: 'text-red-500 font-semibold', sortKey: -Infinity + daysDiff, fullDate: fullDateText };
+    default:
+      return { text: `Due ${format(date, 'EEEE, MMM do')}`, classes: 'text-[#036586]', sortKey: daysDiff, fullDate: fullDateText };
   }
-
-  return { text, classes, fullDate: fullDateText, sortKey };
 };
 
 export const getStatusClasses = (status) => {

@@ -16,6 +16,11 @@ export async function GET() {
       syncEnabled: Boolean(connection?.sync_enabled),
       lastSyncedAt: connection?.last_synced_at || null,
       microsoftUserEmail: connection?.microsoft_user_email || null,
+      // FF-011: expose the expired/revoked-token state so the settings UI can
+      // show a "reconnect needed" prompt instead of a healthy connection.
+      syncError: connection?.sync_error || null,
+      syncErrorAt: connection?.sync_error_at || null,
+      reconnectRequired: Boolean(connection?.sync_error),
     });
   } catch (err) {
     console.error('Office365 status error:', err);

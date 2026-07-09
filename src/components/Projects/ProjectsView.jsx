@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
+import { cn } from '@/lib/styleUtils';
 import { STATE } from '@/lib/constants';
 import {
   computeAttentionCounts,
@@ -19,13 +22,13 @@ import ProjectWorkspace from './ProjectWorkspace';
 function ProjectsViewSkeleton() {
   return (
     <div className="flex h-full animate-pulse">
-      <div className="w-[280px] shrink-0 border-r border-gray-200 bg-gray-50/50 p-3 space-y-3">
+      <div className="w-full shrink-0 border-r border-gray-200 bg-gray-50/50 p-3 space-y-3 md:w-[280px]">
         <div className="h-9 rounded-md bg-gray-200" />
         <div className="flex gap-1.5">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-6 w-14 rounded-full bg-gray-200" />)}</div>
         <div className="h-8 rounded-md bg-gray-200" />
         <div className="space-y-2 pt-2">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-12 rounded-lg bg-gray-200" />)}</div>
       </div>
-      <div className="flex-1 p-6 space-y-4">
+      <div className="hidden flex-1 p-6 space-y-4 md:block">
         <div className="grid grid-cols-4 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-20 rounded-lg bg-gray-100" />)}</div>
         <div className="h-64 rounded-lg bg-gray-100" />
       </div>
@@ -45,6 +48,10 @@ export default function ProjectsView() {
 
   // Selection & filters
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('id') || null);
+  // Mobile list/detail toggle (FF-016): below md, the sidebar list and the
+  // workspace/dashboard detail are mutually exclusive full-width panes. Starts
+  // open when a deep link already points at a project so it renders directly.
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(() => !!searchParams.get('id'));
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedArea, setSelectedArea] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,14 +63,29 @@ export default function ProjectsView() {
   // Capture initial URL id once — subsequent selection changes update state directly
   const initialUrlId = useRef(searchParams.get('id'));
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
+  // Gate silent refetches until the first load has completed, so a background
+  // refetch can never supersede the in-flight initial load (R2).
+  const hasLoadedRef = useRef(false);
+
+  // loadData({ silent }): silent refetches revalidate in the background without
+  // flipping the view to the skeleton or blanking it on transient failure.
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [allProjects, allTasks] = await Promise.all([
         apiClient.getAllProjects(true),
         apiClient.getAllTasks(null, { states: 'today,this_week,backlog,waiting' }),
       ]);
+
+      // Ignore out-of-order responses — a newer refetch has superseded this one
+      if (loadGuardRef.current.isStale(token)) return;
 
       const byProject = {};
       const unassigned = [];
@@ -96,13 +118,41 @@ export default function ProjectsView() {
         }
       }
     } catch (err) {
-      setError(err.message || 'Failed to load projects.');
+      // Silent refetch failures keep the current view rather than blanking it
+      if (!silent) setError(err.message || 'Failed to load projects.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Refetch quietly when a task mutates (e.g. QuickCapture on /projects), planning
+  // completes, or the tab regains focus (cross-tab / multi-device). Bursts are
+  // debounced into a single refetch (FF-008 / FF-053).
+  useEffect(() => {
+    const scheduleRefetch = () => {
+      // Never let a silent background refetch supersede the very first load — a
+      // superseded initial load skips its setState and can leave an empty view
+      // with no spinner/error (R2).
+      if (!hasLoadedRef.current) return;
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { loadData({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadData]);
 
   // ---- Derived state (memoised) ----
   const areas = useMemo(() => deriveAreas(projects), [projects]);
@@ -145,6 +195,8 @@ export default function ProjectsView() {
   projectsRef.current = projects;
   const tasksByProjectRef = useRef(tasksByProject);
   tasksByProjectRef.current = tasksByProject;
+  const unassignedTasksRef = useRef(unassignedTasks);
+  unassignedTasksRef.current = unassignedTasks;
   const selectedProjectIdRef = useRef(selectedProjectId);
   selectedProjectIdRef.current = selectedProjectId;
 
@@ -156,9 +208,22 @@ export default function ProjectsView() {
     window.history.replaceState(null, '', url);
   }, []);
 
-  const showDashboard = useCallback(() => {
-    selectProject(null);
+  // Explicit "view detail" navigation (project row, Unassigned entry, Dashboard
+  // link, project creation) also opens the mobile detail pane. Kept separate
+  // from selectProject so the defensive deselect in handleFilterChange below
+  // doesn't yank a browsing user on mobile into the detail view (FF-016).
+  const openProjectDetail = useCallback((projectId) => {
+    selectProject(projectId);
+    setMobileDetailOpen(true);
   }, [selectProject]);
+
+  const showDashboard = useCallback(() => {
+    openProjectDetail(null);
+  }, [openProjectDetail]);
+
+  const showProjectsList = useCallback(() => {
+    setMobileDetailOpen(false);
+  }, []);
 
   const openCreateModal = useCallback(() => setIsCreateOpen(true), []);
 
@@ -180,7 +245,7 @@ export default function ProjectsView() {
     try {
       await apiClient.updateProject(projectId, updates);
     } catch {
-      loadData(); // Revert on failure
+      loadData({ silent: true }); // Revert on failure without a skeleton flash
     }
   }, [loadData]);
 
@@ -190,16 +255,16 @@ export default function ProjectsView() {
     try {
       await apiClient.deleteProject(projectId);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData, selectedProjectId]);
 
   const handleProjectCreated = useCallback((newProject) => {
     setIsCreateOpen(false);
-    selectProject(newProject.id);
+    openProjectDetail(newProject.id);
     loadData(); // Full reload to get the new project with server-generated fields
-  }, [loadData, selectProject]);
+  }, [loadData, openProjectDetail]);
 
   // ---- Task mutation handlers ----
   const handleTaskAdded = useCallback((newTask, projectId) => {
@@ -215,18 +280,36 @@ export default function ProjectsView() {
   }, []);
 
   const handleCompleteTask = useCallback(async (taskId) => {
-    setTasksByProject((prev) => {
-      const next = { ...prev };
-      for (const [pid, tasks] of Object.entries(next)) {
-        next[pid] = tasks.filter((t) => t.id !== taskId);
-      }
-      return next;
-    });
-    setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    // Toggle completion from state, not a dropped column. Completing removes the
+    // task from the visible (non-done) lists; un-completing restores it to
+    // Today / Good to Do (FF-005).
+    let task = null;
+    for (const tasks of Object.values(tasksByProjectRef.current)) {
+      const found = tasks.find((t) => t.id === taskId);
+      if (found) { task = found; break; }
+    }
+    if (!task) task = unassignedTasksRef.current.find((t) => t.id === taskId) || null;
+
+    const wasCompleted = task ? (task.state === STATE.DONE || !!task.completed_at) : false;
+    const updates = wasCompleted
+      ? { state: STATE.TODAY, today_section: 'good_to_do' }
+      : { state: STATE.DONE };
+
+    if (!wasCompleted) {
+      setTasksByProject((prev) => {
+        const next = { ...prev };
+        for (const [pid, tasks] of Object.entries(next)) {
+          next[pid] = tasks.filter((t) => t.id !== taskId);
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    }
+
     try {
-      await apiClient.updateTask(taskId, { state: 'done' });
+      await apiClient.updateTask(taskId, updates);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   }, [loadData]);
 
@@ -236,37 +319,71 @@ export default function ProjectsView() {
     if (targetState === STATE.TODAY && !targetSection) updates.today_section = 'good_to_do';
 
     // Optimistic: update state in local data
-    const updateInGroups = (groups) => {
-      const next = { ...groups };
-      for (const [pid, tasks] of Object.entries(next)) {
-        next[pid] = tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
-      }
-      return next;
-    };
-    setTasksByProject(updateInGroups);
-
-    try {
-      await apiClient.updateTask(taskId, updates);
-    } catch {
-      loadData();
-    }
-  }, [loadData]);
-
-  const handleUpdateTask = useCallback(async (taskId, updates) => {
     const updateInList = (tasks) => tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
-    setTasksByProject((prev) => {
-      const next = { ...prev };
+    setTasksByProject((groups) => {
+      const next = { ...groups };
       for (const [pid, tasks] of Object.entries(next)) {
         next[pid] = updateInList(tasks);
       }
       return next;
     });
+    // Also update unassigned tasks — a project-less task can still change state
     setUnassignedTasks((prev) => updateInList(prev));
+
+    try {
+      await apiClient.updateTask(taskId, updates);
+    } catch {
+      loadData({ silent: true });
+    }
+  }, [loadData]);
+
+  const handleUpdateTask = useCallback(async (taskId, updates) => {
+    // Project reassignment must regroup the task under its new project (or unassigned),
+    // not just edit it in place under the old grouping key (FF-008).
+    const reassigning = Object.prototype.hasOwnProperty.call(updates, 'project_id');
+
+    if (reassigning) {
+      // Locate the current task from refs so we can move it whole
+      let current = null;
+      for (const tasks of Object.values(tasksByProjectRef.current)) {
+        const found = tasks.find((t) => t.id === taskId);
+        if (found) { current = found; break; }
+      }
+      if (!current) current = unassignedTasksRef.current.find((t) => t.id === taskId) || null;
+      const merged = current ? { ...current, ...updates } : null;
+      const newProjectId = updates.project_id || null;
+
+      setTasksByProject((prev) => {
+        const next = {};
+        for (const [pid, tasks] of Object.entries(prev)) {
+          next[pid] = tasks.filter((t) => t.id !== taskId);
+        }
+        if (merged && newProjectId) {
+          next[newProjectId] = [...(next[newProjectId] || []), merged];
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => {
+        const kept = prev.filter((t) => t.id !== taskId);
+        return merged && !newProjectId ? [...kept, merged] : kept;
+      });
+    } else {
+      const updateInList = (tasks) => tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
+      setTasksByProject((prev) => {
+        const next = { ...prev };
+        for (const [pid, tasks] of Object.entries(next)) {
+          next[pid] = updateInList(tasks);
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => updateInList(prev));
+    }
+
     setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     try {
       await apiClient.updateTask(taskId, updates);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   }, [loadData]);
 
@@ -283,7 +400,7 @@ export default function ProjectsView() {
     try {
       await apiClient.deleteTask(taskId);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   }, [loadData]);
 
@@ -312,13 +429,15 @@ export default function ProjectsView() {
     );
   }
 
+  const isUnassignedSelected = selectedProjectId === '__unassigned__';
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       <ProjectSidebar
         projects={visibleProjects}
         tasksByProject={tasksByProject}
         selectedProjectId={selectedProjectId}
-        onSelectProject={selectProject}
+        onSelectProject={openProjectDetail}
         onShowDashboard={showDashboard}
         onCreateProject={openCreateModal}
         activeFilter={activeFilter}
@@ -333,10 +452,37 @@ export default function ProjectsView() {
         unassignedCount={unassignedTasks.length}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        hideOnMobile={mobileDetailOpen}
       />
 
-      <main className="flex-1 overflow-y-auto px-6 py-5">
-        {selectedProject ? (
+      <main
+        className={cn(
+          'flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5',
+          mobileDetailOpen ? 'block' : 'hidden md:block'
+        )}
+      >
+        {/* Mobile-only back control (FF-016) — desktop always shows both panes */}
+        <button
+          type="button"
+          onClick={showProjectsList}
+          className="mb-3 flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 md:hidden"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back to projects
+        </button>
+
+        {isUnassignedSelected ? (
+          <ProjectWorkspace
+            project={null}
+            tasks={unassignedTasks}
+            onTaskAdded={handleTaskAdded}
+            onCompleteTask={handleCompleteTask}
+            onMoveTask={handleMoveTask}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            onTaskClick={handleTaskClick}
+          />
+        ) : selectedProject ? (
           <ProjectWorkspace
             project={selectedProject}
             tasks={selectedProjectTasks}
@@ -355,7 +501,7 @@ export default function ProjectsView() {
             projects={dashboardProjects}
             tasksByProject={tasksByProject}
             onFilterClick={(filter) => { setActiveFilter(filter); }}
-            onSelectProject={selectProject}
+            onSelectProject={openProjectDetail}
           />
         )}
       </main>

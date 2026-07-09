@@ -12,6 +12,7 @@ export default function ProjectNotes({ projectId, disabled = false }) {
   const [error, setError] = useState(null);
   const [newNote, setNewNote] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [noteError, setNoteError] = useState(null);
   const abortRef = useRef(null);
 
   const loadNotes = useCallback(async (pid) => {
@@ -55,11 +56,13 @@ export default function ProjectNotes({ projectId, disabled = false }) {
   async function handleCreateNote(e) {
     if (e.key === 'Escape') {
       setNewNote('');
+      setNoteError(null);
       return;
     }
     if (e.key !== 'Enter' || !newNote.trim() || isCreating || disabled) return;
 
     setIsCreating(true);
+    setNoteError(null);
     try {
       const result = await apiClient.createNote({
         content: newNote.trim(),
@@ -70,8 +73,9 @@ export default function ProjectNotes({ projectId, disabled = false }) {
       setNewNote('');
       // Invalidate cache so next load gets fresh data
       clearCache(`notes-${projectId}`);
-    } catch {
-      // silently fail
+    } catch (err) {
+      // Keep the typed text so the user can retry instead of losing it
+      setNoteError(err.message || 'Failed to add note.');
     } finally {
       setIsCreating(false);
     }
@@ -87,12 +91,21 @@ export default function ProjectNotes({ projectId, disabled = false }) {
       <input
         type="text"
         value={newNote}
-        onChange={(e) => setNewNote(e.target.value)}
+        onChange={(e) => {
+          setNewNote(e.target.value);
+          if (noteError) setNoteError(null);
+        }}
         onKeyDown={handleCreateNote}
         placeholder="Add a note… (Enter to save)"
         disabled={isCreating || disabled}
+        aria-label="New note"
         className="mb-3 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm placeholder-gray-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
       />
+      {noteError && (
+        <p className="-mt-2 mb-3 text-xs text-red-500" role="alert">
+          {noteError}
+        </p>
+      )}
 
       {/* Loading skeleton */}
       {loading && (

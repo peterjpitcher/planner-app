@@ -23,9 +23,18 @@ export default function PlanningModal({
   tasks,
   isManual = false,
 }) {
-  // Combined flow: Sunday starts with weekly, then transitions to daily (Monday)
-  const isSundayCombined = windowType === WINDOW_TYPE.WEEKLY;
-  const [step, setStep] = useState(isSundayCombined ? 'weekly' : windowType);
+  // Combined flow: the Sunday/Monday auto weekly window runs weekly then daily
+  // (Monday). A *manually* opened weekly plan is single-step, so gate on the real
+  // context via the already-plumbed isManual prop rather than window_type alone
+  // (FF-019). getActivePlanningWindow only yields an auto weekly window on the
+  // Sunday-evening → Monday-evening window, so !isManual identifies that context.
+  const isCombinedFlow = windowType === WINDOW_TYPE.WEEKLY && !isManual;
+  const [step, setStep] = useState(isCombinedFlow ? 'weekly' : windowType);
+  // During the combined-flow resume the effect below is still deciding whether to
+  // jump to the daily step. Until it resolves, hold back the weekly candidate list
+  // so daily-shaped candidates can never flash under the "Plan Your Week" heading
+  // (R3). Only the combined flow has a resume decision to make.
+  const [resumeResolving, setResumeResolving] = useState(isCombinedFlow);
   const [sectionCounts, setSectionCounts] = useState({
     [TODAY_SECTION.MUST_DO]: 0,
     [TODAY_SECTION.GOOD_TO_DO]: 0,
@@ -34,6 +43,8 @@ export default function PlanningModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skippedIds, setSkippedIds] = useState(new Set());
   const [dailyTasks, setDailyTasks] = useState(null);
+  // Inline error surfaced near the footer when Finish Planning fails (FF-045).
+  const [finishError, setFinishError] = useState(null);
   // Count of tasks the user acted on in this session (assign / accept / defer / skip),
   // so Finish Planning can warn only when the user truly did nothing.
   const [actionedCount, setActionedCount] = useState(0);
@@ -43,11 +54,50 @@ export default function PlanningModal({
   // stale step / counter / skipped values.
   useEffect(() => {
     if (!isOpen) return;
-    setStep(isSundayCombined ? 'weekly' : windowType);
     setSkippedIds(new Set());
-    setDailyTasks(null);
     setActionedCount(0);
-  }, [isOpen, isSundayCombined, windowType, windowDate]);
+    setFinishError(null);
+
+    if (!isCombinedFlow) {
+      setStep(windowType);
+      setDailyTasks(null);
+      setResumeResolving(false);
+      return;
+    }
+
+    // Combined Sunday flow: default to the weekly step, but if the weekly session
+    // has already been recorded the user abandoned after step 1 — resume directly
+    // on the daily (Monday) step so it is not silently skipped (FF-023). Until the
+    // decision resolves, keep resumeResolving true so the weekly candidate list
+    // stays hidden behind a placeholder (R3).
+    setStep('weekly');
+    setDailyTasks(null);
+    setResumeResolving(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const weeklySession = await apiClient.getPlanningSession(WINDOW_TYPE.WEEKLY, windowDate);
+        if (cancelled) return;
+        if (!weeklySession) {
+          // No weekly session yet — stay on the weekly step and reveal its list.
+          setResumeResolving(false);
+          return;
+        }
+        const daily = await apiClient.getPlanningCandidates(WINDOW_TYPE.DAILY, windowDate);
+        if (cancelled) return;
+        setDailyTasks(daily);
+        setStep('daily');
+        setResumeResolving(false);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to resume planning step:', err);
+          // On error, fall back to the weekly step and reveal its list.
+          setResumeResolving(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, isCombinedFlow, windowType, windowDate]);
 
   // Fetch current today section counts for soft cap warnings
   // TODO: This hits /api/tasks which triggers Office365 auto-sync as a side effect.
@@ -75,31 +125,11 @@ export default function PlanningModal({
     if (isOpen) fetchCounts();
   }, [isOpen]);
 
-  // Compute max sort_order for appending
-  // TODO: Same O365 sync side effect as fetchCounts above.
-  const getMaxSortOrder = useCallback(async (state, section = null) => {
-    try {
-      const stateTasks = await apiClient.getTasks(null, { state });
-      let max = 0;
-      for (const t of stateTasks) {
-        if (section && t.today_section !== section) continue;
-        if (t.sort_order != null && t.sort_order > max) max = t.sort_order;
-      }
-      return max;
-    } catch {
-      return 0;
-    }
-  }, []);
-
   const handleAssign = useCallback(async (taskId, updates) => {
-    const maxSort = await getMaxSortOrder(
-      updates.state,
-      updates.today_section || null
-    );
-    await apiClient.updateTask(taskId, {
-      ...updates,
-      sort_order: maxSort + 1,
-    });
+    // sort_order is now computed server-side (append to the target bucket) when a
+    // task changes state, so the modal no longer does a racy per-row full fetch
+    // to derive max+1 (FF-035).
+    await apiClient.updateTask(taskId, updates);
 
     // Update section counts if assigning to today
     if (updates.today_section) {
@@ -112,7 +142,7 @@ export default function PlanningModal({
       // Weekly step acceptance also counts as a real action
       setActionedCount((prev) => prev + 1);
     }
-  }, [getMaxSortOrder]);
+  }, []);
 
   const handleSkip = useCallback((taskId) => {
     setSkippedIds((prev) => new Set(prev).add(taskId));
@@ -127,7 +157,7 @@ export default function PlanningModal({
     setActionedCount((prev) => prev + 1);
   }, []);
 
-  const handleDefer = useCallback(async (taskId, newDate) => {
+  const handleDefer = useCallback(async (taskId, newDate, currentState) => {
     // Base the "this week" boundary on the planning target, not today's date.
     // During Sunday evening weekly planning the target week starts next Monday,
     // so using today's week would wrongly demote valid target-week defers to
@@ -139,7 +169,10 @@ export default function PlanningModal({
     const weekEndStr = sundayDate.toISOString().slice(0, 10);
 
     const updates = { due_date: newDate };
-    if (newDate > weekEndStr) {
+    // Only push out-of-week defers to backlog for non-waiting tasks. A 'waiting'
+    // task deferred past the week must keep its waiting status (and waiting_reason
+    // / follow_up_date) — otherwise its chase-up tracking is silently lost (FF-024).
+    if (newDate > weekEndStr && currentState !== STATE.WAITING) {
       updates.state = STATE.BACKLOG;
     }
 
@@ -149,7 +182,7 @@ export default function PlanningModal({
 
   // Determine which tasks to show for the current step
   // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
-  const activeTasks = (isSundayCombined && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
+  const activeTasks = (isCombinedFlow && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
     : [...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
@@ -170,8 +203,9 @@ export default function PlanningModal({
     }
 
     setIsSubmitting(true);
+    setFinishError(null);
     try {
-      if (isSundayCombined && step === 'weekly') {
+      if (isCombinedFlow && step === 'weekly') {
         // Record weekly session, transition to daily step
         await apiClient.createPlanningSession(WINDOW_TYPE.WEEKLY, windowDate);
         // Fetch daily candidates for step 2
@@ -185,15 +219,18 @@ export default function PlanningModal({
       }
 
       // Record session (daily or weekly final step)
-      const sessionType = isSundayCombined ? WINDOW_TYPE.DAILY : windowType;
+      const sessionType = isCombinedFlow ? WINDOW_TYPE.DAILY : windowType;
       await apiClient.createPlanningSession(sessionType, windowDate);
       onComplete();
     } catch (err) {
+      // Surface the failure inline so the user can retry — otherwise Finish looks
+      // like it did nothing and the planning nag keeps re-prompting (FF-045).
       console.error('Failed to complete planning session:', err);
+      setFinishError('Something went wrong saving your planning. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSundayCombined, step, windowType, windowDate, onComplete, actionedCount, currentTasks.length]);
+  }, [isCombinedFlow, step, windowType, windowDate, onComplete, actionedCount, currentTasks.length]);
 
   const formatWindowDate = (dateStr) => {
     try {
@@ -224,7 +261,7 @@ export default function PlanningModal({
     ? `Plan Your Week — ${formatWeekRange(windowDate)}`
     : `${dailyLabel} — ${formatWindowDate(windowDate)}`;
 
-  const stepIndicator = isSundayCombined
+  const stepIndicator = isCombinedFlow
     ? step === 'weekly'
       ? 'Step 1 of 2: Plan Your Week'
       : 'Step 2 of 2: Plan Monday'
@@ -269,6 +306,15 @@ export default function PlanningModal({
 
           {/* Task list */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
+            {isCombinedFlow && step === 'weekly' && resumeResolving ? (
+              <div className="flex items-center justify-center py-16" aria-live="polite">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+                  Loading&hellip;
+                </div>
+              </div>
+            ) : (
+            <>
             {currentTasks.length > 0 && (
               <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 {step === 'weekly'
@@ -307,29 +353,38 @@ export default function PlanningModal({
                 No tasks to plan. You&apos;re all set!
               </p>
             )}
+            </>
+            )}
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between border-t border-border px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
-            >
-              Do This Later
-            </button>
-            <button
-              type="button"
-              onClick={handleFinish}
-              disabled={isSubmitting}
-              className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50"
-            >
-              {isSubmitting
-                ? 'Saving\u2026'
-                : isSundayCombined && step === 'weekly'
-                  ? 'Next: Plan Monday \u2192'
-                  : 'Finish Planning'}
-            </button>
+          <div className="border-t border-border px-6 py-4">
+            {finishError && (
+              <p className="mb-3 text-sm text-red-600" role="alert">
+                {finishError}
+              </p>
+            )}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
+              >
+                Do This Later
+              </button>
+              <button
+                type="button"
+                onClick={handleFinish}
+                disabled={isSubmitting}
+                className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50"
+              >
+                {isSubmitting
+                  ? 'Saving\u2026'
+                  : isCombinedFlow && step === 'weekly'
+                    ? 'Next: Plan Monday \u2192'
+                    : 'Finish Planning'}
+              </button>
+            </div>
           </div>
         </DialogPanel>
       </div>

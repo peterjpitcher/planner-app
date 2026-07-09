@@ -15,8 +15,9 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { format, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
-import { computeSortOrder } from '@/lib/sortOrder';
+import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { compareBacklogTasks } from '@/lib/taskSort';
 import BoardColumn from './BoardColumn';
 import TaskCard from '@/components/shared/TaskCard';
@@ -197,6 +198,17 @@ export default function PlanBoard() {
   // Backlog pagination
   const [backlogOffset, setBacklogOffset] = useState(0);
   const [backlogHasMore, setBacklogHasMore] = useState(false);
+  // Mirror of backlogOffset so background refetches can preserve loaded depth
+  // without re-creating loadAllColumns on every page load
+  const backlogOffsetRef = useRef(backlogOffset);
+  backlogOffsetRef.current = backlogOffset;
+
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
+  // Gate silent refetches until the first load has completed, so a background
+  // refetch can never supersede the in-flight initial load (R2).
+  const hasLoadedRef = useRef(false);
 
   // Areas (derived from backlog tasks for filter)
   const [areas, setAreas] = useState([]);
@@ -220,32 +232,55 @@ export default function PlanBoard() {
   // Data loading
   // ---------------------------------------------------------------------------
 
-  const loadColumn = useCallback(async (stateKey, opts = {}) => {
-    setLoadingStates((prev) => ({ ...prev, [stateKey]: true }));
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next[stateKey];
-      return next;
-    });
+  const loadColumn = useCallback(async (stateKey, opts = {}, { silent = false } = {}) => {
+    if (!silent) {
+      setLoadingStates((prev) => ({ ...prev, [stateKey]: true }));
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[stateKey];
+        return next;
+      });
+    }
 
     try {
       const tasks = await apiClient.getTasks(null, { state: stateKey, ...opts });
+      // A silent refetch that succeeds should clear any stale error banner left
+      // by an earlier failed load (mirrors CalendarView).
+      if (silent) {
+        setErrors((prev) => {
+          if (!prev[stateKey]) return prev;
+          const next = { ...prev };
+          delete next[stateKey];
+          return next;
+        });
+      }
       return tasks;
     } catch (err) {
-      setErrors((prev) => ({ ...prev, [stateKey]: err.message ?? 'Failed to load' }));
+      // Silent background refetch failures must not paint per-column error
+      // banners over good existing data — only genuine (non-silent) loads do
+      // (R6, mirrors CalendarView's !silent guard).
+      if (!silent) setErrors((prev) => ({ ...prev, [stateKey]: err.message ?? 'Failed to load' }));
       return null;
     } finally {
-      setLoadingStates((prev) => ({ ...prev, [stateKey]: false }));
+      if (!silent) setLoadingStates((prev) => ({ ...prev, [stateKey]: false }));
     }
   }, []);
 
-  const loadAllColumns = useCallback(async () => {
+  const loadAllColumns = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    // Preserve the backlog pagination depth the user has scrolled to, so a refetch
+    // after any mutation does not collapse the column back to the first page (FF-033).
+    const backlogLimit = backlogOffsetRef.current > 0 ? backlogOffsetRef.current : BACKLOG_PAGE_SIZE;
+
     const [today, thisWeek, backlog, waiting] = await Promise.all([
-      loadColumn(STATE.TODAY),
-      loadColumn(STATE.THIS_WEEK),
-      loadColumn(STATE.BACKLOG, { limit: BACKLOG_PAGE_SIZE, offset: 0 }),
-      loadColumn(STATE.WAITING),
+      loadColumn(STATE.TODAY, {}, { silent }),
+      loadColumn(STATE.THIS_WEEK, {}, { silent }),
+      loadColumn(STATE.BACKLOG, { limit: backlogLimit, offset: 0 }, { silent }),
+      loadColumn(STATE.WAITING, {}, { silent }),
     ]);
+
+    // Ignore out-of-order responses — a newer refetch has superseded this one
+    if (loadGuardRef.current.isStale(token)) return;
 
     setColumns({
       [STATE.TODAY]: today ?? [],
@@ -255,27 +290,44 @@ export default function PlanBoard() {
     });
 
     if (backlog) {
-      setBacklogHasMore(backlog.length >= BACKLOG_PAGE_SIZE);
+      setBacklogHasMore(backlog.length >= backlogLimit);
       const uniqueAreas = [
         ...new Set(backlog.filter((t) => t.area).map((t) => t.area)),
       ].sort();
       setAreas(uniqueAreas);
     }
-    setBacklogOffset(BACKLOG_PAGE_SIZE);
+    setBacklogOffset(backlogLimit);
   }, [loadColumn]);
 
   useEffect(() => {
-    loadAllColumns();
+    loadAllColumns().finally(() => {
+      // First load done — silent background refetches may now supersede it (R2).
+      hasLoadedRef.current = true;
+    });
   }, [loadAllColumns]);
 
-  // Refetch when planning completes or any task mutates
+  // Refetch quietly when planning completes, any task mutates, or the tab regains
+  // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
-    const handle = () => { loadAllColumns(); };
-    window.addEventListener('planning-complete', handle);
-    window.addEventListener('tasks-changed', handle);
+    const scheduleRefetch = () => {
+      // Never let a silent background refetch supersede the very first load — a
+      // superseded initial load skips its setState and can leave an empty board
+      // with no spinner/error (R2).
+      if (!hasLoadedRef.current) return;
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { loadAllColumns({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('planning-complete', handle);
-      window.removeEventListener('tasks-changed', handle);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadAllColumns]);
 
@@ -324,8 +376,12 @@ export default function PlanBoard() {
     }
     if (!task) return;
 
-    const wasCompleted = task.is_completed || task.status === 'completed';
-    const newState = wasCompleted ? STATE.BACKLOG : STATE.DONE;
+    // Completion derives from state (is_completed was dropped by the migration).
+    // Completing sends state:done; un-completing restores to Today / Good to Do (FF-005).
+    const wasCompleted = task.state === STATE.DONE || !!task.completed_at;
+    const updates = wasCompleted
+      ? { state: STATE.TODAY, today_section: TODAY_SECTION.GOOD_TO_DO }
+      : { state: STATE.DONE };
 
     // Optimistic: remove from current column if completing
     if (!wasCompleted) {
@@ -336,10 +392,7 @@ export default function PlanBoard() {
     }
 
     try {
-      await apiClient.updateTask(taskId, {
-        state: newState,
-        is_completed: !wasCompleted,
-      });
+      await apiClient.updateTask(taskId, updates);
     } catch {
       // Revert on failure
       setColumns((prev) => ({
@@ -408,8 +461,8 @@ export default function PlanBoard() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch {
-      // On failure, refetch affected column
-      loadAllColumns();
+      // On failure, refetch to restore server truth (quietly, no skeleton flash)
+      loadAllColumns({ silent: true });
     }
   }, [loadAllColumns]);
 
@@ -426,7 +479,7 @@ export default function PlanBoard() {
     try {
       await apiClient.deleteTask(taskId);
     } catch {
-      loadAllColumns();
+      loadAllColumns({ silent: true });
     }
   }, [loadAllColumns]);
 
@@ -518,22 +571,51 @@ export default function PlanBoard() {
         reordered.splice(oldIndex, 1);
         reordered.splice(newIndex, 0, task);
 
-        setColumns((prev) => ({ ...prev, [sourceColumn]: reordered }));
+        // Compute a new sort_order for the MOVED task only, from its new
+        // neighbours, and fall back to a full reindex when the gap is too small
+        // to fit a midpoint. Rewriting every row from stale neighbour values
+        // corrupted the persisted order (FF-003) — this mirrors the proven
+        // TodayView pattern.
+        const above = reordered[newIndex - 1]?.sort_order ?? null;
+        const below = reordered[newIndex + 1]?.sort_order ?? null;
 
-        // Debounced write
+        let updatedItems;
+        let sortPayload;
+        if (needsReindex(above, below)) {
+          updatedItems = reindex(reordered);
+          // Every row got a fresh value, so all of them must be persisted.
+          sortPayload = updatedItems.map((t) => ({ id: t.id, sort_order: t.sort_order }));
+        } else {
+          const newOrder = computeSortOrder(above, below);
+          updatedItems = reordered.map((t, i) =>
+            i === newIndex ? { ...t, sort_order: newOrder } : t
+          );
+          // Only the moved task changed; its neighbours keep their values, so
+          // send just the one row. Sending the whole (possibly 60+ item) column
+          // tripped updateSortOrder's 50-item cap and reverted every reorder (R4).
+          sortPayload = [{ id: task.id, sort_order: newOrder }];
+        }
+
+        // Optimistic update with the corrected sort_order values
+        setColumns((prev) => ({ ...prev, [sourceColumn]: updatedItems }));
+
+        // Debounced write, chunked to stay within updateSortOrder's 50-item cap
+        // (the reindex path can exceed it once the column is large).
         if (sortDebounceRef.current) clearTimeout(sortDebounceRef.current);
         sortDebounceRef.current = setTimeout(() => {
-          const items = reordered.map((t, i) => {
-            const above = i > 0 ? reordered[i - 1].sort_order ?? (i - 1) * 1000 : null;
-            const below =
-              i < reordered.length - 1
-                ? reordered[i + 1].sort_order ?? (i + 1) * 1000
-                : null;
-            return { id: t.id, sort_order: computeSortOrder(above, below) };
-          });
-          apiClient.updateSortOrder(items).catch(() => {
-            // Non-critical — ignore silently
-          });
+          const SORT_BATCH_SIZE = 50;
+          const batches = [];
+          for (let i = 0; i < sortPayload.length; i += SORT_BATCH_SIZE) {
+            batches.push(sortPayload.slice(i, i + SORT_BATCH_SIZE));
+          }
+          Promise.all(batches.map((batch) => apiClient.updateSortOrder(batch)))
+            .catch((err) => {
+              // Reconcile with server truth so a failed write does not leave the
+              // board showing an order that was never persisted, and tell the
+              // user the reorder did not save (FF-003).
+              loadAllColumns({ silent: true });
+              alert(`Failed to save order: ${err.message}`);
+            });
         }, 300);
       }
       return;

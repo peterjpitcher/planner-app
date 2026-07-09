@@ -8,6 +8,7 @@ import ChipBadge from './ChipBadge';
 import { STATE, TASK_TYPE, CHIP_VALUES } from '@/lib/constants';
 import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
 import { useApiClient } from '@/hooks/useApiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -132,13 +133,21 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
 
   const nameInputRef = useRef(null);
   const prevTaskIdRef = useRef(null);
+  const notesGuardRef = useRef(createLatestGuard());
 
-  // Sync local state whenever the task prop changes (or drawer opens with a new task)
+  // Sync local state whenever the task prop changes (or drawer opens with a new task).
+  //
+  // Field state is re-synced on every task prop change because optimistic field
+  // saves replace the task object; that is non-destructive to notes. The notes list
+  // and any unsaved note draft are only reset (and refetched) when task.id actually
+  // changes — otherwise blur-saving a field would wipe the notes list and discard a
+  // note the user is still typing (FF-006).
   useEffect(() => {
     if (!task) return;
 
+    const taskChanged = task.id !== prevTaskIdRef.current;
+
     setName(task.name ?? '');
-    setIsEditingName(false);
     setDescription(task.description ?? '');
     setArea(task.area ?? '');
     setTaskType(task.task_type ?? '');
@@ -147,22 +156,26 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
     setWaitingReason(task.waiting_reason ?? '');
     setFollowUpDate(toDateInputValue(task.follow_up_date));
     setProjectId(task.project_id ?? '');
-    setShowDeleteConfirm(false);
-    setNotes([]);
-    setNewNoteContent('');
-    setNoteError(null);
 
-    // Only fetch notes when the task changes
-    if (task.id !== prevTaskIdRef.current) {
+    if (taskChanged) {
       prevTaskIdRef.current = task.id;
+      setIsEditingName(false);
+      setShowDeleteConfirm(false);
+      setNotes([]);
+      setNewNoteContent('');
+      setNoteError(null);
       fetchNotes(task.id);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task]);
 
   const fetchNotes = useCallback(async (taskId) => {
+    // Latest-wins guard: switching tasks quickly must not let an earlier task's
+    // notes response land under a later task (FF-034).
+    const token = notesGuardRef.current.begin();
     setIsLoadingNotes(true);
     const { data, error } = await api.notes.list({ taskId });
+    if (notesGuardRef.current.isStale(token)) return;
     setIsLoadingNotes(false);
     if (!error && data) {
       setNotes(data);

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { differenceInDays, format, isToday, isTomorrow, isPast, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
+import { format, startOfDay, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
-import { toDateInputValue } from '@/lib/dateUtils';
+import { toDateInputValue, getDueDateStatus as getSharedDueDateStatus } from '@/lib/dateUtils';
 import { handleSupabaseError, handleError } from '@/lib/errorHandler';
 import { ChatBubbleLeftEllipsisIcon, PencilIcon, Bars3Icon } from '@heroicons/react/24/outline';
 import { FireIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/20/solid';
@@ -26,10 +26,15 @@ const getTaskPriorityClasses = (priority) => {
   }
 };
 
-// Helper for due date status
+// Helper for due date status. Delegates the Today/Tomorrow/Overdue
+// classification to the shared, Europe/London-anchored dateUtils.getDueDateStatus
+// (see FF-038) and only maps it to this component's own text/class presentation.
 const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = '') => {
   const dateToConsider = isEditing && currentDueDate ? currentDueDate : dateString;
   if (!dateToConsider) return { text: 'No due date', classes: 'text-gray-600 text-xs', fullDate: '' };
+
+  const status = getSharedDueDateStatus(dateToConsider);
+  if (!status) return { text: 'No due date', classes: 'text-gray-600 text-xs', fullDate: '' };
 
   let date;
   if (typeof dateToConsider === 'string' && dateToConsider.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -37,30 +42,18 @@ const getTaskDueDateStatus = (dateString, isEditing = false, currentDueDate = ''
   } else {
     date = startOfDay(new Date(dateToConsider));
   }
-
-  const today = startOfDay(new Date());
-  const daysDiff = differenceInDays(date, today);
-  let text = `Due: ${format(date, 'EEEE, MMM do')}`; // Default format
-  let classes = 'text-gray-700 text-xs';
   const fullDateText = format(date, 'EEEE, MMM do, yyyy'); // For tooltips
 
-  if (isToday(date)) {
-    text = `Due: Today`;
-    classes = 'text-red-700 font-bold text-xs';
-  } else if (isTomorrow(date)) {
-    text = `Due: Tomorrow`;
-    classes = 'text-yellow-700 font-bold text-xs';
-  } else if (isPast(date) && !isToday(date)) {
-    text = `Overdue: ${format(date, 'EEEE, MMM do')}`;
-    classes = 'text-red-700 font-bold text-xs';
-  } else if (daysDiff < 0) { // Other past dates (should be covered by isPast)
-    text = `Due ${format(date, 'EEEE, MMM do')}`;
-    classes = 'text-gray-600 italic text-xs';
-  } else if (daysDiff >= 0 && daysDiff <= 7) {
-    text = `Due: ${format(date, 'EEEE, MMM do')}`;
-  } // For future dates beyond 7 days, text remains `Due: EEEE, MMM do` and classes remain default
-
-  return { text, classes, fullDate: fullDateText };
+  switch (status.type) {
+    case 'TODAY':
+      return { text: 'Due: Today', classes: 'text-red-700 font-bold text-xs', fullDate: fullDateText };
+    case 'TOMORROW':
+      return { text: 'Due: Tomorrow', classes: 'text-yellow-700 font-bold text-xs', fullDate: fullDateText };
+    case 'OVERDUE':
+      return { text: `Overdue: ${format(date, 'EEEE, MMM do')}`, classes: 'text-red-700 font-bold text-xs', fullDate: fullDateText };
+    default:
+      return { text: `Due: ${format(date, 'EEEE, MMM do')}`, classes: 'text-gray-700 text-xs', fullDate: fullDateText };
+  }
 };
 
 function TaskItem({ task, notes: propNotes, onTaskUpdated, onTaskNoteAdded, onTaskDragStateChange }) {

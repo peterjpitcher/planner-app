@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { IDEA_STATE, IDEA_STATE_ORDER } from '@/lib/constants';
 import IdeaCard from './IdeaCard';
 
@@ -37,25 +38,38 @@ export default function IdeaVault() {
   const [captureInput, setCaptureInput] = useState('');
   const [isCapturing, setIsCapturing] = useState(false);
   const captureRef = useRef(null);
+  const loadGuardRef = useRef(createLatestGuard());
 
   // -------------------------------------------------------------------------
   // Data fetching
   // -------------------------------------------------------------------------
 
   const loadIdeas = useCallback(async () => {
+    // Latest-wins guard so overlapping refetches (mount + ideas-changed) can't let
+    // a stale response land last. Refetches revalidate quietly (loading stays off).
+    const token = loadGuardRef.current.begin();
     try {
       setError(null);
       const data = await apiClient.getIdeas();
+      if (loadGuardRef.current.isStale(token)) return;
       setIdeas(data);
     } catch (err) {
+      if (loadGuardRef.current.isStale(token)) return;
       setError(err.message || 'Failed to load ideas.');
     } finally {
-      setLoading(false);
+      if (!loadGuardRef.current.isStale(token)) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadIdeas();
+  }, [loadIdeas]);
+
+  // Refresh when an idea is created elsewhere (e.g. QuickCapture on /ideas) — FF-008
+  useEffect(() => {
+    const handle = () => { loadIdeas(); };
+    window.addEventListener('ideas-changed', handle);
+    return () => window.removeEventListener('ideas-changed', handle);
   }, [loadIdeas]);
 
   // -------------------------------------------------------------------------

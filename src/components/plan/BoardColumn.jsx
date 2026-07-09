@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, FunnelIcon } fr
 import { Menu } from '@headlessui/react';
 import TaskCard from '@/components/shared/TaskCard';
 import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, SOFT_CAPS, TASK_TYPE } from '@/lib/constants';
+import { getLondonDateKey } from '@/lib/timezone';
 
 // ---------------------------------------------------------------------------
 // Today sub-section component
@@ -105,8 +106,10 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete 
       })
     : null;
 
+  // Compare date keys lexically against today's London date key so a follow-up
+  // due today is not flagged overdue from 00:00 UTC (FF-036).
   const isOverdue =
-    task.follow_up_date && new Date(task.follow_up_date) < new Date();
+    task.follow_up_date && task.follow_up_date.slice(0, 10) < getLondonDateKey();
   const isStale =
     !task.follow_up_date &&
     task.entered_state_at &&

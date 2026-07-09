@@ -135,9 +135,15 @@ export default memo(function ProjectSidebar({
   unassignedCount,
   searchQuery,
   onSearchChange,
+  hideOnMobile = false,
 }) {
   return (
-    <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-gray-200 bg-gray-50/50">
+    <aside
+      className={cn(
+        'h-full flex-col border-r border-gray-200 bg-gray-50/50 md:flex md:w-[280px] md:shrink-0',
+        hideOnMobile ? 'hidden' : 'flex w-full'
+      )}
+    >
       {/* New project button */}
       <div className="p-3 pb-2">
         <button

@@ -1,6 +1,7 @@
 import { OpenAI } from 'openai';
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
+import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 
@@ -98,6 +99,22 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // This endpoint spends an OpenAI call per request, so it needs a tighter
+    // limit than the plain journal writes (entries POST: 20/min, summary:
+    // 10/min). Keyed on the authenticated user id, not IP — see rateLimiter.js.
+    const clientId = getClientIdentifier(request, session.user.id);
+    const rateLimitResult = checkRateLimit(`journal-cleanup-${clientId}`, 10, 60000);
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests', retryAfter: rateLimitResult.retryAfter },
+        {
+          status: 429,
+          headers: { 'Retry-After': rateLimitResult.retryAfter.toString() },
+        }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const entryId = typeof body?.entryId === 'string' ? body.entryId : null;
     const normalizedEntryId = isValidUuid(entryId) ? entryId : null;
@@ -153,51 +170,114 @@ export async function POST(request) {
       });
     }
 
-    await supabase
-      .from('journal_entries')
-      .update({
-        ai_status: 'pending',
-        ai_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', normalizedEntryId)
-      .eq('user_id', session.user.id);
-
     const rawContent = typeof entry.content === 'string' ? entry.content : '';
     if (!rawContent.trim()) {
       return NextResponse.json({ error: 'Entry content is empty' }, { status: 400 });
     }
 
-    const { cleanedContent, status, error: aiError } = await attemptCleanup(openai, rawContent.trim());
-    const updatePayload = {
-      ai_status: status,
-      ai_error: aiError || null,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (cleanedContent) {
-      updatePayload.cleaned_content = cleanedContent;
-      updatePayload.cleaned_at = new Date().toISOString();
-    }
-
-    const { data: updated, error: updateError } = await supabase
+    // Atomically claim the entry before spending an OpenAI call by flipping it
+    // to a distinct in-flight marker ('processing'). Fresh entries are created
+    // with ai_status='pending', so we must NOT guard on 'pending' here or a
+    // brand-new entry could never be claimed. Guarding on 'processing' still
+    // blocks a concurrent second request (which sees 'processing' and is
+    // rejected), while allowing a first request through. The success/failure
+    // branches below overwrite this marker with the final status.
+    // This replaces a prior read-then-write ("check cleaned_content, then
+    // unconditionally set pending") that let two concurrent requests both
+    // pass the guard and both pay for an OpenAI call.
+    const { data: claimed, error: claimError } = await supabase
       .from('journal_entries')
-      .update(updatePayload)
+      .update({
+        ai_status: 'processing',
+        ai_error: null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', normalizedEntryId)
       .eq('user_id', session.user.id)
+      .is('cleaned_content', null)
+      .neq('ai_status', 'processing')
       .select()
-      .single();
+      .maybeSingle();
 
-    if (updateError) {
-      const errorMessage = handleSupabaseError(updateError, 'update');
+    if (claimError) {
+      const errorMessage = handleSupabaseError(claimError, 'update');
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
 
-    return NextResponse.json({
-      data: updated || entry,
-      cleaned: Boolean(updatePayload.cleaned_content),
-      aiStatus: updatePayload.ai_status,
-    });
+    if (!claimed) {
+      // Another request already claimed (or finished cleaning) this entry
+      // between our read above and this write — do not spend a second
+      // OpenAI call on the same entry.
+      return NextResponse.json(
+        { error: 'Cleanup already in progress for this entry' },
+        { status: 409 }
+      );
+    }
+
+    try {
+      const { cleanedContent, status, error: aiError } = await attemptCleanup(openai, rawContent.trim());
+      const updatePayload = {
+        ai_status: status,
+        ai_error: aiError || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (cleanedContent) {
+        updatePayload.cleaned_content = cleanedContent;
+        updatePayload.cleaned_at = new Date().toISOString();
+      }
+
+      const { data: updated, error: updateError } = await supabase
+        .from('journal_entries')
+        .update(updatePayload)
+        .eq('id', normalizedEntryId)
+        .eq('user_id', session.user.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        // The AI call succeeded but persisting the result failed. Reset the
+        // claim marker so the entry does not stay stuck as 'processing' (which
+        // the claim guard can never reclaim); 'failed' is picked up by the
+        // journal retry filter. Best-effort — if this write also fails there is
+        // nothing more we can safely do.
+        await supabase
+          .from('journal_entries')
+          .update({
+            ai_status: 'failed',
+            ai_error: 'save_failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', normalizedEntryId)
+          .eq('user_id', session.user.id);
+
+        const errorMessage = handleSupabaseError(updateError, 'update');
+        return NextResponse.json({ error: errorMessage }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        data: updated || entry,
+        cleaned: Boolean(updatePayload.cleaned_content),
+        aiStatus: updatePayload.ai_status,
+      });
+    } catch (cleanupError) {
+      // We claimed the entry (ai_status='processing') above; if anything past
+      // that point throws unexpectedly, reset the status instead of leaving
+      // the entry permanently stuck as 'processing' (which would block all
+      // future cleanup attempts).
+      console.error('Journal cleanup processing error:', cleanupError);
+      await supabase
+        .from('journal_entries')
+        .update({
+          ai_status: 'failed',
+          ai_error: 'unexpected_error',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', normalizedEntryId)
+        .eq('user_id', session.user.id);
+
+      return NextResponse.json({ error: 'Cleanup failed' }, { status: 500 });
+    }
   } catch (error) {
     console.error('POST /api/journal/entries/cleanup error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

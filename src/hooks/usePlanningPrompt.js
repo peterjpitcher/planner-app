@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { getActivePlanningWindow, getMondayOfWeek } from '@/lib/planningWindow';
 import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
+import { WINDOW_TYPE } from '@/lib/constants';
 
 /**
  * Central orchestrator for planning prompts.
@@ -55,13 +56,32 @@ export function usePlanningPrompt() {
         return;
       }
 
-      // 3. Check if already planned
-      const session = await apiClient.getPlanningSession(planningWindow.windowType, planningWindow.windowDate);
-      const planned = !!session;
+      // 3. Check if already planned.
+      // The Sunday auto weekly window is a two-step combined flow (weekly → daily
+      // for Monday). It is only fully planned once BOTH the weekly and the daily
+      // session exist for the window date. If just the weekly session exists the
+      // user abandoned after step 1, so the daily (Monday) step is still pending
+      // and must be re-prompted rather than shown as planned (FF-019 / FF-023).
+      const isCombinedFlow = planningWindow.windowType === WINDOW_TYPE.WEEKLY;
+      let planned;
+      let weeklyStepComplete = false;
+      if (isCombinedFlow) {
+        const [weeklySession, dailySession] = await Promise.all([
+          apiClient.getPlanningSession(WINDOW_TYPE.WEEKLY, planningWindow.windowDate),
+          apiClient.getPlanningSession(WINDOW_TYPE.DAILY, planningWindow.windowDate),
+        ]);
+        planned = !!weeklySession && !!dailySession;
+        weeklyStepComplete = !!weeklySession && !dailySession;
+      } else {
+        const session = await apiClient.getPlanningSession(planningWindow.windowType, planningWindow.windowDate);
+        planned = !!session;
+      }
       setIsPlanned(planned);
 
-      // 4. Fetch candidates
-      const candidates = await apiClient.getPlanningCandidates(planningWindow.windowType, planningWindow.windowDate);
+      // 4. Fetch candidates. Once the weekly step is done the pending work is the
+      // daily (Monday) step, so surface the daily candidates instead (FF-023).
+      const candidateType = weeklyStepComplete ? WINDOW_TYPE.DAILY : planningWindow.windowType;
+      const candidates = await apiClient.getPlanningCandidates(candidateType, planningWindow.windowDate);
       setTasks(candidates);
 
       // 5. Detect new tasks after planning — only flag if count increased since session
@@ -72,9 +92,13 @@ export function usePlanningPrompt() {
         setHasNewTasks(false);
       }
 
-      // 6. Show modal on first visit if not planned and there are tasks
+      // 6. Show modal on first visit if not planned and there are tasks.
+      // A resumed daily step uses a distinct key so abandoning the Sunday flow
+      // after the weekly step re-prompts the pending Monday plan exactly once.
       const hasTasks = Object.values(candidates).some((arr) => arr && arr.length > 0);
-      const checkKey = `${planningWindow.windowType}-${planningWindow.windowDate}`;
+      const checkKey = weeklyStepComplete
+        ? `${planningWindow.windowType}-${planningWindow.windowDate}-daily`
+        : `${planningWindow.windowType}-${planningWindow.windowDate}`;
       if (!planned && hasTasks && lastCheckRef.current !== checkKey) {
         setShowModal(true);
       }

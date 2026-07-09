@@ -15,6 +15,8 @@ const ButtonComponent = Button;
 export default function JournalPage() {
     const { data: session } = useSession();
     const [entries, setEntries] = useState([]);
+    const [isLoadingEntries, setIsLoadingEntries] = useState(true);
+    const [entriesError, setEntriesError] = useState(null);
     const [summaryPoints, setSummaryPoints] = useState([]);
     const [summaryNotice, setSummaryNotice] = useState('');
     const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
@@ -54,11 +56,16 @@ export default function JournalPage() {
     })();
 
     const fetchEntries = async () => {
+        setIsLoadingEntries(true);
+        setEntriesError(null);
         try {
             const data = await journalService.getEntries();
             setEntries(data);
         } catch (error) {
             console.error('Failed to load entries:', error);
+            setEntriesError(error?.message || 'Failed to load entries.');
+        } finally {
+            setIsLoadingEntries(false);
         }
     };
 
@@ -173,7 +180,22 @@ export default function JournalPage() {
                     <section>
                         <h2 className="text-lg font-semibold text-foreground mb-4">Recent Entries</h2>
                         <div className="space-y-4">
-                            {entries.length === 0 ? (
+                            {isLoadingEntries ? (
+                                [1, 2, 3].map((i) => (
+                                    <div key={i} className="animate-pulse bg-card p-6 rounded-xl border border-border">
+                                        <div className="h-3 w-40 rounded bg-muted mb-3" />
+                                        <div className="h-3 w-full rounded bg-muted mb-2" />
+                                        <div className="h-3 w-2/3 rounded bg-muted" />
+                                    </div>
+                                ))
+                            ) : entriesError ? (
+                                <div className="text-center py-10 bg-muted/20 rounded-xl border border-dashed border-destructive/30">
+                                    <p className="text-destructive mb-3">{entriesError}</p>
+                                    <Button type="button" variant="outline" size="sm" onClick={fetchEntries}>
+                                        Retry
+                                    </Button>
+                                </div>
+                            ) : entries.length === 0 ? (
                                 <div className="text-center py-10 bg-muted/20 rounded-xl border border-dashed border-muted-foreground/30">
                                     <p className="text-muted-foreground">No entries yet. Start writing above!</p>
                                 </div>
