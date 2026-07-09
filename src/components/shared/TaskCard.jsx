@@ -163,7 +163,10 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
     transition,
   };
 
-  const isCompleted = task.is_completed || task.status === 'completed';
+  // Completion derives from the task's state (the old is_completed/status columns
+  // were dropped by the prioritisation migration). completed_at is a belt-and-braces
+  // fallback for any row that is done but whose state has not yet round-tripped.
+  const isCompleted = task.state === STATE.DONE || !!task.completed_at;
   const chips = Array.isArray(task.chips) ? task.chips : [];
   const { isStale, isOverdue: isFollowUpOverdue } = useMemo(() => getStaleness(task), [task]);
 
@@ -394,7 +397,16 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
               {({ active }) => (
                 <button
                   type="button"
-                  onClick={() => onDelete?.(task.id)}
+                  onClick={() => {
+                    if (
+                      typeof window !== 'undefined' &&
+                      window.confirm(
+                        `Delete "${task.name || 'this task'}"? This cannot be undone.`
+                      )
+                    ) {
+                      onDelete?.(task.id);
+                    }
+                  }}
                   className={`w-full px-3 py-1.5 text-left text-sm ${
                     active ? 'bg-red-50 text-red-700' : 'text-red-600'
                   }`}

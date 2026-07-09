@@ -210,11 +210,35 @@ export default function TodayView() {
   // Handlers
   // ---------------------------------------------------------------------------
 
+  // Toggle completion. A task in the "Completed today" list is un-completed
+  // (restored to Today / Good to Do); any other task is completed (FF-005).
   const handleComplete = useCallback(async (taskId) => {
     if (pendingRef.current.has(taskId)) return;
     pendingRef.current.add(taskId);
 
-    // Optimistically move task out of sections and into completedToday
+    const doneTask = completedToday.find((t) => t.id === taskId);
+
+    if (doneTask) {
+      // Un-complete: restore to Today / Good to Do
+      const restoreSection = 'good_to_do';
+      const restored = { ...doneTask, state: 'today', today_section: restoreSection, completed_at: null };
+      setCompletedToday((prev) => prev.filter((t) => t.id !== taskId));
+      setSections((prev) => ({ ...prev, [restoreSection]: [...prev[restoreSection], restored] }));
+
+      try {
+        await apiClient.updateTask(taskId, { state: 'today', today_section: restoreSection });
+      } catch (err) {
+        // Revert on failure
+        setSections((prev) => ({ ...prev, [restoreSection]: prev[restoreSection].filter((t) => t.id !== taskId) }));
+        setCompletedToday((prev) => [doneTask, ...prev]);
+        alert(`Failed to un-complete task: ${err.message}`);
+      } finally {
+        pendingRef.current.delete(taskId);
+      }
+      return;
+    }
+
+    // Complete: optimistically move task out of sections and into completedToday
     let movedTask = null;
     setSections((prev) => {
       const next = { must_do: [...prev.must_do], good_to_do: [...prev.good_to_do], quick_wins: [...prev.quick_wins] };
@@ -247,7 +271,7 @@ export default function TodayView() {
     } finally {
       pendingRef.current.delete(taskId);
     }
-  }, []);
+  }, [completedToday]);
 
   const handleMove = useCallback(async (taskId, targetState, targetSection) => {
     // Find task across sections or completedToday

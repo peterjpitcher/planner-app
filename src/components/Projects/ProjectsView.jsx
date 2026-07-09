@@ -253,16 +253,34 @@ export default function ProjectsView() {
   }, []);
 
   const handleCompleteTask = useCallback(async (taskId) => {
-    setTasksByProject((prev) => {
-      const next = { ...prev };
-      for (const [pid, tasks] of Object.entries(next)) {
-        next[pid] = tasks.filter((t) => t.id !== taskId);
-      }
-      return next;
-    });
-    setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    // Toggle completion from state, not a dropped column. Completing removes the
+    // task from the visible (non-done) lists; un-completing restores it to
+    // Today / Good to Do (FF-005).
+    let task = null;
+    for (const tasks of Object.values(tasksByProjectRef.current)) {
+      const found = tasks.find((t) => t.id === taskId);
+      if (found) { task = found; break; }
+    }
+    if (!task) task = unassignedTasksRef.current.find((t) => t.id === taskId) || null;
+
+    const wasCompleted = task ? (task.state === STATE.DONE || !!task.completed_at) : false;
+    const updates = wasCompleted
+      ? { state: STATE.TODAY, today_section: 'good_to_do' }
+      : { state: STATE.DONE };
+
+    if (!wasCompleted) {
+      setTasksByProject((prev) => {
+        const next = { ...prev };
+        for (const [pid, tasks] of Object.entries(next)) {
+          next[pid] = tasks.filter((t) => t.id !== taskId);
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    }
+
     try {
-      await apiClient.updateTask(taskId, { state: 'done' });
+      await apiClient.updateTask(taskId, updates);
     } catch {
       loadData({ silent: true });
     }

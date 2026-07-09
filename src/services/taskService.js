@@ -16,7 +16,6 @@ const TASK_UPDATE_FIELDS = new Set([
   'waiting_reason',
   'follow_up_date',
   'project_id',
-  'completed_at',
   'updated_at',
 ]);
 
@@ -200,16 +199,11 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
       delete updatesToApply.today_section;
     }
 
-    // Handle completed_at for done state
-    if (newState === STATE.DONE) {
-      if (options.preserveCompletedAt) {
-        updatesToApply.completed_at = updatesToApply.completed_at || new Date().toISOString();
-      } else {
-        updatesToApply.completed_at = new Date().toISOString();
-      }
-    } else if (oldState === STATE.DONE && newState !== STATE.DONE) {
-      updatesToApply.completed_at = null;
-    }
+    // completed_at is owned exclusively by the DB trigger fn_task_state_cleanup,
+    // which stamps it on the transition into 'done' (preserving any supplied
+    // value via COALESCE) and clears it on the transition out. The app layer no
+    // longer writes completed_at — that avoids re-stamping an already-done task
+    // (FF-020) and prevents a client making a done task invisible (FF-025).
   }
 
   if (!options.skipTimestamp) {

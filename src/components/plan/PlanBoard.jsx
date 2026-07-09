@@ -351,8 +351,12 @@ export default function PlanBoard() {
     }
     if (!task) return;
 
-    const wasCompleted = task.is_completed || task.status === 'completed';
-    const newState = wasCompleted ? STATE.BACKLOG : STATE.DONE;
+    // Completion derives from state (is_completed was dropped by the migration).
+    // Completing sends state:done; un-completing restores to Today / Good to Do (FF-005).
+    const wasCompleted = task.state === STATE.DONE || !!task.completed_at;
+    const updates = wasCompleted
+      ? { state: STATE.TODAY, today_section: TODAY_SECTION.GOOD_TO_DO }
+      : { state: STATE.DONE };
 
     // Optimistic: remove from current column if completing
     if (!wasCompleted) {
@@ -363,10 +367,7 @@ export default function PlanBoard() {
     }
 
     try {
-      await apiClient.updateTask(taskId, {
-        state: newState,
-        is_completed: !wasCompleted,
-      });
+      await apiClient.updateTask(taskId, updates);
     } catch {
       // Revert on failure
       setColumns((prev) => ({
