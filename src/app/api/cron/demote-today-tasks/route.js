@@ -24,8 +24,12 @@ export async function GET(request) {
       return NextResponse.json({ error: msg }, { status: auth.status });
     }
 
-    const londonHour = getTimeZoneParts(new Date(), LONDON_TIME_ZONE).hour;
-    if (!auth.force && (londonHour < 19 || londonHour > 20)) {
+    // FF-002: fire only at exactly 19:55 London year-round, before the 20:05
+    // planning window opens. Paired with dual UTC cron schedules (55 18 + 55 19)
+    // in vercel.json so one run lands at 19:55 London in both GMT and BST; the
+    // other lands at 18:55 or 20:55 London and is gated out here.
+    const londonParts = getTimeZoneParts(new Date(), LONDON_TIME_ZONE);
+    if (!auth.force && !(londonParts.hour === 19 && londonParts.minute >= 55)) {
       return NextResponse.json(
         { skipped: true, reason: 'outside_window' },
         { status: 200 }
@@ -62,6 +66,33 @@ export async function GET(request) {
       throw err;
     }
 
+    // FF-002 belt-and-braces: if the user has already completed tomorrow's daily
+    // planning session, the evening plan is made — never demote it, even if a
+    // mistimed or forced run reaches this point. windowDate mirrors the client's
+    // getActivePlanningWindow (tomorrow's London date) so it matches the recorded row.
+    const tomorrow = new Date(runDate + 'T12:00:00Z');
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const windowDate = tomorrow.toISOString().slice(0, 10);
+    try {
+      const { data: existingPlan } = await supabase
+        .from('planning_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('window_type', 'daily')
+        .eq('window_date', windowDate)
+        .maybeSingle();
+      if (existingPlan) {
+        try { await updateCronRun({ supabase, runId, patch: { tasks_affected: 0, status: 'success' } }); } catch {}
+        return NextResponse.json(
+          { skipped: true, reason: 'planning_session_exists' },
+          { status: 200 }
+        );
+      }
+    } catch (guardError) {
+      // Fail open — the schedule + 19:55 gate already prevent mistimed runs.
+      console.error('Planning session guard check failed:', guardError);
+    }
+
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')
       .select('id, name, due_date, projects(name)')
@@ -89,6 +120,7 @@ export async function GET(request) {
     }
 
     const demotedTasks = [];
+    const failedUpdates = [];
     for (const task of tasks) {
       const result = await updateTask({
         supabase,
@@ -97,7 +129,9 @@ export async function GET(request) {
         updates: { state: 'this_week' },
         options: { skipProjectTouch: true },
       });
-      if (!result.error) {
+      if (result.error) {
+        failedUpdates.push(`${task.id}: ${result.error.message || 'update failed'}`);
+      } else {
         demotedTasks.push(task);
       }
     }
@@ -148,12 +182,28 @@ export async function GET(request) {
       }
     }
 
-    const finalStatus = emailStatus === 'failed' ? 'partial' : 'success';
+    // FF-050: a run where any task update failed is 'partial', not 'success',
+    // with the failures recorded in the error column for diagnosis.
+    const hasUpdateFailures = failedUpdates.length > 0;
+    const finalStatus = emailStatus === 'failed' || hasUpdateFailures ? 'partial' : 'success';
+    const runErrors = [];
+    if (hasUpdateFailures) {
+      runErrors.push(
+        `${failedUpdates.length} of ${tasks.length} task update(s) failed: ${failedUpdates.join('; ')}`
+      );
+    }
+    if (emailStatus === 'failed') {
+      runErrors.push('email send failed');
+    }
     try {
       await updateCronRun({
         supabase,
         runId,
-        patch: { tasks_affected: demotedTasks.length, status: finalStatus },
+        patch: {
+          tasks_affected: demotedTasks.length,
+          status: finalStatus,
+          ...(runErrors.length > 0 ? { error: runErrors.join(' | ') } : {}),
+        },
       });
     } catch (runUpdateError) {
       console.error('Failed to update cron_runs status:', runUpdateError);
