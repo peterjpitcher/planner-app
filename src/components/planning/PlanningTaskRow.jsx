@@ -45,7 +45,7 @@ export default function PlanningTaskRow({
   sectionCounts, // { must_do: N, good_to_do: N, quick_wins: N }
   onAssign, // (taskId, { state, today_section }) => void
   onSkip, // (taskId) => void
-  onDefer, // (taskId, newDate) => void
+  onDefer, // (taskId, newDate, currentState) => void
   onMarkDone, // (taskId) => Promise<void>
   onProjectNavigate, // () => void — invoked before the project link navigates so the parent modal can close
 }) {
@@ -119,7 +119,9 @@ export default function PlanningTaskRow({
     setIsLoading(true);
     setError(null);
     try {
-      await onDefer(task.id, newDate);
+      // Pass the task's current state so the modal can preserve 'waiting' status
+      // when deferring past the week instead of demoting it to backlog (FF-024).
+      await onDefer(task.id, newDate, task.state);
       setIsActioned(true);
       setActionLabel(`Deferred → ${newDate}`);
       setShowDefer(false);

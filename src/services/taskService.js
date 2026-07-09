@@ -1,6 +1,7 @@
 import { STATE, TODAY_SECTION, PROJECT_STATUS } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
+import { computeSortOrder } from '@/lib/sortOrder';
 import { deleteOffice365Task, syncOffice365Task } from '@/services/office365SyncService';
 
 const TASK_UPDATE_FIELDS = new Set([
@@ -33,6 +34,35 @@ function normalizeArea(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;  // Preserve case, just trim
+}
+
+/**
+ * Compute an append sort_order (max within the target bucket + gap) server-side.
+ * Buckets are keyed by state, and additionally by today_section for today tasks.
+ * Returns a value that places the task at the end of the bucket, or null if the
+ * lookup fails (leaving sort_order untouched).
+ */
+async function computeAppendSortOrder({ supabase, userId, state, todaySection }) {
+  let query = supabase
+    .from('tasks')
+    .select('sort_order')
+    .eq('user_id', userId)
+    .eq('state', state)
+    .not('sort_order', 'is', null);
+
+  if (state === STATE.TODAY) {
+    query = todaySection
+      ? query.eq('today_section', todaySection)
+      : query.is('today_section', null);
+  }
+
+  const { data, error } = await query
+    .order('sort_order', { ascending: false })
+    .limit(1);
+
+  if (error) return null;
+  const max = data && data.length > 0 ? data[0].sort_order : null;
+  return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
 const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, created_at, updated_at';
@@ -204,6 +234,33 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     // value via COALESCE) and clears it on the transition out. The app layer no
     // longer writes completed_at — that avoids re-stamping an already-done task
     // (FF-020) and prevents a client making a done task invisible (FF-025).
+  }
+
+  // When a task moves into a new live (ordered) state, append it to the end of
+  // the target bucket by computing sort_order server-side (FF-035). This removes
+  // the racy client-side max+1 read the planning modal used to do. Skipped when:
+  //  - the caller supplied an explicit sort_order (drag reorders own the value),
+  //  - the state is unchanged (section-only moves keep their drag-set order), or
+  //  - the target state is 'done' (not display-ordered by sort_order).
+  const stateChanging = 'state' in updatesToApply && updatesToApply.state !== existingTask.state;
+  const finalState = 'state' in updatesToApply ? updatesToApply.state : existingTask.state;
+  if (
+    stateChanging &&
+    finalState !== STATE.DONE &&
+    !Object.prototype.hasOwnProperty.call(updatesToApply, 'sort_order')
+  ) {
+    const finalSection = finalState === STATE.TODAY
+      ? ('today_section' in updatesToApply ? updatesToApply.today_section : existingTask.today_section)
+      : null;
+    const appendOrder = await computeAppendSortOrder({
+      supabase,
+      userId,
+      state: finalState,
+      todaySection: finalSection || null,
+    });
+    if (appendOrder != null) {
+      updatesToApply.sort_order = appendOrder;
+    }
   }
 
   if (!options.skipTimestamp) {
