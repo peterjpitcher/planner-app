@@ -236,6 +236,21 @@ export async function POST(request) {
         .single();
 
       if (updateError) {
+        // The AI call succeeded but persisting the result failed. Reset the
+        // claim marker so the entry does not stay stuck as 'processing' (which
+        // the claim guard can never reclaim); 'failed' is picked up by the
+        // journal retry filter. Best-effort — if this write also fails there is
+        // nothing more we can safely do.
+        await supabase
+          .from('journal_entries')
+          .update({
+            ai_status: 'failed',
+            ai_error: 'save_failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', normalizedEntryId)
+          .eq('user_id', session.user.id);
+
         const errorMessage = handleSupabaseError(updateError, 'update');
         return NextResponse.json({ error: errorMessage }, { status: 400 });
       }
