@@ -73,7 +73,7 @@ export async function createIdea({ supabase, userId, payload }) {
 export async function updateIdea({ supabase, userId, ideaId, updates }) {
   const { data: existing, error: fetchError } = await supabase
     .from('ideas')
-    .select('id, user_id')
+    .select('*')
     .eq('id', ideaId)
     .eq('user_id', userId)
     .single();
@@ -93,6 +93,27 @@ export async function updateIdea({ supabase, userId, ideaId, updates }) {
 
   if (filtered.area !== undefined) {
     filtered.area = normalizeArea(filtered.area);
+  }
+
+  // FF-028: promotion must go through promoteIdea so a task is created and the
+  // state flip is guarded. Reject a direct PATCH that tries to mark a not-yet-
+  // promoted idea as 'promoted' — otherwise it silently disappears from the
+  // vault (listIdeas excludes promoted) with no task ever created.
+  if (
+    Object.prototype.hasOwnProperty.call(filtered, 'idea_state') &&
+    filtered.idea_state === 'promoted' &&
+    existing.idea_state !== 'promoted'
+  ) {
+    return { error: { status: 400, message: 'Ideas must be promoted via the promote action, not a direct update' } };
+  }
+
+  // FF-028: validate the merged row before writing (same pattern as
+  // taskService.updateTask) so invalid values return a 400 with field details
+  // instead of a generic 500 from a DB CHECK constraint.
+  const candidate = { ...existing, ...filtered };
+  const validation = validateIdea(candidate);
+  if (!validation.isValid) {
+    return { error: { status: 400, message: 'Validation failed', details: validation.errors } };
   }
 
   filtered.updated_at = new Date().toISOString();
@@ -157,6 +178,29 @@ export async function promoteIdea({ supabase, userId, ideaId }) {
     return { error: { status: 409, message: 'Already promoted' } };
   }
 
+  // FF-027: flip the idea to 'promoted' FIRST and conditionally, so concurrent
+  // or retried promotes cannot both create a task. Only the caller whose update
+  // actually changes a row (idea_state was not already 'promoted') proceeds to
+  // create the task; a losing race sees "Already promoted" and creates nothing.
+  const previousState = idea.idea_state;
+  const { data: claimed, error: claimError } = await supabase
+    .from('ideas')
+    .update({ idea_state: 'promoted', updated_at: new Date().toISOString() })
+    .eq('id', ideaId)
+    .eq('user_id', userId)
+    .neq('idea_state', 'promoted')
+    .select('id');
+
+  if (claimError) {
+    const errorMessage = handleSupabaseError(claimError, 'update');
+    return { error: { status: 500, message: errorMessage } };
+  }
+
+  if (!claimed || claimed.length === 0) {
+    // Lost the race — another request already promoted this idea. No task.
+    return { error: { status: 409, message: 'Already promoted' } };
+  }
+
   // Build task description from idea fields
   const description = [idea.why_it_matters, idea.smallest_step, idea.notes]
     .filter(Boolean).join('\n\n');
@@ -177,19 +221,15 @@ export async function promoteIdea({ supabase, userId, ideaId }) {
     .single();
 
   if (taskError) {
+    // The task insert failed after we claimed the idea. Revert the state so a
+    // retry can promote cleanly instead of leaving an orphaned 'promoted' idea
+    // with no task (which would vanish from the vault).
+    await supabase
+      .from('ideas')
+      .update({ idea_state: previousState })
+      .eq('id', ideaId)
+      .eq('user_id', userId);
     const errorMessage = handleSupabaseError(taskError, 'create');
-    return { error: { status: 500, message: errorMessage } };
-  }
-
-  // Mark idea as promoted (canonical link is tasks.source_idea_id)
-  const { error: updateError } = await supabase
-    .from('ideas')
-    .update({ idea_state: 'promoted', updated_at: new Date().toISOString() })
-    .eq('id', ideaId)
-    .eq('user_id', userId);
-
-  if (updateError) {
-    const errorMessage = handleSupabaseError(updateError, 'update');
     return { error: { status: 500, message: errorMessage } };
   }
 

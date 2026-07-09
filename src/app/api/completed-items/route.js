@@ -36,15 +36,19 @@ export async function GET(request) {
       return NextResponse.json({ error: `Tasks: ${errorMessage}` }, { status: 400 });
     }
     
-    // Fetch completed projects
+    // Fetch completed projects.
+    // FF-004: filter and order by completed_at (the stable completion timestamp
+    // stamped by the trg_project_completed_at trigger) rather than updated_at,
+    // which churns on every task touch and Office365 sync. Requires migration
+    // 20260709000003_project_completed_at.sql to be applied first.
     const { data: projects, error: projectsError } = await supabase
       .from('projects')
       .select('*, stakeholders, area')
       .eq('user_id', session.user.id)
       .eq('status', 'Completed')
-      .gte('updated_at', startDate)
-      .lte('updated_at', endDate)
-      .order('updated_at', { ascending: true });
+      .gte('completed_at', startDate)
+      .lte('completed_at', endDate)
+      .order('completed_at', { ascending: true });
       
     if (projectsError) {
       const errorMessage = handleSupabaseError(projectsError, 'fetch');

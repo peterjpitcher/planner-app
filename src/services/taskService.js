@@ -30,6 +30,34 @@ function filterTaskUpdates(updates = {}) {
   return filtered;
 }
 
+// FF-029: allowlist for create. Server owns user_id and state; id, timestamps,
+// completed_at, entered_state_at and source_idea_id are never client-settable
+// (source_idea_id is only ever set by promoteIdea after an ownership check).
+const TASK_CREATE_FIELDS = new Set([
+  'name',
+  'description',
+  'due_date',
+  'state',
+  'today_section',
+  'sort_order',
+  'area',
+  'task_type',
+  'chips',
+  'waiting_reason',
+  'follow_up_date',
+  'project_id',
+]);
+
+function filterTaskCreate(fields = {}) {
+  const filtered = {};
+  Object.entries(fields).forEach(([key, value]) => {
+    if (TASK_CREATE_FIELDS.has(key)) {
+      filtered[key] = value;
+    }
+  });
+  return filtered;
+}
+
 function normalizeArea(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -70,13 +98,18 @@ const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_sectio
 export async function createTask({ supabase, userId, payload, options = {} }) {
   // Map camelCase frontend fields to snake_case DB columns
   const { projectId, dueDate, ...rest } = payload || {};
-  const taskData = {
+  const normalized = {
     ...rest,
     ...(projectId !== undefined && { project_id: projectId }),
     ...(dueDate !== undefined && { due_date: dueDate }),
-    user_id: userId,
-    state: rest?.state || STATE.BACKLOG,
   };
+
+  // FF-029: allowlist client-supplied columns so mass assignment cannot set
+  // user_id, id, timestamps or source_idea_id. Legacy fields (priority,
+  // importance_score, urgency_score, is_completed, job) are dropped implicitly.
+  const taskData = filterTaskCreate(normalized);
+  taskData.user_id = userId;
+  taskData.state = taskData.state || STATE.BACKLOG;
 
   // When state = 'today' and no today_section provided, default to 'good_to_do'
   if (taskData.state === STATE.TODAY && !taskData.today_section) {
@@ -86,17 +119,9 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
   // Normalize area
   taskData.area = normalizeArea(taskData.area);
 
-  // Set entered_state_at for initial state
-  if (!taskData.entered_state_at) {
-    taskData.entered_state_at = new Date().toISOString();
-  }
-
-  // Remove old fields that should not be sent
-  delete taskData.priority;
-  delete taskData.importance_score;
-  delete taskData.urgency_score;
-  delete taskData.is_completed;
-  delete taskData.job;
+  // Set entered_state_at for initial state (the DB trigger also stamps this on
+  // insert; this keeps the returned row consistent when the trigger is absent).
+  taskData.entered_state_at = new Date().toISOString();
 
   const validation = validateTask(taskData);
   if (!validation.isValid) {

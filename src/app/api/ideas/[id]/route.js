@@ -24,7 +24,11 @@ export async function PATCH(request, { params }) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message || 'Unable to update idea' }, { status: error.status || 500 });
+      const response = { error: error.message || 'Unable to update idea' };
+      if (error.details) {
+        response.details = error.details;
+      }
+      return NextResponse.json(response, { status: error.status || 500 });
     }
 
     return NextResponse.json({ data });
