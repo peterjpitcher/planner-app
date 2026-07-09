@@ -89,7 +89,10 @@ export async function PATCH(request) {
 
     // Check start != end for daily and weekly pairs, merging provided values
     // over the user's stored settings (falling back to defaults only when no
-    // row exists yet).
+    // row exists yet). Stored values may be 'HH:MM:SS' (Postgres TIME) while
+    // provided values are 'HH:MM', so normalise both sides to HH:MM before the
+    // equality comparison — otherwise a zero-length window could slip through.
+    const toHM = (t) => (t || '').slice(0, 5);
     const effectiveDaily = {
       start: daily_plan_start !== undefined ? daily_plan_start : storedSettings.daily_plan_start,
       end: daily_plan_end !== undefined ? daily_plan_end : storedSettings.daily_plan_end,
@@ -98,10 +101,10 @@ export async function PATCH(request) {
       start: weekly_plan_start !== undefined ? weekly_plan_start : storedSettings.weekly_plan_start,
       end: weekly_plan_end !== undefined ? weekly_plan_end : storedSettings.weekly_plan_end,
     };
-    if (effectiveDaily.start === effectiveDaily.end) {
+    if (toHM(effectiveDaily.start) === toHM(effectiveDaily.end)) {
       errors.daily_plan_start = 'Start and end times cannot be the same';
     }
-    if (effectiveWeekly.start === effectiveWeekly.end) {
+    if (toHM(effectiveWeekly.start) === toHM(effectiveWeekly.end)) {
       errors.weekly_plan_start = 'Start and end times cannot be the same';
     }
 

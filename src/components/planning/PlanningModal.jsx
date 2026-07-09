@@ -30,6 +30,11 @@ export default function PlanningModal({
   // Sunday-evening → Monday-evening window, so !isManual identifies that context.
   const isCombinedFlow = windowType === WINDOW_TYPE.WEEKLY && !isManual;
   const [step, setStep] = useState(isCombinedFlow ? 'weekly' : windowType);
+  // During the combined-flow resume the effect below is still deciding whether to
+  // jump to the daily step. Until it resolves, hold back the weekly candidate list
+  // so daily-shaped candidates can never flash under the "Plan Your Week" heading
+  // (R3). Only the combined flow has a resume decision to make.
+  const [resumeResolving, setResumeResolving] = useState(isCombinedFlow);
   const [sectionCounts, setSectionCounts] = useState({
     [TODAY_SECTION.MUST_DO]: 0,
     [TODAY_SECTION.GOOD_TO_DO]: 0,
@@ -56,25 +61,39 @@ export default function PlanningModal({
     if (!isCombinedFlow) {
       setStep(windowType);
       setDailyTasks(null);
+      setResumeResolving(false);
       return;
     }
 
     // Combined Sunday flow: default to the weekly step, but if the weekly session
     // has already been recorded the user abandoned after step 1 — resume directly
-    // on the daily (Monday) step so it is not silently skipped (FF-023).
+    // on the daily (Monday) step so it is not silently skipped (FF-023). Until the
+    // decision resolves, keep resumeResolving true so the weekly candidate list
+    // stays hidden behind a placeholder (R3).
     setStep('weekly');
     setDailyTasks(null);
+    setResumeResolving(true);
     let cancelled = false;
     (async () => {
       try {
         const weeklySession = await apiClient.getPlanningSession(WINDOW_TYPE.WEEKLY, windowDate);
-        if (cancelled || !weeklySession) return;
+        if (cancelled) return;
+        if (!weeklySession) {
+          // No weekly session yet — stay on the weekly step and reveal its list.
+          setResumeResolving(false);
+          return;
+        }
         const daily = await apiClient.getPlanningCandidates(WINDOW_TYPE.DAILY, windowDate);
         if (cancelled) return;
         setDailyTasks(daily);
         setStep('daily');
+        setResumeResolving(false);
       } catch (err) {
-        if (!cancelled) console.error('Failed to resume planning step:', err);
+        if (!cancelled) {
+          console.error('Failed to resume planning step:', err);
+          // On error, fall back to the weekly step and reveal its list.
+          setResumeResolving(false);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -287,6 +306,15 @@ export default function PlanningModal({
 
           {/* Task list */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
+            {isCombinedFlow && step === 'weekly' && resumeResolving ? (
+              <div className="flex items-center justify-center py-16" aria-live="polite">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+                  Loading&hellip;
+                </div>
+              </div>
+            ) : (
+            <>
             {currentTasks.length > 0 && (
               <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 {step === 'weekly'
@@ -324,6 +352,8 @@ export default function PlanningModal({
               <p className="py-8 text-center text-sm text-muted-foreground">
                 No tasks to plan. You&apos;re all set!
               </p>
+            )}
+            </>
             )}
           </div>
 

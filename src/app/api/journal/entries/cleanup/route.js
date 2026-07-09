@@ -175,22 +175,27 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Entry content is empty' }, { status: 400 });
     }
 
-    // Atomically claim the entry before spending an OpenAI call: only flip to
-    // 'pending' if it is not already null->cleaned or mid-flight elsewhere.
+    // Atomically claim the entry before spending an OpenAI call by flipping it
+    // to a distinct in-flight marker ('processing'). Fresh entries are created
+    // with ai_status='pending', so we must NOT guard on 'pending' here or a
+    // brand-new entry could never be claimed. Guarding on 'processing' still
+    // blocks a concurrent second request (which sees 'processing' and is
+    // rejected), while allowing a first request through. The success/failure
+    // branches below overwrite this marker with the final status.
     // This replaces a prior read-then-write ("check cleaned_content, then
     // unconditionally set pending") that let two concurrent requests both
     // pass the guard and both pay for an OpenAI call.
     const { data: claimed, error: claimError } = await supabase
       .from('journal_entries')
       .update({
-        ai_status: 'pending',
+        ai_status: 'processing',
         ai_error: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', normalizedEntryId)
       .eq('user_id', session.user.id)
       .is('cleaned_content', null)
-      .neq('ai_status', 'pending')
+      .neq('ai_status', 'processing')
       .select()
       .maybeSingle();
 
@@ -241,9 +246,9 @@ export async function POST(request) {
         aiStatus: updatePayload.ai_status,
       });
     } catch (cleanupError) {
-      // We claimed the entry (ai_status='pending') above; if anything past
+      // We claimed the entry (ai_status='processing') above; if anything past
       // that point throws unexpectedly, reset the status instead of leaving
-      // the entry permanently stuck as 'pending' (which would block all
+      // the entry permanently stuck as 'processing' (which would block all
       // future cleanup attempts).
       console.error('Journal cleanup processing error:', cleanupError);
       await supabase

@@ -57,6 +57,9 @@ export default function CalendarView() {
   // Latest-wins guard + debounce timer for background refetches
   const loadGuardRef = useRef(createLatestGuard());
   const refetchTimerRef = useRef(null);
+  // Gate silent refetches until the first load has completed, so a background
+  // refetch can never supersede the in-flight initial load (R2).
+  const hasLoadedRef = useRef(false);
 
   // DnD sensor
   const sensors = useSensors(
@@ -84,6 +87,7 @@ export default function CalendarView() {
       if (!silent) setError(err.message || 'Failed to load tasks');
     } finally {
       if (!silent) setIsLoading(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
@@ -95,6 +99,10 @@ export default function CalendarView() {
   // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
     const scheduleRefetch = () => {
+      // Never let a silent background refetch supersede the very first load — a
+      // superseded initial load skips its setState and can leave an empty view
+      // with no spinner/error (R2).
+      if (!hasLoadedRef.current) return;
       if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
       refetchTimerRef.current = setTimeout(() => { fetchTasks({ silent: true }); }, 200);
     };
@@ -351,7 +359,7 @@ export default function CalendarView() {
 
           {/* Calendar grid */}
           <div className="flex-1 overflow-auto">
-            <CalendarGrid currentMonth={currentMonth} tasks={tasks} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} onTaskClick={handleClick} />
+            <CalendarGrid currentMonth={currentMonth} tasks={tasks} todayStr={todayStr} onMoveTask={handleMoveTask} onCompleteTask={handleCompleteTask} onTaskClick={handleClick} />
           </div>
 
           {/* Desktop sidebar */}

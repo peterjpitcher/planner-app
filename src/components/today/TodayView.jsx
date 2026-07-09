@@ -103,6 +103,9 @@ export default function TodayView() {
   // Latest-wins guard + debounce timer for background refetches
   const loadGuardRef = useRef(createLatestGuard());
   const refetchTimerRef = useRef(null);
+  // Gate silent refetches until the first load has completed, so a background
+  // refetch can never supersede the in-flight initial load (R2).
+  const hasLoadedRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // DnD sensors
@@ -182,6 +185,7 @@ export default function TodayView() {
       if (!silent) setError(err.message || 'Failed to load today\'s tasks.');
     } finally {
       if (!silent) setIsLoading(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
@@ -193,6 +197,10 @@ export default function TodayView() {
   // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
     const scheduleRefetch = () => {
+      // Never let a silent background refetch supersede the very first load — a
+      // superseded initial load skips its setState and can leave an empty view
+      // with no spinner/error (R2).
+      if (!hasLoadedRef.current) return;
       if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
       refetchTimerRef.current = setTimeout(() => { loadData({ silent: true }); }, 200);
     };
