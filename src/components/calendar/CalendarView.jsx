@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -13,6 +13,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { addMonths, format, startOfMonth, isBefore, isAfter, isSameMonth } from 'date-fns';
 
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { cn } from '@/lib/utils';
 
 import CalendarGrid from './CalendarGrid';
@@ -35,24 +36,36 @@ export default function CalendarView() {
   const [activeDragTask, setActiveDragTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
 
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
+
   // DnD sensor
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Fetch tasks
-  const fetchTasks = useCallback(async () => {
-    try {
+  // Fetch tasks. Silent refetches revalidate in the background without swapping
+  // the calendar for a spinner or blanking it on transient failure.
+  const fetchTasks = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    if (!silent) {
       setIsLoading(true);
       setError(null);
+    }
+    try {
       const data = await apiClient.getAllTasks(null, {
         states: 'today,this_week,backlog,waiting',
       });
+      // Ignore out-of-order responses — a newer refetch has superseded this one
+      if (loadGuardRef.current.isStale(token)) return;
       setTasks(data);
+      if (silent) setError(null);
     } catch (err) {
-      setError(err.message || 'Failed to load tasks');
+      if (loadGuardRef.current.isStale(token)) return;
+      if (!silent) setError(err.message || 'Failed to load tasks');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -60,14 +73,24 @@ export default function CalendarView() {
     fetchTasks();
   }, [fetchTasks]);
 
-  // Refetch when planning completes or any task mutates
+  // Refetch quietly when planning completes, any task mutates, or the tab regains
+  // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
-    const handle = () => { fetchTasks(); };
-    window.addEventListener('planning-complete', handle);
-    window.addEventListener('tasks-changed', handle);
+    const scheduleRefetch = () => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { fetchTasks({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('planning-complete', handle);
-      window.removeEventListener('tasks-changed', handle);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [fetchTasks]);
 

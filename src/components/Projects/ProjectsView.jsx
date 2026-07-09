@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { STATE } from '@/lib/constants';
 import {
   computeAttentionCounts,
@@ -56,14 +57,26 @@ export default function ProjectsView() {
   // Capture initial URL id once — subsequent selection changes update state directly
   const initialUrlId = useRef(searchParams.get('id'));
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
+
+  // loadData({ silent }): silent refetches revalidate in the background without
+  // flipping the view to the skeleton or blanking it on transient failure.
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [allProjects, allTasks] = await Promise.all([
         apiClient.getAllProjects(true),
         apiClient.getAllTasks(null, { states: 'today,this_week,backlog,waiting' }),
       ]);
+
+      // Ignore out-of-order responses — a newer refetch has superseded this one
+      if (loadGuardRef.current.isStale(token)) return;
 
       const byProject = {};
       const unassigned = [];
@@ -96,13 +109,36 @@ export default function ProjectsView() {
         }
       }
     } catch (err) {
-      setError(err.message || 'Failed to load projects.');
+      // Silent refetch failures keep the current view rather than blanking it
+      if (!silent) setError(err.message || 'Failed to load projects.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Refetch quietly when a task mutates (e.g. QuickCapture on /projects), planning
+  // completes, or the tab regains focus (cross-tab / multi-device). Bursts are
+  // debounced into a single refetch (FF-008 / FF-053).
+  useEffect(() => {
+    const scheduleRefetch = () => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { loadData({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadData]);
 
   // ---- Derived state (memoised) ----
   const areas = useMemo(() => deriveAreas(projects), [projects]);
@@ -145,6 +181,8 @@ export default function ProjectsView() {
   projectsRef.current = projects;
   const tasksByProjectRef = useRef(tasksByProject);
   tasksByProjectRef.current = tasksByProject;
+  const unassignedTasksRef = useRef(unassignedTasks);
+  unassignedTasksRef.current = unassignedTasks;
   const selectedProjectIdRef = useRef(selectedProjectId);
   selectedProjectIdRef.current = selectedProjectId;
 
@@ -180,7 +218,7 @@ export default function ProjectsView() {
     try {
       await apiClient.updateProject(projectId, updates);
     } catch {
-      loadData(); // Revert on failure
+      loadData({ silent: true }); // Revert on failure without a skeleton flash
     }
   }, [loadData]);
 
@@ -190,7 +228,7 @@ export default function ProjectsView() {
     try {
       await apiClient.deleteProject(projectId);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData, selectedProjectId]);
@@ -226,7 +264,7 @@ export default function ProjectsView() {
     try {
       await apiClient.updateTask(taskId, { state: 'done' });
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   }, [loadData]);
 
@@ -236,37 +274,71 @@ export default function ProjectsView() {
     if (targetState === STATE.TODAY && !targetSection) updates.today_section = 'good_to_do';
 
     // Optimistic: update state in local data
-    const updateInGroups = (groups) => {
-      const next = { ...groups };
-      for (const [pid, tasks] of Object.entries(next)) {
-        next[pid] = tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
-      }
-      return next;
-    };
-    setTasksByProject(updateInGroups);
-
-    try {
-      await apiClient.updateTask(taskId, updates);
-    } catch {
-      loadData();
-    }
-  }, [loadData]);
-
-  const handleUpdateTask = useCallback(async (taskId, updates) => {
     const updateInList = (tasks) => tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
-    setTasksByProject((prev) => {
-      const next = { ...prev };
+    setTasksByProject((groups) => {
+      const next = { ...groups };
       for (const [pid, tasks] of Object.entries(next)) {
         next[pid] = updateInList(tasks);
       }
       return next;
     });
+    // Also update unassigned tasks — a project-less task can still change state
     setUnassignedTasks((prev) => updateInList(prev));
+
+    try {
+      await apiClient.updateTask(taskId, updates);
+    } catch {
+      loadData({ silent: true });
+    }
+  }, [loadData]);
+
+  const handleUpdateTask = useCallback(async (taskId, updates) => {
+    // Project reassignment must regroup the task under its new project (or unassigned),
+    // not just edit it in place under the old grouping key (FF-008).
+    const reassigning = Object.prototype.hasOwnProperty.call(updates, 'project_id');
+
+    if (reassigning) {
+      // Locate the current task from refs so we can move it whole
+      let current = null;
+      for (const tasks of Object.values(tasksByProjectRef.current)) {
+        const found = tasks.find((t) => t.id === taskId);
+        if (found) { current = found; break; }
+      }
+      if (!current) current = unassignedTasksRef.current.find((t) => t.id === taskId) || null;
+      const merged = current ? { ...current, ...updates } : null;
+      const newProjectId = updates.project_id || null;
+
+      setTasksByProject((prev) => {
+        const next = {};
+        for (const [pid, tasks] of Object.entries(prev)) {
+          next[pid] = tasks.filter((t) => t.id !== taskId);
+        }
+        if (merged && newProjectId) {
+          next[newProjectId] = [...(next[newProjectId] || []), merged];
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => {
+        const kept = prev.filter((t) => t.id !== taskId);
+        return merged && !newProjectId ? [...kept, merged] : kept;
+      });
+    } else {
+      const updateInList = (tasks) => tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
+      setTasksByProject((prev) => {
+        const next = { ...prev };
+        for (const [pid, tasks] of Object.entries(next)) {
+          next[pid] = updateInList(tasks);
+        }
+        return next;
+      });
+      setUnassignedTasks((prev) => updateInList(prev));
+    }
+
     setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     try {
       await apiClient.updateTask(taskId, updates);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   }, [loadData]);
 
@@ -283,7 +355,7 @@ export default function ProjectsView() {
     try {
       await apiClient.deleteTask(taskId);
     } catch {
-      loadData();
+      loadData({ silent: true });
     }
   }, [loadData]);
 

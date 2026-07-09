@@ -14,6 +14,7 @@ import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';
 import { ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { TODAY_SECTION_ORDER, SOFT_CAPS } from '@/lib/constants';
 import { getStartOfTodayLondon } from '@/lib/dateUtils';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
@@ -98,6 +99,10 @@ export default function TodayView() {
   // Track in-flight optimistic task ids to avoid double-firing
   const pendingRef = useRef(new Set());
 
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
+
   // ---------------------------------------------------------------------------
   // DnD sensors
   // ---------------------------------------------------------------------------
@@ -110,9 +115,14 @@ export default function TodayView() {
   // Data loading
   // ---------------------------------------------------------------------------
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  // loadData({ silent }): silent refetches revalidate in the background without
+  // flipping the view to the skeleton or clobbering the current view on failure.
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       const [todayTasks, doneTasks] = await Promise.all([
         apiClient.getTasks(null, { state: 'today' }),
@@ -122,12 +132,16 @@ export default function TodayView() {
         }),
       ]);
 
+      // Ignore out-of-order responses — a newer refetch has superseded this one
+      if (loadGuardRef.current.isStale(token)) return;
+
       setSections(groupBySection(todayTasks));
       setCompletedToday(doneTasks);
 
       // Overdue follow-ups (waiting tasks with past follow_up_date)
       try {
         const waitingTasks = await apiClient.getTasks(null, { state: 'waiting' });
+        if (loadGuardRef.current.isStale(token)) return;
         const today = new Date();
         const overdue = waitingTasks.filter((t) => {
           if (!t.follow_up_date) return false;
@@ -142,6 +156,7 @@ export default function TodayView() {
       if (typeof window !== 'undefined' && !localStorage.getItem(FIRST_RUN_KEY)) {
         try {
           const backlog = await apiClient.getTasks(null, { state: 'backlog' });
+          if (loadGuardRef.current.isStale(token)) return;
           const now = new Date();
           const weekFromNow = new Date(now);
           weekFromNow.setDate(weekFromNow.getDate() + 7);
@@ -159,9 +174,10 @@ export default function TodayView() {
         }
       }
     } catch (err) {
-      setError(err.message || 'Failed to load today\'s tasks.');
+      // Silent refetch failures keep the current view rather than blanking it
+      if (!silent) setError(err.message || 'Failed to load today\'s tasks.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -169,14 +185,24 @@ export default function TodayView() {
     loadData();
   }, [loadData]);
 
-  // Refetch when planning completes or any task mutates
+  // Refetch quietly when planning completes, any task mutates, or the tab regains
+  // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
-    const handle = () => { loadData(); };
-    window.addEventListener('planning-complete', handle);
-    window.addEventListener('tasks-changed', handle);
+    const scheduleRefetch = () => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { loadData({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('planning-complete', handle);
-      window.removeEventListener('tasks-changed', handle);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadData]);
 
@@ -284,9 +310,12 @@ export default function TodayView() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
+      // Reload to restore server truth so the UI does not keep showing an unsaved
+      // value the server rejected (FF-032). Silent so the view does not blank out.
       alert(`Failed to update task: ${err.message}`);
+      loadData({ silent: true });
     }
-  }, []);
+  }, [loadData]);
 
   const handleDeleteTask = useCallback(async (taskId) => {
     // Remove from sections
@@ -303,7 +332,7 @@ export default function TodayView() {
       await apiClient.deleteTask(taskId);
     } catch (err) {
       alert(`Failed to delete task: ${err.message}`);
-      loadData(); // Reload on failure
+      loadData({ silent: true }); // Reload on failure without blanking the view
     }
   }, [loadData]);
 

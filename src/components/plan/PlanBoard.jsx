@@ -15,6 +15,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { format, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
+import { createLatestGuard } from '@/lib/requestCache';
 import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
 import { computeSortOrder } from '@/lib/sortOrder';
 import { compareBacklogTasks } from '@/lib/taskSort';
@@ -197,6 +198,14 @@ export default function PlanBoard() {
   // Backlog pagination
   const [backlogOffset, setBacklogOffset] = useState(0);
   const [backlogHasMore, setBacklogHasMore] = useState(false);
+  // Mirror of backlogOffset so background refetches can preserve loaded depth
+  // without re-creating loadAllColumns on every page load
+  const backlogOffsetRef = useRef(backlogOffset);
+  backlogOffsetRef.current = backlogOffset;
+
+  // Latest-wins guard + debounce timer for background refetches
+  const loadGuardRef = useRef(createLatestGuard());
+  const refetchTimerRef = useRef(null);
 
   // Areas (derived from backlog tasks for filter)
   const [areas, setAreas] = useState([]);
@@ -220,8 +229,8 @@ export default function PlanBoard() {
   // Data loading
   // ---------------------------------------------------------------------------
 
-  const loadColumn = useCallback(async (stateKey, opts = {}) => {
-    setLoadingStates((prev) => ({ ...prev, [stateKey]: true }));
+  const loadColumn = useCallback(async (stateKey, opts = {}, { silent = false } = {}) => {
+    if (!silent) setLoadingStates((prev) => ({ ...prev, [stateKey]: true }));
     setErrors((prev) => {
       const next = { ...prev };
       delete next[stateKey];
@@ -235,17 +244,25 @@ export default function PlanBoard() {
       setErrors((prev) => ({ ...prev, [stateKey]: err.message ?? 'Failed to load' }));
       return null;
     } finally {
-      setLoadingStates((prev) => ({ ...prev, [stateKey]: false }));
+      if (!silent) setLoadingStates((prev) => ({ ...prev, [stateKey]: false }));
     }
   }, []);
 
-  const loadAllColumns = useCallback(async () => {
+  const loadAllColumns = useCallback(async ({ silent = false } = {}) => {
+    const token = loadGuardRef.current.begin();
+    // Preserve the backlog pagination depth the user has scrolled to, so a refetch
+    // after any mutation does not collapse the column back to the first page (FF-033).
+    const backlogLimit = backlogOffsetRef.current > 0 ? backlogOffsetRef.current : BACKLOG_PAGE_SIZE;
+
     const [today, thisWeek, backlog, waiting] = await Promise.all([
-      loadColumn(STATE.TODAY),
-      loadColumn(STATE.THIS_WEEK),
-      loadColumn(STATE.BACKLOG, { limit: BACKLOG_PAGE_SIZE, offset: 0 }),
-      loadColumn(STATE.WAITING),
+      loadColumn(STATE.TODAY, {}, { silent }),
+      loadColumn(STATE.THIS_WEEK, {}, { silent }),
+      loadColumn(STATE.BACKLOG, { limit: backlogLimit, offset: 0 }, { silent }),
+      loadColumn(STATE.WAITING, {}, { silent }),
     ]);
+
+    // Ignore out-of-order responses — a newer refetch has superseded this one
+    if (loadGuardRef.current.isStale(token)) return;
 
     setColumns({
       [STATE.TODAY]: today ?? [],
@@ -255,27 +272,37 @@ export default function PlanBoard() {
     });
 
     if (backlog) {
-      setBacklogHasMore(backlog.length >= BACKLOG_PAGE_SIZE);
+      setBacklogHasMore(backlog.length >= backlogLimit);
       const uniqueAreas = [
         ...new Set(backlog.filter((t) => t.area).map((t) => t.area)),
       ].sort();
       setAreas(uniqueAreas);
     }
-    setBacklogOffset(BACKLOG_PAGE_SIZE);
+    setBacklogOffset(backlogLimit);
   }, [loadColumn]);
 
   useEffect(() => {
     loadAllColumns();
   }, [loadAllColumns]);
 
-  // Refetch when planning completes or any task mutates
+  // Refetch quietly when planning completes, any task mutates, or the tab regains
+  // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
   useEffect(() => {
-    const handle = () => { loadAllColumns(); };
-    window.addEventListener('planning-complete', handle);
-    window.addEventListener('tasks-changed', handle);
+    const scheduleRefetch = () => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { loadAllColumns({ silent: true }); }, 200);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefetch();
+    };
+    window.addEventListener('planning-complete', scheduleRefetch);
+    window.addEventListener('tasks-changed', scheduleRefetch);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('planning-complete', handle);
-      window.removeEventListener('tasks-changed', handle);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      window.removeEventListener('planning-complete', scheduleRefetch);
+      window.removeEventListener('tasks-changed', scheduleRefetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadAllColumns]);
 
@@ -408,8 +435,8 @@ export default function PlanBoard() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch {
-      // On failure, refetch affected column
-      loadAllColumns();
+      // On failure, refetch to restore server truth (quietly, no skeleton flash)
+      loadAllColumns({ silent: true });
     }
   }, [loadAllColumns]);
 
@@ -426,7 +453,7 @@ export default function PlanBoard() {
     try {
       await apiClient.deleteTask(taskId);
     } catch {
-      loadAllColumns();
+      loadAllColumns({ silent: true });
     }
   }, [loadAllColumns]);
 
