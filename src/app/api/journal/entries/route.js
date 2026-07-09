@@ -12,7 +12,12 @@ function isValidUuid(value) {
 // POST /api/journal/entries - Save raw entry first, AI cleanup happens separately
 export async function POST(request) {
   try {
-    const clientId = getClientIdentifier(request);
+    // Resolve the session before rate limiting so the limit can be keyed on
+    // the authenticated user id (spoof-proof) rather than a client-supplied
+    // IP header. Unauthenticated callers fall back to the IP identifier,
+    // matching the pre-auth case documented in rateLimiter.js.
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`journal-post-${clientId}`, 20, 60000);
 
     if (!rateLimitResult.allowed) {
@@ -24,8 +29,6 @@ export async function POST(request) {
         }
       );
     }
-
-    const { session } = await getAuthContext(request);
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

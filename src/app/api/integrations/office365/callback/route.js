@@ -41,9 +41,13 @@ export async function GET(request) {
   const expectedState = request.cookies.get(COOKIE_STATE)?.value || null;
   const codeVerifier = request.cookies.get(COOKIE_VERIFIER)?.value || null;
   const returnToCookie = request.cookies.get(COOKIE_RETURN_TO)?.value || null;
-  const userIdCookie = request.cookies.get(COOKIE_USER_ID)?.value || null;
 
-  const userId = session?.user?.id || userIdCookie;
+  // FF-010: identity must come from the authenticated NextAuth session only.
+  // The previous o365_oauth_user_id cookie fallback was unsigned and client-
+  // controlled, letting anyone bind their Microsoft account to any victim
+  // user_id. The session cookie is first-party and is sent on the top-level
+  // redirect back from Microsoft, so no fallback is required.
+  const userId = session?.user?.id || null;
 
   const clearCookies = (response) => {
     response.cookies.set(COOKIE_STATE, '', { maxAge: 0, path: '/api/integrations/office365/callback' });

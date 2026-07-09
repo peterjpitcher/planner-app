@@ -13,7 +13,6 @@ import {
 const COOKIE_STATE = 'o365_oauth_state';
 const COOKIE_VERIFIER = 'o365_oauth_verifier';
 const COOKIE_RETURN_TO = 'o365_oauth_return_to';
-const COOKIE_USER_ID = 'o365_oauth_user_id';
 const COOKIE_MAX_AGE_SECONDS = 10 * 60;
 
 function isProduction() {
@@ -56,7 +55,9 @@ export async function GET(request) {
 
   response.cookies.set(COOKIE_STATE, state, cookieBase);
   response.cookies.set(COOKIE_VERIFIER, verifier, cookieBase);
-  response.cookies.set(COOKIE_USER_ID, session.user.id, cookieBase);
+  // FF-010: no longer set an o365_oauth_user_id cookie — the callback route
+  // requires an authenticated NextAuth session and never trusts a client-
+  // supplied user id.
   response.cookies.set(COOKIE_RETURN_TO, returnTo, { ...cookieBase, httpOnly: true, path: '/api/integrations/office365' });
 
   return response;
