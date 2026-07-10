@@ -1,5 +1,6 @@
 import { validateIdea } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
+import { getLondonDateKey } from '@/lib/timezone';
 
 const IDEA_UPDATE_FIELDS = new Set([
   'title', 'notes', 'area', 'idea_state',
@@ -35,6 +36,30 @@ export async function listIdeas({ supabase, userId, filters = {} }) {
   }
 
   const { data, error } = await query;
+  if (error) {
+    const errorMessage = handleSupabaseError(error, 'fetch');
+    return { error: { status: 500, message: errorMessage } };
+  }
+  return { data };
+}
+
+// F4: ideas due for review — "Ready Later" ideas whose review_date has arrived.
+// Without this the vault is a black hole: a review_date is set but never
+// resurfaced. Surfaced at the top of the vault (and in the A4 digest) so the
+// idea returns for a decision. "Today" is the London date key, never a raw UTC
+// Date, so the comparison flips at midnight London time.
+export async function listIdeasDueForReview({ supabase, userId }) {
+  const today = getLondonDateKey();
+
+  const { data, error } = await supabase
+    .from('ideas')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('idea_state', 'ready_later')
+    .not('review_date', 'is', null)
+    .lte('review_date', today)
+    .order('review_date', { ascending: true });
+
   if (error) {
     const errorMessage = handleSupabaseError(error, 'fetch');
     return { error: { status: 500, message: errorMessage } };

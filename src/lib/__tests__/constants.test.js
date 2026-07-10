@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   STATE, TODAY_SECTION, TODAY_SECTION_ORDER, IDEA_STATE_ORDER,
-  TASK_TYPE, CHIP_VALUES, IDEA_STATE, SOFT_CAPS
+  TASK_TYPE, CHIP_VALUES, IDEA_STATE, SOFT_CAPS,
+  STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP
 } from '../constants';
 
 describe('constants', () => {
@@ -33,5 +34,10 @@ describe('constants', () => {
     expect(SOFT_CAPS.GOOD_TO_DO).toBe(5);
     expect(SOFT_CAPS.QUICK_WINS).toBe(8);
     expect(SOFT_CAPS.THIS_WEEK).toBe(15);
+  });
+
+  it('F4 backlog-ageing constants have the expected defaults', () => {
+    expect(STALE_BACKLOG_DAYS).toBe(14);
+    expect(REVIEW_BACKLOG_CAP).toBe(10);
   });
 });

@@ -53,6 +53,7 @@ const TYPE_LABELS = {
 export default function PlanningTaskRow({
   task,
   mode, // 'daily' | 'weekly'
+  variant, // optional: 'review' renders a gentle "still needed?" framing for aged backlog (F4)
   sectionCounts, // { must_do: N, good_to_do: N, quick_wins: N }
   onAssign, // (taskId, { state, today_section }) => void
   onSnooze, // (taskId, until) => Promise<void> — persists snoozed_until
@@ -202,6 +203,13 @@ export default function PlanningTaskRow({
               </span>
             ))}
           </div>
+          {/* Gentle "still needed?" framing for aged backlog rows (F4). Purely
+              visual — the assign / defer / snooze / complete actions are unchanged. */}
+          {variant === 'review' && (
+            <p className="mt-1 text-xs italic text-muted-foreground">
+              Sitting in the backlog a while — still needed?
+            </p>
+          )}
         </div>
       </div>
 

@@ -119,7 +119,7 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
 
-    const { dueToday, overdue, inboxCount } = await fetchOutstandingTasks({
+    const { dueToday, overdue, inboxCount, digest } = await fetchOutstandingTasks({
       supabase,
       userId,
       todayDateKey: runDateKey,
@@ -127,6 +127,7 @@ export async function GET(request) {
 
     const email = buildDailyTaskEmail({
       todayDateKey: runDateKey,
+      digest,
       dueToday,
       overdue,
       inboxCount,
@@ -138,6 +139,11 @@ export async function GET(request) {
       return NextResponse.json({ sent: false, reason: 'no_outstanding_tasks' }, { status: 200 });
     }
 
+    // Run-tracking counts recorded on daily_task_email_runs. Since the A4 digest
+    // rebuild, dueToday is ALL Today-state tasks (not only those due today) and
+    // overdue is every overdue task not in Today/done — broader populations than
+    // the original due-today/overdue-in-Today columns implied. Kept for volume
+    // tracking; not used for user-facing content.
     const counts = { dueToday: dueToday.length, overdue: overdue.length };
 
     if (auth.dryRun) {
