@@ -195,6 +195,12 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   const showCarried = carriedCount >= 1 && !isCompleted;
   const carriedNudge = carriedCount >= CARRY_NUDGE_THRESHOLD;
 
+  // Provenance (A3 / F5-lite): a small, non-colour-only "Auto-added" label so an
+  // auto-placed task can answer "why is this here". autoplanned_at is only set by
+  // the morning autopilot, so this naturally appears on Today cards only. The
+  // "Carried" provenance is already covered by the carried badge below.
+  const showAutoAdded = !!task.autoplanned_at && task.state === STATE.TODAY && !isCompleted;
+
   // Card container classes
   const containerClasses = [
     'group relative flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-sm shadow-sm',
@@ -294,6 +300,13 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
         {isSnoozed && !isCompleted && (
           <span className="mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
             Snoozed until {format(parseISO(task.snoozed_until), 'MMM d')}
+          </span>
+        )}
+
+        {/* Auto-added provenance label (A3): non-colour-only, subtle chip */}
+        {showAutoAdded && (
+          <span className="mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+            Auto-added
           </span>
         )}
 

@@ -389,6 +389,27 @@ class APIClient {
     return response.data;
   }
 
+  // A3 / F5-lite: acknowledge an auto-built day ("Looks good"). Stamps
+  // reviewed_at on the daily session for windowDate so the review banner dismisses.
+  async markPlanningSessionReviewed(windowDate) {
+    const response = await this.fetchWithAuth('/api/planning-sessions', {
+      method: 'PATCH',
+      body: JSON.stringify({ windowType: 'daily', windowDate }),
+    });
+    return response.data;
+  }
+
+  // A3 / F5-lite: "Clear auto-plan". Moves every still-auto-placed, un-touched
+  // task back to This Week, clears the flag, and deletes today's auto-built
+  // session. Dispatches tasks-changed so the boards/views refresh.
+  async clearAutopilotPlan() {
+    const result = await this.fetchWithAuth('/api/autopilot/clear', {
+      method: 'POST',
+    });
+    dispatchTasksChanged();
+    return result;
+  }
+
   async getUserSettings() {
     const response = await this.fetchWithAuth('/api/user-settings');
     return response.data;

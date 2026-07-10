@@ -23,6 +23,7 @@ import { TaskListSkeleton } from '@/components/ui/LoadingStates';
 import TaskCard from '@/components/shared/TaskCard';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 import TodaySection from './TodaySection';
+import AutopilotBanner from './AutopilotBanner';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -547,6 +548,10 @@ export default function TodayView() {
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl mx-auto">
+
+      {/* Morning autopilot review / undo banner (A3 / F5-lite). Self-gating: it
+          renders nothing unless today's day was auto-built and not yet reviewed. */}
+      <AutopilotBanner />
 
       {/* First-run triage banner */}
       {firstRunInfo && (

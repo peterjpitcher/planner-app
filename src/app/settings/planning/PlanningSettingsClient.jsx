@@ -2,13 +2,36 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
+import { AUTOPILOT_LEVEL } from '@/lib/constants';
 
 const DEFAULT_SETTINGS = {
   daily_plan_start: '20:05',
   daily_plan_end: '20:00',
   weekly_plan_start: '20:05',
   weekly_plan_end: '20:00',
+  autopilot_level: AUTOPILOT_LEVEL.OFF,
 };
+
+// Morning autopilot options (A3 / F5-lite). Off is the safe default — the app
+// stays fully manual. Review builds tomorrow's plan overnight but waits for a
+// morning acknowledgement; Fully automatic builds the day with a lighter touch.
+const AUTOPILOT_OPTIONS = [
+  {
+    value: AUTOPILOT_LEVEL.OFF,
+    title: 'Off',
+    description: 'You plan each day yourself (default).',
+  },
+  {
+    value: AUTOPILOT_LEVEL.REVIEW,
+    title: 'Review each morning',
+    description: "I build tomorrow's plan overnight; you review it in the morning.",
+  },
+  {
+    value: AUTOPILOT_LEVEL.AUTO,
+    title: 'Fully automatic',
+    description: 'I build your day and you just adjust as needed.',
+  },
+];
 
 export default function PlanningSettingsClient() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -26,6 +49,7 @@ export default function PlanningSettingsClient() {
             daily_plan_end: data.daily_plan_end ?? DEFAULT_SETTINGS.daily_plan_end,
             weekly_plan_start: data.weekly_plan_start ?? DEFAULT_SETTINGS.weekly_plan_start,
             weekly_plan_end: data.weekly_plan_end ?? DEFAULT_SETTINGS.weekly_plan_end,
+            autopilot_level: data.autopilot_level ?? DEFAULT_SETTINGS.autopilot_level,
           });
         }
       } catch {
@@ -71,10 +95,46 @@ export default function PlanningSettingsClient() {
     <div className="max-w-lg mx-auto">
       <h1 className="text-lg font-semibold text-foreground mb-1">Planning Settings</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Configure when daily and weekly planning prompts appear.
+        Choose how your day gets planned, and when planning prompts appear.
       </p>
 
       <form onSubmit={handleSave} className="rounded-lg border border-border bg-card p-5 space-y-6">
+        {/* Autopilot level (A3 / F5-lite) */}
+        <fieldset>
+          <legend className="text-sm font-medium text-foreground mb-1">Autopilot</legend>
+          <p className="text-xs text-muted-foreground mb-3">
+            Decide how much of your morning plan I build for you.
+          </p>
+          <div role="radiogroup" aria-label="Morning autopilot level" className="space-y-2">
+            {AUTOPILOT_OPTIONS.map((opt) => {
+              const isSelected = settings.autopilot_level === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors focus-within:ring-1 focus-within:ring-primary ${
+                    isSelected
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:border-primary/40'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="autopilot_level"
+                    value={opt.value}
+                    checked={isSelected}
+                    onChange={() => handleChange('autopilot_level', opt.value)}
+                    className="mt-0.5 h-4 w-4 shrink-0 border-border text-primary focus:ring-primary focus:ring-offset-0"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">{opt.title}</span>
+                    <span className="block text-xs text-muted-foreground">{opt.description}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
         {/* Daily window */}
         <fieldset>
           <legend className="text-sm font-medium text-foreground mb-3">Daily Planning Window</legend>
