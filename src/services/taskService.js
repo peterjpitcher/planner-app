@@ -50,6 +50,12 @@ const TASK_CREATE_FIELDS = new Set([
   'waiting_reason',
   'follow_up_date',
   'project_id',
+  // Capture inbox (F3): inbox is client-settable ONLY at create time, so the
+  // three capture entry points (plain quick-capture, idea promotion, Office365
+  // inbound pull) can mark a freshly captured task as awaiting triage. It is
+  // deliberately absent from TASK_UPDATE_FIELDS — clients can never flip it; it
+  // is cleared only by the server triage rule in updateTask.
+  'inbox',
 ]);
 
 function filterTaskCreate(fields = {}) {
@@ -218,6 +224,28 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     const alreadySnoozedToSame = newSnooze != null && newSnooze === existingTask.snoozed_until;
     if (newSnooze != null && !alreadySnoozedToSame) {
       updatesToApply.snooze_count = (existingTask.snooze_count || 0) + 1;
+    }
+  }
+
+  // Capture inbox (F3): a freshly captured task carries inbox=true so it is
+  // guaranteed exactly one triage moment. Clear the flag the instant the task is
+  // genuinely triaged — i.e. this update makes a real placement decision:
+  // it changes state (state -> done also counts, so completing clears it),
+  // today_section, due_date, or snoozed_until. A plain rename / area /
+  // description edit leaves the task untriaged, so its inbox flag must survive.
+  // inbox is not in TASK_UPDATE_FIELDS, so a client can never set or clear it
+  // directly — only this server rule does.
+  if (existingTask.inbox) {
+    const triageChanged = (field) =>
+      Object.prototype.hasOwnProperty.call(updatesToApply, field) &&
+      updatesToApply[field] !== existingTask[field];
+    const triaged =
+      triageChanged('state') ||
+      triageChanged('today_section') ||
+      triageChanged('due_date') ||
+      triageChanged('snoozed_until');
+    if (triaged) {
+      updatesToApply.inbox = false;
     }
   }
 

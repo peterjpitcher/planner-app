@@ -187,7 +187,7 @@ export default function PlanningModal({
   const activeTasks = (isCombinedFlow && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
+    : [...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
 
   const handleFinish = useCallback(async () => {
     // Guard against finishing before the user has done anything. Any row
@@ -275,6 +275,10 @@ export default function PlanningModal({
         { label: 'Overdue', tasks: tasks?.overdue || [] },
       ]
     : [
+        // Capture inbox (F3): freshly captured items are triaged FIRST, so this
+        // group sits at the top of the daily step. Acting on a row (assign / defer
+        // / snooze / complete) clears its inbox flag via the server triage rule.
+        { label: 'Inbox — just captured', tasks: activeTasks?.inbox || [] },
         { label: targetIsToday ? 'Due Today' : 'Due Tomorrow', tasks: activeTasks?.dueTomorrow || [] },
         { label: 'Overdue', tasks: activeTasks?.overdue || [] },
         { label: 'Available This Week', tasks: activeTasks?.undatedThisWeek || [] },

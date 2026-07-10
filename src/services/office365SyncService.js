@@ -828,6 +828,10 @@ async function performFullSync({ supabase, userId }) {
           // tasks_state_check (today/this_week/backlog/waiting/done); use
           // 'backlog'. Inbound importance is ignored (no local priority field).
           state: remoteIsCompleted ? 'done' : 'backlog',
+          // Capture inbox (F3): a task imported from Outlook/To Do lands in undated
+          // backlog and would otherwise sink unseen, so flag it for triage. An
+          // already-completed remote task needs no triage, so it stays inbox=false.
+          inbox: !remoteIsCompleted,
           completed_at:
             remoteIsCompleted
               ? (toIsoTimestamp(remoteTask?.completedDateTime?.dateTime) || new Date().toISOString())

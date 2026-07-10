@@ -20,6 +20,7 @@ import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { compareBacklogTasks } from '@/lib/taskSort';
 import { getLondonDateKey } from '@/lib/timezone';
+import { InboxArrowDownIcon } from '@heroicons/react/24/outline';
 import BoardColumn from './BoardColumn';
 import TaskCard from '@/components/shared/TaskCard';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
@@ -234,6 +235,10 @@ export default function PlanBoard() {
   // the user optionally collapse them out of the columns; they keep a badge either way.
   const [showSnoozed, setShowSnoozed] = useState(true);
 
+  // Capture inbox (F3): count of freshly captured, not-yet-triaged tasks. Drives
+  // the "N to triage" badge so untriaged captures get daytime attention.
+  const [inboxCount, setInboxCount] = useState(0);
+
   // ---------------------------------------------------------------------------
   // Data loading
   // ---------------------------------------------------------------------------
@@ -305,12 +310,25 @@ export default function PlanBoard() {
     setBacklogOffset(backlogLimit);
   }, [loadColumn]);
 
+  // Capture inbox (F3): derive the untriaged-capture count from the daily planning
+  // inbox bucket (all inbox=true, snooze-aware). Counting the paginated backlog
+  // column here would undercount once the backlog runs past the first page.
+  const refreshInboxCount = useCallback(async () => {
+    try {
+      const candidates = await apiClient.getPlanningCandidates('daily', getLondonDateKey());
+      setInboxCount(Array.isArray(candidates?.inbox) ? candidates.inbox.length : 0);
+    } catch {
+      // Non-critical — leave the previous count in place rather than flashing 0.
+    }
+  }, []);
+
   useEffect(() => {
     loadAllColumns().finally(() => {
       // First load done — silent background refetches may now supersede it (R2).
       hasLoadedRef.current = true;
     });
-  }, [loadAllColumns]);
+    refreshInboxCount();
+  }, [loadAllColumns, refreshInboxCount]);
 
   // Refetch quietly when planning completes, any task mutates, or the tab regains
   // focus (cross-tab / multi-device). Bursts are debounced into a single refetch.
@@ -321,7 +339,11 @@ export default function PlanBoard() {
       // with no spinner/error (R2).
       if (!hasLoadedRef.current) return;
       if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
-      refetchTimerRef.current = setTimeout(() => { loadAllColumns({ silent: true }); }, 200);
+      refetchTimerRef.current = setTimeout(() => {
+        loadAllColumns({ silent: true });
+        // Keep the "N to triage" badge in step with captures and triage actions.
+        refreshInboxCount();
+      }, 200);
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') scheduleRefetch();
@@ -335,7 +357,7 @@ export default function PlanBoard() {
       window.removeEventListener('tasks-changed', scheduleRefetch);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [loadAllColumns]);
+  }, [loadAllColumns, refreshInboxCount]);
 
   // ---------------------------------------------------------------------------
   // Load more backlog
@@ -755,6 +777,16 @@ export default function PlanBoard() {
           >
             Retry all
           </button>
+        </div>
+      )}
+
+      {/* Capture inbox (F3): daytime triage nudge — only shown when captures await */}
+      {inboxCount > 0 && (
+        <div className="mb-3 flex items-center">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800">
+            <InboxArrowDownIcon className="h-4 w-4" aria-hidden="true" />
+            {inboxCount} to triage
+          </span>
         </div>
       )}
 

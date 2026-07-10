@@ -83,12 +83,15 @@ export default function QuickCapture() {
           await apiClient.createIdea({ title });
           showFlash('success', 'Idea captured');
         } else if (e.shiftKey) {
-          // Shift+Enter → Today > Good to Do
+          // Shift+Enter → Today > Good to Do. A task dropped straight into Today
+          // is already triaged, so it is NOT marked as inbox.
           await apiClient.createTask({ name: sanitized, state: 'today', today_section: 'good_to_do' });
           showFlash('success', 'Added to Today');
         } else {
-          // Enter → Backlog
-          await apiClient.createTask({ name: sanitized, state: 'backlog' });
+          // Enter → Backlog. Capture inbox (F3): flag it inbox=true so it is
+          // guaranteed one triage moment in the evening plan instead of sinking
+          // into undated backlog unseen.
+          await apiClient.createTask({ name: sanitized, state: 'backlog', inbox: true });
           showFlash('success', 'Task captured');
         }
 

@@ -159,6 +159,10 @@ class APIClient {
       task_type,
       chips,
       notes,
+      // Capture inbox (F3): thread the flag through so a plain quick-capture can
+      // mark the created backlog task as awaiting triage. Undefined for every
+      // other caller, so it is dropped by JSON.stringify.
+      inbox,
       ...rest
     } = taskData;
 
@@ -172,6 +176,7 @@ class APIClient {
       task_type,
       chips,
       notes,
+      inbox,
       ...rest,
     };
 

@@ -39,30 +39,48 @@ export async function GET(request) {
     const snoozeFilter = `snoozed_until.is.null,snoozed_until.lte.${windowDate}`;
 
     if (windowType === 'daily') {
-      const [dueTomorrow, overdue, undatedThisWeek] = await Promise.all([
-        // 1. Due tomorrow, not already in today/done
+      const [inbox, dueTomorrow, overdue, undatedThisWeek] = await Promise.all([
+        // 0. Capture inbox (F3): every freshly captured, not-yet-triaged task
+        //    (inbox=true), so nothing sinks into undated backlog unseen. Respects
+        //    the same snooze filter as the other buckets; done tasks are excluded
+        //    defensively (triage clears inbox, so an inbox task is never done).
+        //    Inbox tasks that also carry a due date are surfaced HERE only — the
+        //    dueTomorrow/overdue buckets below exclude inbox to avoid duplicate rows.
+        supabase
+          .from('tasks')
+          .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
+          .eq('user_id', userId)
+          .eq('inbox', true)
+          .not('state', 'in', '("done")')
+          .or(snoozeFilter)
+          .order('sort_order', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: true }),
+
+        // 1. Due tomorrow, not already in today/done, not an untriaged inbox item
         supabase
           .from('tasks')
           .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
           .eq('user_id', userId)
           .eq('due_date', windowDate)
+          .eq('inbox', false)
           .not('state', 'in', '("today","done")')
           .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
 
-        // 2. Overdue: due before windowDate, not in today/done
+        // 2. Overdue: due before windowDate, not in today/done, not an inbox item
         supabase
           .from('tasks')
           .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
           .eq('user_id', userId)
           .lt('due_date', windowDate)
+          .eq('inbox', false)
           .not('state', 'in', '("today","done")')
           .or(snoozeFilter)
           .order('due_date', { ascending: true })
           .order('created_at', { ascending: true }),
 
-        // 3. Undated THIS_WEEK tasks
+        // 3. Undated THIS_WEEK tasks (inbox items are always backlog, so no overlap)
         supabase
           .from('tasks')
           .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
@@ -74,8 +92,8 @@ export async function GET(request) {
           .order('created_at', { ascending: true }),
       ]);
 
-      if (dueTomorrow.error || overdue.error || undatedThisWeek.error) {
-        const err = dueTomorrow.error || overdue.error || undatedThisWeek.error;
+      if (inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error) {
+        const err = inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error;
         console.error('Planning candidates query error:', err);
         return NextResponse.json({ error: 'Failed to fetch planning candidates' }, { status: 500 });
       }
@@ -85,6 +103,7 @@ export async function GET(request) {
       // buckets are built relative to it, so overdue/today-tomorrow bands stay coherent.
       return NextResponse.json({
         data: {
+          inbox: sortTasksByPriority(flattenProjects(inbox.data), { todayKey: windowDate }),
           dueTomorrow: sortTasksByPriority(flattenProjects(dueTomorrow.data), { todayKey: windowDate }),
           overdue: sortTasksByPriority(flattenProjects(overdue.data), { todayKey: windowDate }),
           undatedThisWeek: sortTasksByPriority(flattenProjects(undatedThisWeek.data), { todayKey: windowDate }),
