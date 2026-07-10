@@ -216,6 +216,9 @@ export async function promoteIdea({ supabase, userId, ideaId }) {
       source_idea_id: idea.id,
       sort_order: 0,
       entered_state_at: new Date().toISOString(),
+      // Capture inbox (F3): a promoted idea lands in undated backlog, so flag it
+      // for triage exactly like a plain quick-capture — otherwise it sinks unseen.
+      inbox: true,
     })
     .select()
     .single();

@@ -159,6 +159,10 @@ class APIClient {
       task_type,
       chips,
       notes,
+      // Capture inbox (F3): thread the flag through so a plain quick-capture can
+      // mark the created backlog task as awaiting triage. Undefined for every
+      // other caller, so it is dropped by JSON.stringify.
+      inbox,
       ...rest
     } = taskData;
 
@@ -172,6 +176,7 @@ class APIClient {
       task_type,
       chips,
       notes,
+      inbox,
       ...rest,
     };
 
@@ -208,6 +213,40 @@ class APIClient {
     });
     dispatchTasksChanged();
     return result;
+  }
+
+  // First-class snooze (F2). snoozeTask hides a task from planning candidates
+  // until `until` (a YYYY-MM-DD London date); the server increments snooze_count.
+  // unsnoozeTask clears it. Both dispatch tasks-changed so boards/views refresh.
+  async snoozeTask(taskId, until) {
+    const result = await this.fetchWithAuth('/api/tasks', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: taskId, snoozed_until: until }),
+    });
+    dispatchTasksChanged();
+    return result?.data ?? result;
+  }
+
+  async unsnoozeTask(taskId) {
+    const result = await this.fetchWithAuth('/api/tasks', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: taskId, snoozed_until: null }),
+    });
+    dispatchTasksChanged();
+    return result?.data ?? result;
+  }
+
+  // Carry-forward (A1) "Keep yesterday's plan": restore every task carried from
+  // today back to Today at its remembered section in one action. Reuses
+  // updateTask, so the server re-triage reset clears carried_section/carried_count
+  // and each call dispatches tasks-changed for the boards/views to refresh.
+  async restoreCarriedTasks(carriedTasks = []) {
+    const restorable = (carriedTasks || []).filter((t) => t && t.id && t.carried_section);
+    return Promise.all(
+      restorable.map((t) =>
+        this.updateTask(t.id, { state: 'today', today_section: t.carried_section })
+      )
+    );
   }
 
   // Update sort order for a list of tasks

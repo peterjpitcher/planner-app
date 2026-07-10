@@ -78,6 +78,11 @@ export const SOFT_CAPS = {
   THIS_WEEK: 15
 };
 
+// Carry-forward (A1): a Today task that has been carried this many consecutive
+// evenings surfaces an amber "carried N days — still today?" nudge instead of
+// silently persisting, so Today does not silt up with zombies.
+export const CARRY_NUDGE_THRESHOLD = 3;
+
 // UI Constants
 export const UI_CONSTANTS = {
   MOBILE_BREAKPOINT: 640,

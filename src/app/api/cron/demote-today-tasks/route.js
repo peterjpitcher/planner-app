@@ -5,7 +5,8 @@ import { getLondonDateKey } from '@/lib/timezone';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
 import { resolveDigestUserId } from '@/services/dailyTaskEmailService';
-import { updateTask } from '@/services/taskService';
+import { computeSortOrder } from '@/lib/sortOrder';
+import { STATE, TODAY_SECTION } from '@/lib/constants';
 
 function escapeHtml(str) {
   return String(str)
@@ -95,7 +96,7 @@ export async function GET(request) {
 
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')
-      .select('id, name, due_date, projects(name)')
+      .select('id, name, due_date, today_section, carried_count, projects(name)')
       .eq('state', 'today')
       .eq('user_id', userId);
 
@@ -119,20 +120,63 @@ export async function GET(request) {
       );
     }
 
-    const demotedTasks = [];
+    // A1 — selective carry-forward (replaces the old blanket demotion). Writes are
+    // DIRECT supabase updates, NOT taskService.updateTask, so the carry markers are
+    // exact and do not trip updateTask's re-triage reset (which would immediately
+    // wipe carried_count/carried_section). All fetched tasks are unfinished — a
+    // completed task is state='done', never 'today'.
+    //   - Must Do: STAYS in Today (same section, sort_order preserved). Only the
+    //     carry counter is bumped; no state/section change.
+    //   - Good to Do / Quick Wins: demote to this_week, remembering their section in
+    //     carried_section so the modal can restore them. The DB trigger clears
+    //     today_section and stamps entered_state_at; carried_section persists.
+    //   - updated_at is auto-stamped by the handle_tasks_updated_at trigger.
+    // Demoted tasks append to the END of This Week: their old Today sort_order is
+    // meaningless in the new column and would otherwise make them jump to the top
+    // (updateTask normally computes this append, but the carry writes are direct).
+    // Seed from the current max This Week sort_order, then step by a gap per task.
+    const { data: maxThisWeek } = await supabase
+      .from('tasks')
+      .select('sort_order')
+      .eq('user_id', userId)
+      .eq('state', STATE.THIS_WEEK)
+      .not('sort_order', 'is', null)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    let thisWeekOrder = maxThisWeek?.sort_order ?? null;
+
+    const keptTasks = [];   // Must Do — remained in Today
+    const movedTasks = [];  // Good to Do / Quick Wins — moved to This Week
     const failedUpdates = [];
     for (const task of tasks) {
-      const result = await updateTask({
-        supabase,
-        userId,
-        taskId: task.id,
-        updates: { state: 'this_week' },
-        options: { skipProjectTouch: true },
-      });
-      if (result.error) {
-        failedUpdates.push(`${task.id}: ${result.error.message || 'update failed'}`);
+      const staysInToday = task.today_section === TODAY_SECTION.MUST_DO;
+      const nextCarried = (task.carried_count || 0) + 1;
+      let patch;
+      if (staysInToday) {
+        patch = { carried_count: nextCarried };
       } else {
-        demotedTasks.push(task);
+        thisWeekOrder = computeSortOrder(thisWeekOrder, null); // append to end of This Week
+        patch = {
+          state: STATE.THIS_WEEK,
+          carried_section: task.today_section || null,
+          carried_count: nextCarried,
+          sort_order: thisWeekOrder,
+        };
+      }
+
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update(patch)
+        .eq('id', task.id)
+        .eq('user_id', userId);
+
+      if (updateError) {
+        failedUpdates.push(`${task.id}: ${updateError.message || 'update failed'}`);
+      } else if (staysInToday) {
+        keptTasks.push(task);
+      } else {
+        movedTasks.push(task);
       }
     }
 
@@ -148,8 +192,8 @@ export async function GET(request) {
     ).trim();
 
     let emailStatus = 'no_email';
-    if (fromEmail && toEmail && demotedTasks.length > 0) {
-      const taskListHtml = demotedTasks
+    if (fromEmail && toEmail && movedTasks.length > 0) {
+      const taskListHtml = movedTasks
         .map((t) => {
           const projectName = t.projects?.name ? ` (${escapeHtml(t.projects.name)})` : '';
           const dueDate = t.due_date ? ` &mdash; due ${escapeHtml(t.due_date)}` : '';
@@ -157,9 +201,12 @@ export async function GET(request) {
         })
         .join('\n');
 
-      const subject = `Daily Review: ${demotedTasks.length} task${demotedTasks.length !== 1 ? 's' : ''} moved from Today to This Week`;
-      const html = `<p>${subject}</p>\n<ul>\n${taskListHtml}\n</ul>`;
-      const text = demotedTasks
+      const keptNote = keptTasks.length > 0
+        ? ` ${keptTasks.length} Must Do task${keptTasks.length !== 1 ? 's' : ''} stayed in Today.`
+        : '';
+      const subject = `Daily Review: ${keptTasks.length} kept in Today, ${movedTasks.length} moved to This Week`;
+      const html = `<p>${movedTasks.length} unfinished task${movedTasks.length !== 1 ? 's' : ''} moved from Today to This Week.${keptNote}</p>\n<ul>\n${taskListHtml}\n</ul>`;
+      const text = `${movedTasks.length} moved to This Week, ${keptTasks.length} kept in Today.\n` + movedTasks
         .map((t) => {
           const projectName = t.projects?.name ? ` (${t.projects.name})` : '';
           const dueDate = t.due_date ? ` - due ${t.due_date}` : '';
@@ -200,7 +247,7 @@ export async function GET(request) {
         supabase,
         runId,
         patch: {
-          tasks_affected: demotedTasks.length,
+          tasks_affected: keptTasks.length + movedTasks.length,
           status: finalStatus,
           ...(runErrors.length > 0 ? { error: runErrors.join(' | ') } : {}),
         },
@@ -210,7 +257,7 @@ export async function GET(request) {
     }
 
     return NextResponse.json(
-      { demoted: demotedTasks.length, emailStatus },
+      { kept: keptTasks.length, moved: movedTasks.length, emailStatus },
       { status: 200 }
     );
   } catch (error) {

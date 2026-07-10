@@ -132,16 +132,33 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
   dueToday.sort(taskSort);
   overdue.sort(taskSort);
 
-  return { today, dueToday, overdue };
+  // Capture inbox (F3): count freshly captured, not-yet-triaged tasks (inbox=true)
+  // for the morning digest backstop line, so a skipped evening ritual still gets a
+  // nudge. Snooze-aware and excluding done (triage clears inbox, so a done inbox
+  // task should not exist, but the guard keeps the count honest). A count error
+  // must not break the digest, so it defaults to 0.
+  const { count: inboxRawCount } = await supabase
+    .from('tasks')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('inbox', true)
+    .neq('state', 'done')
+    .or(`snoozed_until.is.null,snoozed_until.lte.${today}`);
+  const inboxCount = inboxRawCount || 0;
+
+  return { today, dueToday, overdue, inboxCount };
 }
 
-export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboardUrl, timeZone = LONDON_TIME_ZONE }) {
+export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, inboxCount = 0, dashboardUrl, timeZone = LONDON_TIME_ZONE }) {
   const today = todayDateKey || getLondonDateKey();
   const dueTodayTasks = dueToday || [];
   const overdueTasks = overdue || [];
+  const inboxToTriage = Number.isFinite(inboxCount) && inboxCount > 0 ? inboxCount : 0;
   const total = dueTodayTasks.length + overdueTasks.length;
 
-  if (total === 0) {
+  // Capture inbox (F3): the digest still sends when the only outstanding thing is
+  // captured-and-untriaged items, so a skipped evening ritual gets a nudge.
+  if (total === 0 && inboxToTriage === 0) {
     return null;
   }
 
@@ -150,6 +167,7 @@ export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboard
   const subjectParts = [];
   if (overdueTasks.length) subjectParts.push(`${overdueTasks.length} overdue`);
   if (dueTodayTasks.length) subjectParts.push(`${dueTodayTasks.length} due today`);
+  if (inboxToTriage) subjectParts.push(`${inboxToTriage} to triage`);
   const subject = `Planner: ${subjectParts.join(', ')} (${dateLabel})`;
 
   const safeDashboardUrl = dashboardUrl || process.env.NEXTAUTH_URL || 'https://planner.orangejelly.co.uk';
@@ -191,6 +209,11 @@ export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboard
     textSections.push('');
   }
 
+  if (inboxToTriage) {
+    textSections.push(`${inboxToTriage} item${inboxToTriage === 1 ? '' : 's'} captured and waiting to be triaged.`);
+    textSections.push('');
+  }
+
   textSections.push(`Open Planner: ${dashboardLink}`);
 
   const htmlSections = [];
@@ -209,6 +232,10 @@ export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboard
     htmlSections.push('<ul style="margin:0 0 12px 18px;padding:0;">');
     htmlSections.push(...overdueTasks.map((t) => formatTaskLineHtml(t, true)));
     htmlSections.push('</ul>');
+  }
+
+  if (inboxToTriage) {
+    htmlSections.push(`<p style="margin:18px 0 0 0;"><strong>${inboxToTriage}</strong> item${inboxToTriage === 1 ? '' : 's'} captured and waiting to be triaged.</p>`);
   }
 
   htmlSections.push(`<p style="margin:18px 0 0 0;"><a href="${escapeHtml(dashboardLink)}">Open Planner</a></p>`);

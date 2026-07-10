@@ -17,6 +17,10 @@ const TASK_UPDATE_FIELDS = new Set([
   'waiting_reason',
   'follow_up_date',
   'project_id',
+  // First-class snooze (F2): snoozed_until is client-writable. snooze_count is
+  // deliberately NOT here — it is server-managed (see updateTask) so a client
+  // can never inflate or reset the escalation counter.
+  'snoozed_until',
   'updated_at',
 ]);
 
@@ -46,6 +50,12 @@ const TASK_CREATE_FIELDS = new Set([
   'waiting_reason',
   'follow_up_date',
   'project_id',
+  // Capture inbox (F3): inbox is client-settable ONLY at create time, so the
+  // three capture entry points (plain quick-capture, idea promotion, Office365
+  // inbound pull) can mark a freshly captured task as awaiting triage. It is
+  // deliberately absent from TASK_UPDATE_FIELDS — clients can never flip it; it
+  // is cleared only by the server triage rule in updateTask.
+  'inbox',
 ]);
 
 function filterTaskCreate(fields = {}) {
@@ -93,7 +103,7 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, created_at, updated_at';
 
 export async function createTask({ supabase, userId, payload, options = {} }) {
   // Map camelCase frontend fields to snake_case DB columns
@@ -202,6 +212,65 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   // Normalize area if provided
   if (userProvidedArea) {
     updatesToApply.area = normalizeArea(updatesToApply.area);
+  }
+
+  // First-class snooze (F2): snooze_count is server-managed. Increment it
+  // read-modify-write from the already-fetched existingTask (mirrors the
+  // sort_order append below) only when the update sets a *new* non-null
+  // snooze date — i.e. the task was not already snoozed to that exact value.
+  // Clearing the snooze (snoozed_until = null) never changes the count.
+  if (Object.prototype.hasOwnProperty.call(updatesToApply, 'snoozed_until')) {
+    const newSnooze = updatesToApply.snoozed_until;
+    const alreadySnoozedToSame = newSnooze != null && newSnooze === existingTask.snoozed_until;
+    if (newSnooze != null && !alreadySnoozedToSame) {
+      updatesToApply.snooze_count = (existingTask.snooze_count || 0) + 1;
+    }
+  }
+
+  // Capture inbox (F3): a freshly captured task carries inbox=true so it is
+  // guaranteed exactly one triage moment. Clear the flag the instant the task is
+  // genuinely triaged — i.e. this update makes a real placement decision:
+  // it changes state (state -> done also counts, so completing clears it),
+  // today_section, or due_date. Snoozing is a DEFERRAL, not a triage decision,
+  // so it must NOT clear inbox: otherwise a captured task snoozed once would
+  // lose its flag and, after the snooze expired, match no planning-candidate
+  // bucket — silently vanishing from the guaranteed-triage flow. The snooze
+  // filter already hides the task until its date, after which inbox=true
+  // re-surfaces it in the inbox bucket. A plain rename / area / description edit
+  // likewise leaves it untriaged, so its inbox flag survives. inbox is not in
+  // TASK_UPDATE_FIELDS, so a client can never set or clear it directly.
+  if (existingTask.inbox) {
+    const triageChanged = (field) =>
+      Object.prototype.hasOwnProperty.call(updatesToApply, field) &&
+      updatesToApply[field] !== existingTask[field];
+    const triaged =
+      triageChanged('state') ||
+      triageChanged('today_section') ||
+      triageChanged('due_date');
+    if (triaged) {
+      updatesToApply.inbox = false;
+    }
+  }
+
+  // Carry-forward reset (A1): a genuine re-triage — the user changing the task's
+  // state, or explicitly (re)placing it into a today_section — is a fresh
+  // placement, so the evening carry-forward markers are wiped. This is what makes
+  // the planning modal's "Keep yesterday's plan" one-tap restore
+  // ({ state:'today', today_section: carried_section }) leave a clean row: the
+  // state change fires this reset, clearing carried_section/carried_count.
+  // carried_count and carried_section are server-managed (deliberately absent from
+  // TASK_UPDATE_FIELDS), so only this rule and the evening cron's direct writes
+  // ever touch them — the cron writes them DIRECTLY (not via updateTask) precisely
+  // so its increment is not immediately undone by this reset.
+  const stateReTriaged =
+    Object.prototype.hasOwnProperty.call(updatesToApply, 'state') &&
+    updatesToApply.state !== existingTask.state;
+  const sectionReTriaged =
+    Object.prototype.hasOwnProperty.call(updatesToApply, 'today_section') &&
+    updatesToApply.today_section != null;
+  if (stateReTriaged || sectionReTriaged) {
+    updatesToApply.carried_count = 0;
+    updatesToApply.carried_section = null;
   }
 
   const touches = new Set();

@@ -8,8 +8,17 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { differenceInCalendarDays, parseISO, addDays, format } from 'date-fns';
 import { getDueDateStatus } from '@/lib/dateUtils';
-import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER } from '@/lib/constants';
+import { getLondonDateKey } from '@/lib/timezone';
+import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
 import ChipBadge from './ChipBadge';
+
+// Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges.
+// Snooze presets are always derived from the London date key, never a raw Date.
+function addDaysToDateKey(dateKey, days) {
+  const d = new Date(dateKey + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // ---------------------------------------------------------------------------
 // Staleness helpers
@@ -147,9 +156,10 @@ function NoDueDatePicker({ onChangeDueDate }) {
  *   onUpdate: (taskId: string, updates: object) => void,
  *   onClick: (taskId: string) => void,
  *   onDelete: (taskId: string) => void,
+ *   onSnooze?: (taskId: string, until: string | null) => void,
  * }} props
  */
-export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick, onDelete }) {
+export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze }) {
   const {
     attributes,
     listeners,
@@ -169,6 +179,21 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   const isCompleted = task.state === STATE.DONE || !!task.completed_at;
   const chips = Array.isArray(task.chips) ? task.chips : [];
   const { isStale, isOverdue: isFollowUpOverdue } = useMemo(() => getStaleness(task), [task]);
+
+  // First-class snooze (F2): a task is actively snoozed while its snoozed_until is
+  // still in the future (London calendar). Once the date passes it reappears in
+  // planning candidates, so the badge clears too. The card never hides — the
+  // Plan board keeps it visible with this badge (snooze is a scheduled return).
+  const londonKey = getLondonDateKey();
+  const isSnoozed = !!task.snoozed_until && task.snoozed_until > londonKey;
+
+  // Carry-forward (A1): only Today cards carry a counter — unfinished Must Do tasks
+  // that the evening cron keeps in place have carried_count bumped each night.
+  // Below the threshold it is a neutral "carried N days" badge; at/above it turns
+  // amber with a "still today?" nudge so zombies surface instead of silting up Today.
+  const carriedCount = task.state === STATE.TODAY ? (task.carried_count || 0) : 0;
+  const showCarried = carriedCount >= 1 && !isCompleted;
+  const carriedNudge = carriedCount >= CARRY_NUDGE_THRESHOLD;
 
   // Card container classes
   const containerClasses = [
@@ -262,6 +287,26 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
             }`}
           >
             {isFollowUpOverdue ? 'Follow-up overdue' : 'Stale'}
+          </span>
+        )}
+
+        {/* Snoozed badge (F2): snoozed tasks stay on the board with a scheduled return */}
+        {isSnoozed && !isCompleted && (
+          <span className="mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+            Snoozed until {format(parseISO(task.snoozed_until), 'MMM d')}
+          </span>
+        )}
+
+        {/* Carried badge (A1): how many consecutive days this Today task has been carried */}
+        {showCarried && (
+          <span
+            className={`mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full ${
+              carriedNudge ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            {carriedNudge
+              ? `Carried ${carriedCount} days — still today?`
+              : `Carried ${carriedCount} day${carriedCount !== 1 ? 's' : ''}`}
           </span>
         )}
       </div>
@@ -387,6 +432,72 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
                   </button>
                 )}
               </Menu.Item>
+            )}
+
+            {/* Snooze (F2): reuse apiClient.snoozeTask via the onSnooze prop.
+                Rendered only when a handler is wired so it never dead-clicks. */}
+            {onSnooze && (
+              <>
+                <div className="my-1 border-t border-gray-100" role="separator" />
+                <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Snooze
+                </p>
+                {[
+                  { label: 'Tonight', value: londonKey },
+                  { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
+                  { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
+                ].map((opt) => (
+                  <Menu.Item key={opt.label}>
+                    {({ active }) => (
+                      <button
+                        type="button"
+                        onClick={() => onSnooze(task.id, opt.value)}
+                        className={`w-full px-3 py-1.5 text-left text-sm ${
+                          active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    )}
+                  </Menu.Item>
+                ))}
+                <Menu.Item>
+                  {({ active }) => (
+                    <label
+                      className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm ${
+                        active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                      }`}
+                    >
+                      Pick a date
+                      <input
+                        type="date"
+                        min={londonKey}
+                        className="ml-auto h-6 w-[130px] cursor-pointer rounded border border-gray-200 bg-transparent px-1 text-xs text-gray-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        defaultValue={task.snoozed_until || ''}
+                        onChange={(e) => {
+                          if (e.target.value) onSnooze(task.id, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </label>
+                  )}
+                </Menu.Item>
+                {isSnoozed && (
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        type="button"
+                        onClick={() => onSnooze(task.id, null)}
+                        className={`w-full px-3 py-1.5 text-left text-sm ${
+                          active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                        }`}
+                      >
+                        Clear snooze
+                      </button>
+                    )}
+                  </Menu.Item>
+                )}
+              </>
             )}
 
             {/* Divider */}

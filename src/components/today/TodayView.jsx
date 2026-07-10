@@ -15,7 +15,7 @@ import { ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outl
 
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
-import { TODAY_SECTION_ORDER, SOFT_CAPS } from '@/lib/constants';
+import { TODAY_SECTION_ORDER, SOFT_CAPS, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
 import { getStartOfTodayLondon } from '@/lib/dateUtils';
 import { getLondonDateKey } from '@/lib/timezone';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
@@ -502,6 +502,13 @@ export default function TodayView() {
   );
   const isTodayEmpty = !isLoading && totalTodayCount === 0;
 
+  // Carry-forward (A1): count Today tasks carried for the nudge threshold or more,
+  // so they surface as an exception ("still today?") instead of silently persisting.
+  const carriedZombies = TODAY_SECTION_ORDER.reduce(
+    (sum, key) => sum + sections[key].filter((t) => (t.carried_count || 0) >= CARRY_NUDGE_THRESHOLD).length,
+    0
+  );
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -579,6 +586,16 @@ export default function TodayView() {
             <Link href="/plan" className="underline font-medium hover:text-red-900">
               Review
             </Link>
+          </p>
+        </div>
+      )}
+
+      {/* Carried-zombie nudge (A1): tasks that have been carried for several days */}
+      {carriedZombies > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-400" />
+          <p className="flex-1 text-sm text-amber-800">
+            <strong>{carriedZombies}</strong> task{carriedZombies !== 1 ? 's' : ''} carried {CARRY_NUDGE_THRESHOLD}+ days. Still for today, or move on?
           </p>
         </div>
       )}

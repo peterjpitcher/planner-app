@@ -119,7 +119,7 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
 
-    const { dueToday, overdue } = await fetchOutstandingTasks({
+    const { dueToday, overdue, inboxCount } = await fetchOutstandingTasks({
       supabase,
       userId,
       todayDateKey: runDateKey,
@@ -129,6 +129,7 @@ export async function GET(request) {
       todayDateKey: runDateKey,
       dueToday,
       overdue,
+      inboxCount,
       dashboardUrl: process.env.DIGEST_DASHBOARD_URL,
       timeZone: digestTimeZone,
     });
