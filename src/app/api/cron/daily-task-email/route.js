@@ -119,7 +119,7 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
 
-    const { dueToday, overdue, inboxCount } = await fetchOutstandingTasks({
+    const { dueToday, overdue, inboxCount, digest } = await fetchOutstandingTasks({
       supabase,
       userId,
       todayDateKey: runDateKey,
@@ -127,6 +127,7 @@ export async function GET(request) {
 
     const email = buildDailyTaskEmail({
       todayDateKey: runDateKey,
+      digest,
       dueToday,
       overdue,
       inboxCount,
