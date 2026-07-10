@@ -83,6 +83,18 @@ export const SOFT_CAPS = {
 // silently persisting, so Today does not silt up with zombies.
 export const CARRY_NUDGE_THRESHOLD = 3;
 
+// Backlog-ageing next-review invariant (F4): an undated backlog task left
+// untouched for this many days resurfaces in the planning modal's "Still needed?"
+// group, so nothing sits unseen forever. Acting on a row (assign / defer / snooze
+// / complete) resets entered_state_at via the DB trigger, so it will not re-nag
+// until it ages again.
+export const STALE_BACKLOG_DAYS = 14;
+
+// Cap on how many aged backlog tasks surface per planning session, so an old
+// vault can never flood the modal. Rows beyond the cap are summarised as
+// "+N more ageing in backlog".
+export const REVIEW_BACKLOG_CAP = 10;
+
 // UI Constants
 export const UI_CONSTANTS = {
   MOBILE_BREAKPOINT: 640,

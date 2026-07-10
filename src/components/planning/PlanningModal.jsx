@@ -5,7 +5,7 @@ import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
-import { STATE, TODAY_SECTION, SOFT_CAPS, WINDOW_TYPE } from '@/lib/constants';
+import { STATE, TODAY_SECTION, SOFT_CAPS, WINDOW_TYPE, STALE_BACKLOG_DAYS } from '@/lib/constants';
 import { getMondayOfWeek } from '@/lib/planningWindow';
 import { getLondonDateKey } from '@/lib/timezone';
 import PlanningTaskRow from './PlanningTaskRow';
@@ -205,9 +205,14 @@ export default function PlanningModal({
   // Carried rows the user has NOT already handled individually this session —
   // the only ones "Keep yesterday's plan" should restore.
   const carriedPending = carriedFromToday.filter((t) => !actionedIds.has(t.id));
+  // Review backlog (F4): undated backlog tasks that have aged past the threshold.
+  // Rendered as its own lowest-urgency group with a gentle "still needed?" prompt.
+  // reviewBacklogTotal is the full server-side count so we can note "+N more".
+  const reviewBacklog = activeTasks?.reviewBacklog || [];
+  const reviewBacklogTotal = activeTasks?.reviewBacklogTotal || 0;
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
+    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || []), ...reviewBacklog];
 
   // Carry-forward (A1): restore every carried task to Today at its remembered
   // section in one tap. Each updateTask fires the server reset (clearing the carry
@@ -437,6 +442,39 @@ export default function PlanningModal({
                 </div>
               );
             })}
+
+            {/* Review backlog (F4): placed AFTER the main groups as the lowest-urgency
+                prompt. A gentle "still needed?" nudge for undated backlog tasks that
+                have aged past the threshold, so nothing sits unseen forever. Acting on
+                a row resets entered_state_at (DB trigger), so it will not re-nag. */}
+            {step !== 'weekly' && reviewBacklog.length > 0 && (
+              <div className="mb-6">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Still needed? — in backlog {STALE_BACKLOG_DAYS}+ days ({reviewBacklog.length})
+                </h3>
+                <div className="space-y-2">
+                  {reviewBacklog.map((task) => (
+                    <PlanningTaskRow
+                      key={task.id}
+                      task={task}
+                      mode="daily"
+                      variant="review"
+                      sectionCounts={sectionCounts}
+                      onAssign={handleAssign}
+                      onSnooze={handleSnooze}
+                      onDefer={handleDefer}
+                      onMarkDone={handleMarkDone}
+                      onProjectNavigate={onClose}
+                    />
+                  ))}
+                </div>
+                {reviewBacklogTotal > reviewBacklog.length && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    +{reviewBacklogTotal - reviewBacklog.length} more ageing in backlog — clear these first, the rest resurface as they age.
+                  </p>
+                )}
+              </div>
+            )}
 
             {currentTasks.length === 0 && (
               <p className="py-8 text-center text-sm text-muted-foreground">

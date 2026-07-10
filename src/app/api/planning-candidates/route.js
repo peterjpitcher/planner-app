@@ -1,6 +1,7 @@
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sortTasksByPriority } from '@/lib/taskSort';
+import { STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP } from '@/lib/constants';
 import { NextResponse } from 'next/server';
 
 const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, entered_state_at, snoozed_until, snooze_count, carried_section, carried_count, created_at';
@@ -39,7 +40,17 @@ export async function GET(request) {
     const snoozeFilter = `snoozed_until.is.null,snoozed_until.lte.${windowDate}`;
 
     if (windowType === 'daily') {
-      const [carriedFromToday, inbox, dueTomorrow, overdue, undatedThisWeek] = await Promise.all([
+      // F4 backlog-ageing threshold. Derive the cutoff date from the validated
+      // windowDate (noon UTC to sidestep DST edges, mirroring the weekly weekEnd
+      // computation below and getDatePlusDays), never a live clock, so it tracks
+      // the planning window. A backlog task whose entered_state_at falls before
+      // this date has aged past STALE_BACKLOG_DAYS and is due a "still needed?"
+      // review.
+      const staleThreshold = new Date(windowDate + 'T12:00:00Z');
+      staleThreshold.setUTCDate(staleThreshold.getUTCDate() - STALE_BACKLOG_DAYS);
+      const staleThresholdDate = staleThreshold.toISOString().slice(0, 10);
+
+      const [carriedFromToday, inbox, dueTomorrow, overdue, undatedThisWeek, reviewBacklog, reviewBacklogCount] = await Promise.all([
         // 0. Carry-forward (A1): unfinished Good to Do / Quick Wins demoted from
         //    Today by the evening cron keep their original today_section in
         //    carried_section. Surface them FIRST as their own group so the modal
@@ -115,10 +126,44 @@ export async function GET(request) {
           .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
+
+        // 5. Review backlog (F4): undated backlog tasks that have aged past
+        //    STALE_BACKLOG_DAYS resurface for a "still needed?" decision so nothing
+        //    sits unseen forever. Undated only (due_date IS NULL) so it never
+        //    double-counts with the dated dueTomorrow/overdue buckets; inbox=false
+        //    so it never overlaps the inbox bucket. Ordered oldest-first (longest
+        //    in state) so the cap keeps the items most at risk of being lost, then
+        //    re-ranked by the F1 comparator for display. Capped at
+        //    REVIEW_BACKLOG_CAP so an old vault cannot flood the modal.
+        supabase
+          .from('tasks')
+          .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
+          .eq('user_id', userId)
+          .eq('state', 'backlog')
+          .eq('inbox', false)
+          .is('due_date', null)
+          .lt('entered_state_at', staleThresholdDate)
+          .or(snoozeFilter)
+          .order('entered_state_at', { ascending: true })
+          .order('created_at', { ascending: true })
+          .limit(REVIEW_BACKLOG_CAP),
+
+        // 6. Full count of matching aged backlog rows (head:true — count only, no
+        //    rows) so the modal can show "+N more ageing in backlog" when the list
+        //    exceeds the cap. Filters mirror bucket 5 exactly.
+        supabase
+          .from('tasks')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('state', 'backlog')
+          .eq('inbox', false)
+          .is('due_date', null)
+          .lt('entered_state_at', staleThresholdDate)
+          .or(snoozeFilter),
       ]);
 
-      if (carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error) {
-        const err = carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error;
+      if (carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error || reviewBacklog.error || reviewBacklogCount.error) {
+        const err = carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error || reviewBacklog.error || reviewBacklogCount.error;
         console.error('Planning candidates query error:', err);
         return NextResponse.json({ error: 'Failed to fetch planning candidates' }, { status: 500 });
       }
@@ -133,6 +178,8 @@ export async function GET(request) {
           dueTomorrow: sortTasksByPriority(flattenProjects(dueTomorrow.data), { todayKey: windowDate }),
           overdue: sortTasksByPriority(flattenProjects(overdue.data), { todayKey: windowDate }),
           undatedThisWeek: sortTasksByPriority(flattenProjects(undatedThisWeek.data), { todayKey: windowDate }),
+          reviewBacklog: sortTasksByPriority(flattenProjects(reviewBacklog.data), { todayKey: windowDate }),
+          reviewBacklogTotal: reviewBacklogCount.count ?? 0,
         },
       });
     }

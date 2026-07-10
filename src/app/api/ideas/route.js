@@ -2,7 +2,7 @@ import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-import { listIdeas, createIdea } from '@/services/ideaService';
+import { listIdeas, listIdeasDueForReview, createIdea } from '@/services/ideaService';
 
 // GET /api/ideas - List ideas, optionally filtered by idea_state
 export async function GET(request) {
@@ -28,9 +28,25 @@ export async function GET(request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const ideaState = searchParams.get('idea_state');
-
     const supabase = getSupabaseServiceRole();
+
+    // F4: due-for-review — "Ready Later" ideas whose review_date has arrived.
+    // Returns the same { data: [...] } shape as the default list so the client
+    // consumes it via the existing apiClient.getIdeas() path.
+    if (searchParams.get('due_for_review') === '1') {
+      const { data, error } = await listIdeasDueForReview({
+        supabase,
+        userId: session.user.id,
+      });
+
+      if (error) {
+        return NextResponse.json({ error: error.message || 'Unable to fetch ideas' }, { status: error.status || 500 });
+      }
+
+      return NextResponse.json({ data });
+    }
+
+    const ideaState = searchParams.get('idea_state');
     const { data, error } = await listIdeas({
       supabase,
       userId: session.user.id,

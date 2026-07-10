@@ -358,7 +358,7 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
             onChange={(e) => handleReviewDateChange(e.target.value)}
             className="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-sm text-gray-800 focus:border-green-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-green-400"
           />
-          {/* Quick picks */}
+          {/* Quick picks — reschedule the review out by a fixed window */}
           <div className="flex gap-1.5">
             {[
               { label: '+1 week', days: 7 },
@@ -381,7 +381,18 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
             ))}
           </div>
           {reviewLabel && (
-            <p className="text-xs text-green-600">Review: {reviewLabel}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-green-600">Review: {reviewLabel}</p>
+              {/* Reviewed — clear the review date so the idea leaves the
+                  "Due for review" section (F4). */}
+              <button
+                type="button"
+                onClick={() => handleReviewDateChange('')}
+                className="rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+              >
+                Reviewed — clear date
+              </button>
+            </div>
           )}
         </div>
       )}

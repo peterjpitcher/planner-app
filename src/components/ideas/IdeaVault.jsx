@@ -33,6 +33,9 @@ function IdeaCardSkeleton() {
 
 export default function IdeaVault() {
   const [ideas, setIdeas] = useState([]);
+  // F4: "Ready Later" ideas whose review_date has arrived, from the server
+  // (uses the London date key). Surfaced at the top of the vault for a decision.
+  const [dueForReview, setDueForReview] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [captureInput, setCaptureInput] = useState('');
@@ -44,15 +47,30 @@ export default function IdeaVault() {
   // Data fetching
   // -------------------------------------------------------------------------
 
+  // F4: refresh only the due-for-review list. Called after a mutation so a
+  // rescheduled or cleared idea leaves the top section without a full reload.
+  const refreshDueForReview = useCallback(async () => {
+    try {
+      const due = await apiClient.getIdeas({ due_for_review: 1 });
+      setDueForReview(due);
+    } catch {
+      // Non-fatal — keep the prior due list rather than surfacing an error.
+    }
+  }, []);
+
   const loadIdeas = useCallback(async () => {
     // Latest-wins guard so overlapping refetches (mount + ideas-changed) can't let
     // a stale response land last. Refetches revalidate quietly (loading stays off).
     const token = loadGuardRef.current.begin();
     try {
       setError(null);
-      const data = await apiClient.getIdeas();
+      const [data, due] = await Promise.all([
+        apiClient.getIdeas(),
+        apiClient.getIdeas({ due_for_review: 1 }),
+      ]);
       if (loadGuardRef.current.isStale(token)) return;
       setIdeas(data);
+      setDueForReview(due);
     } catch (err) {
       if (loadGuardRef.current.isStale(token)) return;
       setError(err.message || 'Failed to load ideas.');
@@ -110,16 +128,20 @@ export default function IdeaVault() {
       setIdeas((prev) =>
         prev.map((idea) => (idea.id === id ? { ...idea, ...updated } : idea))
       );
+      // F4: a change to review_date or idea_state can add or remove the idea
+      // from the due-for-review section — resync it from the server.
+      refreshDueForReview();
     } catch (err) {
       setError(err.message || 'Failed to update idea.');
     }
-  }, []);
+  }, [refreshDueForReview]);
 
   const handlePromote = useCallback(async (id) => {
     try {
       await apiClient.promoteIdea(id);
       // Remove from list — it's now a task
       setIdeas((prev) => prev.filter((idea) => idea.id !== id));
+      setDueForReview((prev) => prev.filter((idea) => idea.id !== id));
       // Show toast if available via window.__toast
       if (typeof window !== 'undefined' && window.__toast) {
         window.__toast.success('Idea promoted to task in Backlog');
@@ -133,6 +155,7 @@ export default function IdeaVault() {
     try {
       await apiClient.deleteIdea(id);
       setIdeas((prev) => prev.filter((idea) => idea.id !== id));
+      setDueForReview((prev) => prev.filter((idea) => idea.id !== id));
     } catch (err) {
       setError(err.message || 'Failed to delete idea.');
     }
@@ -142,8 +165,14 @@ export default function IdeaVault() {
   // Group ideas by state, respecting IDEA_STATE_ORDER
   // -------------------------------------------------------------------------
 
+  // F4: ideas already shown in the "Due for review" section are excluded from
+  // the Ready Later column so a due idea is not rendered twice.
+  const dueIds = new Set(dueForReview.map((idea) => idea.id));
+
   const grouped = IDEA_STATE_ORDER.reduce((acc, state) => {
-    acc[state] = ideas.filter((idea) => idea.idea_state === state);
+    acc[state] = ideas.filter(
+      (idea) => idea.idea_state === state && !dueIds.has(idea.id)
+    );
     return acc;
   }, {});
 
@@ -231,6 +260,32 @@ export default function IdeaVault() {
             Add your first idea
           </button>
         </div>
+      )}
+
+      {/* F4: Due for review — Ready Later ideas whose review_date has arrived */}
+      {!loading && dueForReview.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-amber-600">
+            Due for review
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+              {dueForReview.length}
+            </span>
+          </h2>
+          <p className="mb-3 text-xs text-gray-400">
+            These Ready Later ideas have reached their review date. Decide, reschedule, or clear the date.
+          </p>
+          <div className="space-y-2">
+            {dueForReview.map((idea) => (
+              <IdeaCard
+                key={idea.id}
+                idea={idea}
+                onUpdate={handleUpdate}
+                onPromote={handlePromote}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Grouped sections */}
