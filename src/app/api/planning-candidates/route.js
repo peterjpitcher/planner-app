@@ -46,8 +46,13 @@ export async function GET(request) {
       // the planning window. A backlog task whose entered_state_at falls before
       // this date has aged past STALE_BACKLOG_DAYS and is due a "still needed?"
       // review.
+      // Subtract STALE_BACKLOG_DAYS-1 so the strict `.lt(entered_state_at, ...)`
+      // below includes tasks aged EXACTLY STALE_BACKLOG_DAYS days (entered on
+      // windowDate-14), matching the "14+ days" label — entered_state_at is a
+      // timestamptz, so `.lt` against windowDate-14's midnight would wrongly
+      // exclude a task entered at any time on windowDate-14.
       const staleThreshold = new Date(windowDate + 'T12:00:00Z');
-      staleThreshold.setUTCDate(staleThreshold.getUTCDate() - STALE_BACKLOG_DAYS);
+      staleThreshold.setUTCDate(staleThreshold.getUTCDate() - (STALE_BACKLOG_DAYS - 1));
       const staleThresholdDate = staleThreshold.toISOString().slice(0, 10);
 
       const [carriedFromToday, inbox, dueTomorrow, overdue, undatedThisWeek, reviewBacklog, reviewBacklogCount] = await Promise.all([

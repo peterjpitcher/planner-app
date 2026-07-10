@@ -46,6 +46,29 @@ function baseData(overrides = {}) {
   };
 }
 
+describe('buildDigestEmail — decision dedup', () => {
+  it('lists and counts a task matching multiple lenses only once (highest precedence)', () => {
+    const shared = task({ id: 'dup-1', name: 'Chase invoice', state: 'this_week', today_section: null, due_date: '2026-07-01' });
+    const email = buildDigestEmail(baseData({
+      decisions: {
+        inbox: [],
+        snoozedToday: [{ ...shared }],   // also matches overdue below
+        overdue: [{ ...shared }],
+        overCapSections: [],
+        staleWaiting: [],
+        thriceSnoozed: [{ ...shared }],  // and thrice-snoozed
+        carried3Days: [],
+      },
+    }));
+    expect(email).not.toBeNull();
+    // Appears once across the whole "Needs a decision" block...
+    const occurrences = email.text.split('Chase invoice').length - 1;
+    expect(occurrences).toBe(1);
+    // ...and the headline count treats it as a single decision.
+    expect(email.text).toContain('NEEDS A DECISION (1)');
+  });
+});
+
 describe('buildDigestEmail — empty state', () => {
   it('returns null when there is nothing to send', () => {
     expect(buildDigestEmail(baseData())).toBeNull();
@@ -61,7 +84,7 @@ describe('buildDigestEmail — empty state', () => {
   it('sends when only This Week carried items exist (no today tasks)', () => {
     const email = buildDigestEmail(baseData({ carried: { mustDoCarried: 0, thisWeekCarried: 2 } }));
     expect(email).not.toBeNull();
-    expect(email.text).toContain('2 items moved to This Week');
+    expect(email.text).toContain('2 items currently carried in This Week');
   });
 });
 
@@ -160,7 +183,7 @@ describe('buildDigestEmail — Ideas + carried-forward', () => {
       todayBySection: { must_do: [task({ name: 'x', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
       carried: { mustDoCarried: 2, thisWeekCarried: 3 },
     }));
-    expect(email.text).toContain('Carried forward: 2 Must Do carried from yesterday; 3 items moved to This Week.');
+    expect(email.text).toContain('Carried forward: 2 Must Do carried from yesterday; 3 items currently carried in This Week.');
   });
 
   it('truncates ideas beyond the cap', () => {

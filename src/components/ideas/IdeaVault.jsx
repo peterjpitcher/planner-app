@@ -42,6 +42,7 @@ export default function IdeaVault() {
   const [isCapturing, setIsCapturing] = useState(false);
   const captureRef = useRef(null);
   const loadGuardRef = useRef(createLatestGuard());
+  const dueGuardRef = useRef(createLatestGuard());
 
   // -------------------------------------------------------------------------
   // Data fetching
@@ -50,8 +51,14 @@ export default function IdeaVault() {
   // F4: refresh only the due-for-review list. Called after a mutation so a
   // rescheduled or cleared idea leaves the top section without a full reload.
   const refreshDueForReview = useCallback(async () => {
+    // Dedicated latest-wins guard so two quick refreshes (e.g. rescheduling two
+    // cards) can't let an older in-flight response land last and resurrect a
+    // just-cleared idea. A separate guard (not loadIdeas') avoids a refresh
+    // discarding a full loadIdeas result.
+    const token = dueGuardRef.current.begin();
     try {
       const due = await apiClient.getIdeas({ due_for_review: 1 });
+      if (dueGuardRef.current.isStale(token)) return;
       setDueForReview(due);
     } catch {
       // Non-fatal — keep the prior due list rather than surfacing an error.

@@ -242,6 +242,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .eq('user_id', userId)
         .lt('due_date', today)
         .not('state', 'in', '("today","done")')
+        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true })
     ),
@@ -266,7 +267,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .eq('snoozed_until', today)
-        .neq('state', 'done')
+        .not('state', 'in', '("today","done")')
         .order('created_at', { ascending: true })
     ),
     // Snoozed 3+ times (F2): a repeatedly-deferred item that should be decided.
@@ -276,7 +277,8 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .gte('snooze_count', 3)
-        .neq('state', 'done')
+        .not('state', 'in', '("today","done")')
+        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
         .order('snooze_count', { ascending: false })
         .order('created_at', { ascending: true })
     ),
@@ -288,6 +290,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .eq('state', 'waiting')
+        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
     ),
     // Count of items now in This Week that were carried there (A1 demotion).
     safeCount(() =>
@@ -411,13 +414,31 @@ export function buildDigestEmail(data = {}) {
   const hasCarried = mustDoCarried > 0 || thisWeekCarried > 0;
 
   const decisions = data.decisions || {};
-  const inbox = decisions.inbox || [];
-  const snoozedToday = decisions.snoozedToday || [];
-  const overdue = decisions.overdue || [];
   const overCapSections = decisions.overCapSections || [];
-  const staleWaiting = decisions.staleWaiting || [];
-  const thriceSnoozed = decisions.thriceSnoozed || [];
-  const carried3Days = decisions.carried3Days || [];
+
+  // Dedup the task-based decision lists by id in precedence order, so a task that
+  // matches several lenses (e.g. overdue AND snoozed-returns-today) is listed and
+  // counted in only its highest-precedence group. overCapSections is section-based
+  // and not deduped.
+  const seenDecision = new Set();
+  const dedupeDecision = (list) => {
+    const out = [];
+    for (const t of (list || [])) {
+      const id = t && t.id != null ? t.id : null;
+      if (id != null) {
+        if (seenDecision.has(id)) continue;
+        seenDecision.add(id);
+      }
+      out.push(t);
+    }
+    return out;
+  };
+  const inbox = dedupeDecision(decisions.inbox);
+  const snoozedToday = dedupeDecision(decisions.snoozedToday);
+  const overdue = dedupeDecision(decisions.overdue);
+  const staleWaiting = dedupeDecision(decisions.staleWaiting);
+  const thriceSnoozed = dedupeDecision(decisions.thriceSnoozed);
+  const carried3Days = dedupeDecision(decisions.carried3Days);
 
   const decisionCount =
     inbox.length +
@@ -480,7 +501,7 @@ export function buildDigestEmail(data = {}) {
   if (hasCarried) {
     const bits = [];
     if (mustDoCarried) bits.push(`${mustDoCarried} Must Do carried from yesterday`);
-    if (thisWeekCarried) bits.push(`${thisWeekCarried} ${pluralise(thisWeekCarried, 'item')} moved to This Week`);
+    if (thisWeekCarried) bits.push(`${thisWeekCarried} ${pluralise(thisWeekCarried, 'item')} currently carried in This Week`);
     const line = `Carried forward: ${bits.join('; ')}.`;
     textParts.push(line);
     textParts.push('');
