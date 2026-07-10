@@ -106,6 +106,10 @@ export async function GET(request) {
 
     // Record the auto-built session so the review/undo banner can surface it and
     // the evening demote cron's guard leaves it alone.
+    // 'auto' is fully hands-off: pre-acknowledge the session so the review
+    // banner never appears. 'review' leaves reviewed_at null so the morning
+    // banner prompts a look.
+    const nowIso = new Date().toISOString();
     const { error: sessionError } = await supabase
       .from('planning_sessions')
       .upsert(
@@ -113,8 +117,9 @@ export async function GET(request) {
           user_id: userId,
           window_type: 'daily',
           window_date: todayKey,
-          completed_at: new Date().toISOString(),
+          completed_at: nowIso,
           auto_planned: true,
+          reviewed_at: level === AUTOPILOT_LEVEL.AUTO ? nowIso : null,
         },
         { onConflict: 'user_id,window_type,window_date' }
       );
