@@ -62,6 +62,16 @@ export const WINDOW_TYPE = {
   WEEKLY: 'weekly'
 };
 
+// Morning autopilot level (A3 / F5-lite). 'off' preserves the fully-manual
+// behaviour (default); 'review' builds the day and shows a prominent
+// review/undo banner until acknowledged; 'auto' builds the day with a lighter
+// banner. Mirrors the user_settings.autopilot_level CHECK constraint.
+export const AUTOPILOT_LEVEL = {
+  OFF: 'off',
+  REVIEW: 'review',
+  AUTO: 'auto'
+};
+
 // Default planning window times
 export const PLANNING_DEFAULTS = {
   DAILY_START: '20:05',

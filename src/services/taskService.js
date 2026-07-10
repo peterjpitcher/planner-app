@@ -103,7 +103,7 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, created_at, updated_at';
 
 export async function createTask({ supabase, userId, payload, options = {} }) {
   // Map camelCase frontend fields to snake_case DB columns
@@ -271,6 +271,12 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   if (stateReTriaged || sectionReTriaged) {
     updatesToApply.carried_count = 0;
     updatesToApply.carried_section = null;
+    // Morning autopilot (A3): a manual re-triage means this row is no longer
+    // purely auto-placed, so it drops out of the "Clear auto-plan" undo set and
+    // loses its "Auto-added" provenance. autoplanned_at is server-managed
+    // (absent from TASK_UPDATE_FIELDS) — only the autopilot sets it and only this
+    // reset clears it, so the client can never touch it directly.
+    updatesToApply.autoplanned_at = null;
   }
 
   const touches = new Set();

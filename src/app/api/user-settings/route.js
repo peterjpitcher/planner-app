@@ -1,15 +1,21 @@
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
-import { PLANNING_DEFAULTS } from '@/lib/constants';
+import { PLANNING_DEFAULTS, AUTOPILOT_LEVEL } from '@/lib/constants';
 
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const AUTOPILOT_LEVELS = Object.values(AUTOPILOT_LEVEL); // ['off','review','auto']
+
+// Columns returned by GET/PATCH. autopilot_level (A3) defaults to 'off'.
+const SETTINGS_SELECT =
+  'daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end, autopilot_level';
 
 const DEFAULTS = {
   daily_plan_start: PLANNING_DEFAULTS.DAILY_START,
   daily_plan_end: PLANNING_DEFAULTS.DAILY_END,
   weekly_plan_start: PLANNING_DEFAULTS.WEEKLY_START,
   weekly_plan_end: PLANNING_DEFAULTS.WEEKLY_END,
+  autopilot_level: AUTOPILOT_LEVEL.OFF,
 };
 
 // GET /api/user-settings — returns user's planning settings or defaults
@@ -23,7 +29,7 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const { data, error } = await supabase
       .from('user_settings')
-      .select('daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end')
+      .select(SETTINGS_SELECT)
       .eq('user_id', session.user.id)
       .maybeSingle();
 
@@ -32,14 +38,18 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
     }
 
-    // Return saved settings or defaults (don't create a row)
+    // Return saved settings or defaults (don't create a row). A row that predates
+    // the autopilot column still reads back the DB default, but guard here too.
     return NextResponse.json({
-      data: data || {
-        daily_plan_start: DEFAULTS.daily_plan_start,
-        daily_plan_end: DEFAULTS.daily_plan_end,
-        weekly_plan_start: DEFAULTS.weekly_plan_start,
-        weekly_plan_end: DEFAULTS.weekly_plan_end,
-      },
+      data: data
+        ? { ...data, autopilot_level: data.autopilot_level || DEFAULTS.autopilot_level }
+        : {
+            daily_plan_start: DEFAULTS.daily_plan_start,
+            daily_plan_end: DEFAULTS.daily_plan_end,
+            weekly_plan_start: DEFAULTS.weekly_plan_start,
+            weekly_plan_end: DEFAULTS.weekly_plan_end,
+            autopilot_level: DEFAULTS.autopilot_level,
+          },
     });
   } catch (err) {
     console.error('User settings GET error:', err);
@@ -56,7 +66,7 @@ export async function PATCH(request) {
     }
 
     const body = await request.json();
-    const { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end } = body;
+    const { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end, autopilot_level } = body;
 
     const supabase = getSupabaseServiceRole();
 
@@ -77,7 +87,7 @@ export async function PATCH(request) {
 
     const storedSettings = existingSettings || DEFAULTS;
 
-    // Validate all four fields
+    // Validate all four time fields
     const fields = { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end };
     const errors = {};
     for (const [key, value] of Object.entries(fields)) {
@@ -85,6 +95,11 @@ export async function PATCH(request) {
       if (typeof value !== 'string' || !TIME_REGEX.test(value)) {
         errors[key] = 'Must be a valid time in HH:MM format (00:00 to 23:59)';
       }
+    }
+
+    // Validate autopilot_level (A3) — one of the three allowed levels.
+    if (autopilot_level !== undefined && !AUTOPILOT_LEVELS.includes(autopilot_level)) {
+      errors.autopilot_level = `Must be one of: ${AUTOPILOT_LEVELS.join(', ')}`;
     }
 
     // Check start != end for daily and weekly pairs, merging provided values
@@ -118,6 +133,7 @@ export async function PATCH(request) {
     if (daily_plan_end !== undefined) updates.daily_plan_end = daily_plan_end;
     if (weekly_plan_start !== undefined) updates.weekly_plan_start = weekly_plan_start;
     if (weekly_plan_end !== undefined) updates.weekly_plan_end = weekly_plan_end;
+    if (autopilot_level !== undefined) updates.autopilot_level = autopilot_level;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
@@ -132,7 +148,7 @@ export async function PATCH(request) {
         },
         { onConflict: 'user_id' }
       )
-      .select('daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end')
+      .select(SETTINGS_SELECT)
       .single();
 
     if (error) {

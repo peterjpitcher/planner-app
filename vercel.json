@@ -28,6 +28,14 @@
     {
       "path": "/api/cron/demote-week-tasks",
       "schedule": "55 19 * * *"
+    },
+    {
+      "path": "/api/cron/morning-autopilot",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/morning-autopilot",
+      "schedule": "0 5 * * *"
     }
   ]
 }
