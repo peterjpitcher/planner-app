@@ -93,12 +93,14 @@ describe('updateTask — capture inbox clear-on-triage (F3)', () => {
     expect(payload.inbox).toBe(false);
   });
 
-  it('clears inbox when the task is snoozed', async () => {
+  it('does NOT clear inbox when the task is only snoozed (deferral, not triage)', async () => {
+    // Snoozing must keep inbox set so the capture re-surfaces in the inbox bucket
+    // once the snooze expires, instead of vanishing from the triage flow.
     const { payload } = await runUpdate(
       { state: 'backlog', snoozed_until: null, inbox: true },
       { snoozed_until: '2026-07-20' }
     );
-    expect(payload.inbox).toBe(false);
+    expect(payload.inbox).toBeUndefined();
   });
 
   it('clears inbox on a section-only move within Today', async () => {

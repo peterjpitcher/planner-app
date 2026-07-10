@@ -74,8 +74,10 @@ export default function PlanningTaskRow({
   const snoozeCount = task.snooze_count || 0;
   const snoozeEscalated = snoozeCount >= 3;
   const londonKey = getLondonDateKey();
+  // Snooze "until" is the date the task should reappear as a candidate; a value
+  // <= today never hides it, so the shortest preset is tomorrow, not tonight.
   const snoozePresets = [
-    { label: 'Tonight', value: londonKey },
+    { label: 'Tomorrow', value: addDaysToDateKey(londonKey, 1) },
     { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
     { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
   ];

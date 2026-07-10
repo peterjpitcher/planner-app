@@ -53,6 +53,7 @@ export async function GET(request) {
           .eq('user_id', userId)
           .eq('state', 'this_week')
           .not('carried_section', 'is', null)
+          .eq('inbox', false)
           .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
@@ -110,6 +111,7 @@ export async function GET(request) {
           .eq('state', 'this_week')
           .is('due_date', null)
           .is('carried_section', null)
+          .eq('inbox', false)
           .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),

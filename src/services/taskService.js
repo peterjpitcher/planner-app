@@ -231,10 +231,14 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   // guaranteed exactly one triage moment. Clear the flag the instant the task is
   // genuinely triaged — i.e. this update makes a real placement decision:
   // it changes state (state -> done also counts, so completing clears it),
-  // today_section, due_date, or snoozed_until. A plain rename / area /
-  // description edit leaves the task untriaged, so its inbox flag must survive.
-  // inbox is not in TASK_UPDATE_FIELDS, so a client can never set or clear it
-  // directly — only this server rule does.
+  // today_section, or due_date. Snoozing is a DEFERRAL, not a triage decision,
+  // so it must NOT clear inbox: otherwise a captured task snoozed once would
+  // lose its flag and, after the snooze expired, match no planning-candidate
+  // bucket — silently vanishing from the guaranteed-triage flow. The snooze
+  // filter already hides the task until its date, after which inbox=true
+  // re-surfaces it in the inbox bucket. A plain rename / area / description edit
+  // likewise leaves it untriaged, so its inbox flag survives. inbox is not in
+  // TASK_UPDATE_FIELDS, so a client can never set or clear it directly.
   if (existingTask.inbox) {
     const triageChanged = (field) =>
       Object.prototype.hasOwnProperty.call(updatesToApply, field) &&
@@ -242,8 +246,7 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     const triaged =
       triageChanged('state') ||
       triageChanged('today_section') ||
-      triageChanged('due_date') ||
-      triageChanged('snoozed_until');
+      triageChanged('due_date');
     if (triaged) {
       updatesToApply.inbox = false;
     }

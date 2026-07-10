@@ -5,6 +5,7 @@ import { getLondonDateKey } from '@/lib/timezone';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
 import { resolveDigestUserId } from '@/services/dailyTaskEmailService';
+import { computeSortOrder } from '@/lib/sortOrder';
 import { STATE, TODAY_SECTION } from '@/lib/constants';
 
 function escapeHtml(str) {
@@ -130,19 +131,39 @@ export async function GET(request) {
     //     carried_section so the modal can restore them. The DB trigger clears
     //     today_section and stamps entered_state_at; carried_section persists.
     //   - updated_at is auto-stamped by the handle_tasks_updated_at trigger.
+    // Demoted tasks append to the END of This Week: their old Today sort_order is
+    // meaningless in the new column and would otherwise make them jump to the top
+    // (updateTask normally computes this append, but the carry writes are direct).
+    // Seed from the current max This Week sort_order, then step by a gap per task.
+    const { data: maxThisWeek } = await supabase
+      .from('tasks')
+      .select('sort_order')
+      .eq('user_id', userId)
+      .eq('state', STATE.THIS_WEEK)
+      .not('sort_order', 'is', null)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    let thisWeekOrder = maxThisWeek?.sort_order ?? null;
+
     const keptTasks = [];   // Must Do — remained in Today
     const movedTasks = [];  // Good to Do / Quick Wins — moved to This Week
     const failedUpdates = [];
     for (const task of tasks) {
       const staysInToday = task.today_section === TODAY_SECTION.MUST_DO;
       const nextCarried = (task.carried_count || 0) + 1;
-      const patch = staysInToday
-        ? { carried_count: nextCarried }
-        : {
-            state: STATE.THIS_WEEK,
-            carried_section: task.today_section || null,
-            carried_count: nextCarried,
-          };
+      let patch;
+      if (staysInToday) {
+        patch = { carried_count: nextCarried };
+      } else {
+        thisWeekOrder = computeSortOrder(thisWeekOrder, null); // append to end of This Week
+        patch = {
+          state: STATE.THIS_WEEK,
+          carried_section: task.today_section || null,
+          carried_count: nextCarried,
+          sort_order: thisWeekOrder,
+        };
+      }
 
       const { error: updateError } = await supabase
         .from('tasks')

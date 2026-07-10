@@ -47,6 +47,10 @@ export default function PlanningModal({
   // Count of tasks the user acted on in this session (assign / accept / defer / snooze),
   // so Finish Planning can warn only when the user truly did nothing.
   const [actionedCount, setActionedCount] = useState(0);
+  // Ids of tasks individually actioned this session. "Keep yesterday's plan"
+  // must skip carried rows the user has already handled, otherwise it would
+  // revert a just-completed / re-sectioned / snoozed carried task.
+  const [actionedIds, setActionedIds] = useState(() => new Set());
   // Carry-forward (A1): one-tap "Keep yesterday's plan" state. keepingPlan guards
   // the in-flight restore; carriedKept collapses the carried group into a
   // confirmation once restored, without mutating the candidate props.
@@ -59,6 +63,7 @@ export default function PlanningModal({
   useEffect(() => {
     if (!isOpen) return;
     setActionedCount(0);
+    setActionedIds(new Set());
     setFinishError(null);
     setCarriedKept(false);
     setKeepingPlan(false);
@@ -135,6 +140,7 @@ export default function PlanningModal({
     // task changes state, so the modal no longer does a racy per-row full fetch
     // to derive max+1 (FF-035).
     await apiClient.updateTask(taskId, updates);
+    setActionedIds((prev) => new Set(prev).add(taskId));
 
     // Update section counts if assigning to today
     if (updates.today_section) {
@@ -155,6 +161,7 @@ export default function PlanningModal({
     // server increments snooze_count. Replaces the old in-memory Skip, which was
     // never persisted and let the same rows reappear every session.
     await apiClient.snoozeTask(taskId, until);
+    setActionedIds((prev) => new Set(prev).add(taskId));
     setActionedCount((prev) => prev + 1);
   }, []);
 
@@ -163,6 +170,7 @@ export default function PlanningModal({
     // from inside the planning modal. updateTask on state=done sets completed_at
     // server-side.
     await apiClient.updateTask(taskId, { state: STATE.DONE });
+    setActionedIds((prev) => new Set(prev).add(taskId));
     setActionedCount((prev) => prev + 1);
   }, []);
 
@@ -186,6 +194,7 @@ export default function PlanningModal({
     }
 
     await apiClient.updateTask(taskId, updates);
+    setActionedIds((prev) => new Set(prev).add(taskId));
     setActionedCount((prev) => prev + 1);
   }, [step, windowDate]);
 
@@ -193,6 +202,9 @@ export default function PlanningModal({
   // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
   const activeTasks = (isCombinedFlow && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
   const carriedFromToday = activeTasks?.carriedFromToday || [];
+  // Carried rows the user has NOT already handled individually this session —
+  // the only ones "Keep yesterday's plan" should restore.
+  const carriedPending = carriedFromToday.filter((t) => !actionedIds.has(t.id));
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
     : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
@@ -201,12 +213,18 @@ export default function PlanningModal({
   // section in one tap. Each updateTask fires the server reset (clearing the carry
   // markers) and dispatches tasks-changed; carriedKept then collapses the group.
   const handleKeepYesterday = useCallback(async () => {
-    if (carriedFromToday.length === 0 || keepingPlan) return;
+    // Only restore carried rows the user has not already actioned this session,
+    // so Keep never reverts a just-completed / re-sectioned / snoozed task.
+    const toRestore = carriedFromToday.filter((t) => !actionedIds.has(t.id));
+    if (toRestore.length === 0 || keepingPlan) {
+      setCarriedKept(true);
+      return;
+    }
     setKeepingPlan(true);
     setFinishError(null);
     try {
-      await apiClient.restoreCarriedTasks(carriedFromToday);
-      setActionedCount((prev) => prev + carriedFromToday.length);
+      await apiClient.restoreCarriedTasks(toRestore);
+      setActionedCount((prev) => prev + toRestore.length);
       setCarriedKept(true);
     } catch (err) {
       console.error('Failed to restore yesterday’s plan:', err);
@@ -214,7 +232,7 @@ export default function PlanningModal({
     } finally {
       setKeepingPlan(false);
     }
-  }, [carriedFromToday, keepingPlan]);
+  }, [carriedFromToday, actionedIds, keepingPlan]);
 
   const handleFinish = useCallback(async () => {
     // Guard against finishing before the user has done anything. Any row
@@ -360,7 +378,7 @@ export default function PlanningModal({
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Carried from today ({carriedFromToday.length})
                   </h3>
-                  {!carriedKept && (
+                  {!carriedKept && carriedPending.length > 0 && (
                     <button
                       type="button"
                       onClick={handleKeepYesterday}
