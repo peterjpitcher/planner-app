@@ -41,11 +41,10 @@ export default function PlanningModal({
     [TODAY_SECTION.QUICK_WINS]: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [skippedIds, setSkippedIds] = useState(new Set());
   const [dailyTasks, setDailyTasks] = useState(null);
   // Inline error surfaced near the footer when Finish Planning fails (FF-045).
   const [finishError, setFinishError] = useState(null);
-  // Count of tasks the user acted on in this session (assign / accept / defer / skip),
+  // Count of tasks the user acted on in this session (assign / accept / defer / snooze),
   // so Finish Planning can warn only when the user truly did nothing.
   const [actionedCount, setActionedCount] = useState(0);
 
@@ -54,7 +53,6 @@ export default function PlanningModal({
   // stale step / counter / skipped values.
   useEffect(() => {
     if (!isOpen) return;
-    setSkippedIds(new Set());
     setActionedCount(0);
     setFinishError(null);
 
@@ -144,8 +142,12 @@ export default function PlanningModal({
     }
   }, []);
 
-  const handleSkip = useCallback((taskId) => {
-    setSkippedIds((prev) => new Set(prev).add(taskId));
+  const handleSnooze = useCallback(async (taskId, until) => {
+    // First-class snooze (F2): persist snoozed_until so the task disappears from
+    // planning candidates until its date, then reappears automatically. The
+    // server increments snooze_count. Replaces the old in-memory Skip, which was
+    // never persisted and let the same rows reappear every session.
+    await apiClient.snoozeTask(taskId, until);
     setActionedCount((prev) => prev + 1);
   }, []);
 
@@ -189,14 +191,14 @@ export default function PlanningModal({
 
   const handleFinish = useCallback(async () => {
     // Guard against finishing before the user has done anything. Any row
-    // action (pill, Accept, Skip, Defer) counts; we only warn on true inaction.
+    // action (pill, Accept, Snooze, Defer) counts; we only warn on true inaction.
     const hasCandidates = currentTasks.length > 0;
     if (hasCandidates && actionedCount === 0) {
       const confirmed = typeof window !== 'undefined'
         ? window.confirm(
             step === 'weekly'
-              ? 'You haven\u2019t reviewed any tasks yet. Accept, Defer or Skip each one, or confirm to finish with nothing recorded.'
-              : 'You haven\u2019t reviewed any tasks yet. Pick a section, Defer, or Skip each one, or confirm to finish with nothing recorded.'
+              ? 'You haven\u2019t reviewed any tasks yet. Accept, Defer or Snooze each one, or confirm to finish with nothing recorded.'
+              : 'You haven\u2019t reviewed any tasks yet. Pick a section, Defer, or Snooze each one, or confirm to finish with nothing recorded.'
           )
         : true;
       if (!confirmed) return;
@@ -212,7 +214,6 @@ export default function PlanningModal({
         const dailyCandidates = await apiClient.getPlanningCandidates('daily', windowDate);
         setDailyTasks(dailyCandidates);
         setStep('daily');
-        setSkippedIds(new Set());
         setActionedCount(0);
         setIsSubmitting(false);
         return;
@@ -318,8 +319,8 @@ export default function PlanningModal({
             {currentTasks.length > 0 && (
               <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 {step === 'weekly'
-                  ? 'Tap Accept on each task you want on this week\u2019s plan. Complete marks tasks you\u2019ve already done; Defer changes the due date; Skip sets it aside for this session. Nothing is added until you pick an action.'
-                  : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Complete marks tasks you\u2019ve already done; Defer changes the due date; Skip sets it aside for this session. Finish Planning only records the session — tasks won\u2019t move on their own.`}
+                  ? 'Tap Accept on each task you want on this week\u2019s plan. Complete marks tasks you\u2019ve already done; Defer changes the due date; Snooze hides it until a date you pick. Nothing is added until you pick an action.'
+                  : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Complete marks tasks you\u2019ve already done; Defer changes the due date; Snooze hides it until a date you pick. Finish Planning only records the session — tasks won\u2019t move on their own.`}
               </p>
             )}
             {taskSections.map((section) => {
@@ -337,7 +338,7 @@ export default function PlanningModal({
                         mode={step === 'weekly' ? 'weekly' : 'daily'}
                         sectionCounts={sectionCounts}
                         onAssign={handleAssign}
-                        onSkip={handleSkip}
+                        onSnooze={handleSnooze}
                         onDefer={handleDefer}
                         onMarkDone={handleMarkDone}
                         onProjectNavigate={onClose}

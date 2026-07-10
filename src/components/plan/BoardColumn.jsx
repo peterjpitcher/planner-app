@@ -25,7 +25,7 @@ const SECTION_SOFT_CAP = {
   [TODAY_SECTION.QUICK_WINS]: SOFT_CAPS.QUICK_WINS,
 };
 
-function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onClick, onDelete }) {
+function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze }) {
   const [expanded, setExpanded] = useState(true);
   const label = SECTION_LABELS[sectionKey] ?? sectionKey;
   const cap = SECTION_SOFT_CAP[sectionKey];
@@ -80,6 +80,7 @@ function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onCl
                   onUpdate={onUpdate}
                   onClick={onClick}
                   onDelete={onDelete}
+                  onSnooze={onSnooze}
                 />
               ))
             )}
@@ -94,7 +95,7 @@ function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onCl
 // Waiting task card — shows follow-up date and stale flags prominently
 // ---------------------------------------------------------------------------
 
-function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete }) {
+function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze }) {
   const [editing, setEditing] = useState(false);
   const inputRef = useRef(null);
 
@@ -179,6 +180,7 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete 
         onUpdate={onUpdate}
         onClick={onClick}
         onDelete={onDelete}
+        onSnooze={onSnooze}
       />
     </div>
   );
@@ -218,6 +220,7 @@ const PAGE_SIZE = 20;
  *   onUpdate: (taskId: string, updates: object) => void,
  *   onClick: (taskId: string) => void,
  *   onDelete: (taskId: string) => void,
+ *   onSnooze?: (taskId: string, until: string | null) => void,
  *   children?: React.ReactNode,
  *   areas?: string[],
  *   onLoadMore?: () => void,
@@ -235,6 +238,7 @@ export default function BoardColumn({
   onUpdate,
   onClick,
   onDelete,
+  onSnooze,
   children,
   areas = [],
   onLoadMore,
@@ -417,6 +421,7 @@ export default function BoardColumn({
                 onUpdate={onUpdate}
                 onClick={onClick}
                 onDelete={onDelete}
+                onSnooze={onSnooze}
               />
             ))}
           </div>
@@ -438,6 +443,7 @@ export default function BoardColumn({
                     onUpdate={onUpdate}
                     onClick={onClick}
                     onDelete={onDelete}
+                    onSnooze={onSnooze}
                   />
                 ))
               )}
@@ -462,6 +468,7 @@ export default function BoardColumn({
                     onUpdate={onUpdate}
                     onClick={onClick}
                     onDelete={onDelete}
+                    onSnooze={onSnooze}
                   />
                 ))
               )}
@@ -495,6 +502,7 @@ export default function BoardColumn({
                     onUpdate={onUpdate}
                     onClick={onClick}
                     onDelete={onDelete}
+                    onSnooze={onSnooze}
                   />
                 ))
               )}

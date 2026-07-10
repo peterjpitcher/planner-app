@@ -210,6 +210,27 @@ class APIClient {
     return result;
   }
 
+  // First-class snooze (F2). snoozeTask hides a task from planning candidates
+  // until `until` (a YYYY-MM-DD London date); the server increments snooze_count.
+  // unsnoozeTask clears it. Both dispatch tasks-changed so boards/views refresh.
+  async snoozeTask(taskId, until) {
+    const result = await this.fetchWithAuth('/api/tasks', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: taskId, snoozed_until: until }),
+    });
+    dispatchTasksChanged();
+    return result?.data ?? result;
+  }
+
+  async unsnoozeTask(taskId) {
+    const result = await this.fetchWithAuth('/api/tasks', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: taskId, snoozed_until: null }),
+    });
+    dispatchTasksChanged();
+    return result?.data ?? result;
+  }
+
   // Update sort order for a list of tasks
   async updateSortOrder(items) {
     const result = await this.fetchWithAuth('/api/tasks/sort-order', {

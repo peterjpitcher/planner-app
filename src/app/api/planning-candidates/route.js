@@ -3,7 +3,7 @@ import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sortTasksByPriority } from '@/lib/taskSort';
 import { NextResponse } from 'next/server';
 
-const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, entered_state_at, created_at';
+const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, entered_state_at, snoozed_until, snooze_count, created_at';
 
 // GET /api/planning-candidates?windowType=daily&windowDate=2026-04-15
 export async function GET(request) {
@@ -32,6 +32,12 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const userId = session.user.id;
 
+    // First-class snooze (F2): a task is only a candidate when it is not snoozed
+    // past the planning window — snoozed_until IS NULL OR snoozed_until <= windowDate.
+    // Snoozed rows disappear until their date, then reappear automatically. windowDate
+    // is already validated as YYYY-MM-DD above, so it is safe to interpolate here.
+    const snoozeFilter = `snoozed_until.is.null,snoozed_until.lte.${windowDate}`;
+
     if (windowType === 'daily') {
       const [dueTomorrow, overdue, undatedThisWeek] = await Promise.all([
         // 1. Due tomorrow, not already in today/done
@@ -41,6 +47,7 @@ export async function GET(request) {
           .eq('user_id', userId)
           .eq('due_date', windowDate)
           .not('state', 'in', '("today","done")')
+          .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
 
@@ -51,6 +58,7 @@ export async function GET(request) {
           .eq('user_id', userId)
           .lt('due_date', windowDate)
           .not('state', 'in', '("today","done")')
+          .or(snoozeFilter)
           .order('due_date', { ascending: true })
           .order('created_at', { ascending: true }),
 
@@ -61,6 +69,7 @@ export async function GET(request) {
           .eq('user_id', userId)
           .eq('state', 'this_week')
           .is('due_date', null)
+          .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
       ]);
@@ -99,6 +108,7 @@ export async function GET(request) {
         .gte('due_date', windowDate)
         .lte('due_date', weekEndStr)
         .not('state', 'in', '("this_week","today","done")')
+        .or(snoozeFilter)
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true }),
 
@@ -112,6 +122,7 @@ export async function GET(request) {
         .eq('user_id', userId)
         .lt('due_date', windowDate)
         .not('state', 'in', '("today","done")')
+        .or(snoozeFilter)
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true }),
     ]);

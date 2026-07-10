@@ -19,6 +19,7 @@ import { createLatestGuard } from '@/lib/requestCache';
 import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { compareBacklogTasks } from '@/lib/taskSort';
+import { getLondonDateKey } from '@/lib/timezone';
 import BoardColumn from './BoardColumn';
 import TaskCard from '@/components/shared/TaskCard';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
@@ -227,6 +228,11 @@ export default function PlanBoard() {
 
   // Mobile tab state
   const [activeTab, setActiveTab] = useState(STATE.TODAY);
+
+  // First-class snooze (F2): snoozed tasks stay on the board by default (visibility
+  // invariant — snooze is a scheduled return, not a hiding place). This toggle lets
+  // the user optionally collapse them out of the columns; they keep a badge either way.
+  const [showSnoozed, setShowSnoozed] = useState(true);
 
   // ---------------------------------------------------------------------------
   // Data loading
@@ -466,6 +472,27 @@ export default function PlanBoard() {
     }
   }, [loadAllColumns]);
 
+  const handleSnooze = useCallback(async (taskId, until) => {
+    // Snooze is orthogonal to state (F2): the task keeps its column and just gains
+    // a "Snoozed until" badge, while dropping out of planning candidates until the
+    // date. Optimistically stamp snoozed_until in place; snooze_count is
+    // server-managed and refreshed by the tasks-changed refetch snoozeTask fires.
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const col of Object.keys(next)) {
+        next[col] = next[col].map((t) => (t.id === taskId ? { ...t, snoozed_until: until } : t));
+      }
+      return next;
+    });
+    setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, snoozed_until: until } : prev));
+    try {
+      await apiClient.snoozeTask(taskId, until);
+    } catch {
+      // On failure, refetch to restore server truth (quietly, no skeleton flash)
+      loadAllColumns({ silent: true });
+    }
+  }, [loadAllColumns]);
+
   const handleDeleteTask = useCallback(async (taskId) => {
     // Remove from all columns
     setColumns((prev) => {
@@ -633,13 +660,25 @@ export default function PlanBoard() {
 
   const hasAnyError = Object.keys(errors).length > 0;
 
+  // Snooze visibility (F2): a task is actively snoozed while its snoozed_until is
+  // still in the future (London calendar). Snoozed tasks stay on the board by
+  // default; the toolbar toggle can collapse them, and the count drives the toggle.
+  const todayKey = getLondonDateKey();
+  const isTaskSnoozed = (t) => !!t.snoozed_until && t.snoozed_until > todayKey;
+  const snoozedCount = Object.values(columns).reduce(
+    (n, list) => n + list.filter(isTaskSnoozed).length,
+    0
+  );
+
   // ---------------------------------------------------------------------------
   // Render helpers
   // ---------------------------------------------------------------------------
 
   function renderColumn(colKey) {
     const col = COLUMNS.find((c) => c.key === colKey);
-    const tasks = columns[colKey];
+    const tasks = showSnoozed
+      ? columns[colKey]
+      : columns[colKey].filter((t) => !isTaskSnoozed(t));
     const isLoading = loadingStates[colKey];
     const error = errors[colKey];
     const count = tasks.length;
@@ -676,6 +715,7 @@ export default function PlanBoard() {
           onUpdate={handleUpdate}
           onClick={handleClick}
           onDelete={handleDeleteTask}
+          onSnooze={handleSnooze}
           areas={colKey === STATE.BACKLOG ? areas : []}
           onLoadMore={colKey === STATE.BACKLOG ? handleLoadMoreBacklog : undefined}
           hasMore={colKey === STATE.BACKLOG ? backlogHasMore : false}
@@ -718,6 +758,20 @@ export default function PlanBoard() {
         </div>
       )}
 
+      {/* Snooze visibility toggle (F2): only shown when something is snoozed */}
+      {snoozedCount > 0 && (
+        <div className="mb-3 flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => setShowSnoozed((v) => !v)}
+            aria-pressed={showSnoozed}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {showSnoozed ? 'Hide' : 'Show'} snoozed ({snoozedCount})
+          </button>
+        </div>
+      )}
+
       {/* Desktop: 4-column grid */}
       <div className="hidden md:grid md:grid-cols-4 md:gap-4" style={{ minHeight: 'calc(100vh - 8rem)' }}>
         {COLUMNS.map((col) => renderColumn(col.key))}
@@ -728,7 +782,9 @@ export default function PlanBoard() {
         {/* Tab headers */}
         <div className="mb-3 flex overflow-x-auto border-b border-gray-200">
           {COLUMNS.map((col) => {
-            const count = columns[col.key].length;
+            const count = (showSnoozed
+              ? columns[col.key]
+              : columns[col.key].filter((t) => !isTaskSnoozed(t))).length;
             const isActive = activeTab === col.key;
             return (
               <button

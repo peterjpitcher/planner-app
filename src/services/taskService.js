@@ -17,6 +17,10 @@ const TASK_UPDATE_FIELDS = new Set([
   'waiting_reason',
   'follow_up_date',
   'project_id',
+  // First-class snooze (F2): snoozed_until is client-writable. snooze_count is
+  // deliberately NOT here — it is server-managed (see updateTask) so a client
+  // can never inflate or reset the escalation counter.
+  'snoozed_until',
   'updated_at',
 ]);
 
@@ -93,7 +97,7 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, created_at, updated_at';
 
 export async function createTask({ supabase, userId, payload, options = {} }) {
   // Map camelCase frontend fields to snake_case DB columns
@@ -202,6 +206,19 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   // Normalize area if provided
   if (userProvidedArea) {
     updatesToApply.area = normalizeArea(updatesToApply.area);
+  }
+
+  // First-class snooze (F2): snooze_count is server-managed. Increment it
+  // read-modify-write from the already-fetched existingTask (mirrors the
+  // sort_order append below) only when the update sets a *new* non-null
+  // snooze date — i.e. the task was not already snoozed to that exact value.
+  // Clearing the snooze (snoozed_until = null) never changes the count.
+  if (Object.prototype.hasOwnProperty.call(updatesToApply, 'snoozed_until')) {
+    const newSnooze = updatesToApply.snoozed_until;
+    const alreadySnoozedToSame = newSnooze != null && newSnooze === existingTask.snoozed_until;
+    if (newSnooze != null && !alreadySnoozedToSame) {
+      updatesToApply.snooze_count = (existingTask.snooze_count || 0) + 1;
+    }
   }
 
   const touches = new Set();

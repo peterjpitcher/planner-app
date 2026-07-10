@@ -4,10 +4,21 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { TODAY_SECTION, SOFT_CAPS, CHIP_VALUES, TASK_TYPE } from '@/lib/constants';
 import { getDueDateStatus, quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
+import { getLondonDateKey } from '@/lib/timezone';
 import {
   CalendarDaysIcon,
   CheckCircleIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
+
+// Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges
+// (mirrors getDatePlusDays in planningWindow.js). Preset snooze dates are always
+// derived from the London date key, never from a raw new Date().
+function addDaysToDateKey(dateKey, days) {
+  const d = new Date(dateKey + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 const SECTION_LABELS = {
   [TODAY_SECTION.MUST_DO]: 'Must Do',
@@ -44,17 +55,30 @@ export default function PlanningTaskRow({
   mode, // 'daily' | 'weekly'
   sectionCounts, // { must_do: N, good_to_do: N, quick_wins: N }
   onAssign, // (taskId, { state, today_section }) => void
-  onSkip, // (taskId) => void
+  onSnooze, // (taskId, until) => Promise<void> — persists snoozed_until
   onDefer, // (taskId, newDate, currentState) => void
   onMarkDone, // (taskId) => Promise<void>
   onProjectNavigate, // () => void — invoked before the project link navigates so the parent modal can close
 }) {
   const [showDefer, setShowDefer] = useState(false);
+  const [showSnooze, setShowSnooze] = useState(false);
   const [isActioned, setIsActioned] = useState(false);
   const [actionLabel, setActionLabel] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const dueDateStatus = task.due_date ? getDueDateStatus(task.due_date) : null;
+
+  // Snooze escalation (F2): once a task has been snoozed 3+ times, stop offering a
+  // plain snooze and force a keep / schedule / complete decision. A snooze is still
+  // allowed, but is visually flagged as "Snooze anyway".
+  const snoozeCount = task.snooze_count || 0;
+  const snoozeEscalated = snoozeCount >= 3;
+  const londonKey = getLondonDateKey();
+  const snoozePresets = [
+    { label: 'Tonight', value: londonKey },
+    { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
+    { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
+  ];
 
   if (isActioned) {
     return (
@@ -94,10 +118,20 @@ export default function PlanningTaskRow({
     }
   };
 
-  const handleSkip = () => {
-    onSkip(task.id);
-    setIsActioned(true);
-    setActionLabel('Skipped');
+  const handleSnooze = async (until) => {
+    if (!onSnooze) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onSnooze(task.id, until);
+      setIsActioned(true);
+      setActionLabel(`Snoozed → ${until}`);
+      setShowSnooze(false);
+    } catch {
+      setError('Failed to snooze');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleMarkDone = async () => {
@@ -174,6 +208,13 @@ export default function PlanningTaskRow({
         <p className="mt-2 text-xs text-red-600">{error}</p>
       )}
 
+      {/* Snooze escalation prompt (F2): after 3 snoozes, nudge a real decision */}
+      {snoozeEscalated && (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+          Snoozed {snoozeCount}× — keep, schedule, or complete this instead of snoozing again.
+        </p>
+      )}
+
       {/* Action buttons */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {mode === 'daily' ? (
@@ -230,10 +271,15 @@ export default function PlanningTaskRow({
         <button
           type="button"
           disabled={isLoading}
-          onClick={handleSkip}
-          className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 disabled:opacity-50"
+          onClick={() => setShowSnooze((v) => !v)}
+          className={
+            snoozeEscalated
+              ? 'rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50'
+              : 'rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 disabled:opacity-50'
+          }
         >
-          Skip
+          <ClockIcon className="mr-1 inline h-3 w-3" />
+          {snoozeEscalated ? 'Snooze anyway' : 'Snooze until…'}
         </button>
 
         <button
@@ -265,6 +311,32 @@ export default function PlanningTaskRow({
             className="rounded border border-border bg-card px-2 py-1 text-xs"
             onChange={(e) => {
               if (e.target.value) handleDefer(e.target.value);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Snooze date picker (F2): presets computed from the London date key */}
+      {showSnooze && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-2">
+          <span className="text-xs text-muted-foreground">Snooze until</span>
+          {snoozePresets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              disabled={isLoading}
+              onClick={() => handleSnooze(preset.value)}
+              className="rounded border border-border bg-card px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              {preset.label}
+            </button>
+          ))}
+          <input
+            type="date"
+            min={londonKey}
+            className="rounded border border-border bg-card px-2 py-1 text-xs"
+            onChange={(e) => {
+              if (e.target.value) handleSnooze(e.target.value);
             }}
           />
         </div>
