@@ -199,7 +199,7 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   // auto-placed task can answer "why is this here". autoplanned_at is only set by
   // the morning autopilot, so this naturally appears on Today cards only. The
   // "Carried" provenance is already covered by the carried badge below.
-  const showAutoAdded = !!task.autoplanned_at && !isCompleted;
+  const showAutoAdded = !!task.autoplanned_at && task.state === STATE.TODAY && !isCompleted;
 
   // Card container classes
   const containerClasses = [

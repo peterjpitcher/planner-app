@@ -77,6 +77,11 @@ export async function POST(request) {
           window_type: windowType,
           window_date: windowDate,
           completed_at: new Date().toISOString(),
+          // A manual plan overrides any autopilot-built session for the same
+          // window: reset the auto flags so the review banner dismisses and
+          // "Clear auto-plan" no longer targets a hand-planned day (Wave 3).
+          auto_planned: false,
+          reviewed_at: null,
         },
         { onConflict: 'user_id,window_type,window_date' }
       )

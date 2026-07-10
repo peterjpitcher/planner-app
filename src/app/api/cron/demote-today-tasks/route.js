@@ -162,6 +162,9 @@ export async function GET(request) {
           carried_section: task.today_section || null,
           carried_count: nextCarried,
           sort_order: thisWeekOrder,
+          // Leaving Today ends any autopilot provenance (the "Auto-added" label
+          // is Today-only; keeps the flag from lingering on This Week cards).
+          autoplanned_at: null,
         };
       }
 

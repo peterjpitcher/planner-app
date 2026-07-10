@@ -74,18 +74,19 @@ export async function GET(request) {
     // for today's London date, the user (or a previous autopilot run) built the
     // day — leave it alone.
     const todayKey = runDate;
-    let existingSession = null;
-    try {
-      const { data } = await supabase
-        .from('planning_sessions')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('window_type', 'daily')
-        .eq('window_date', todayKey)
-        .maybeSingle();
-      existingSession = data;
-    } catch (guardError) {
+    const { data: existingSession, error: guardError } = await supabase
+      .from('planning_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('window_type', 'daily')
+      .eq('window_date', todayKey)
+      .maybeSingle();
+    // Fail CLOSED: if we can't confirm whether a plan already exists, do NOT
+    // build — a false "no session" here would override the user's evening plan.
+    if (guardError) {
       console.error('Autopilot planning-session guard failed:', guardError);
+      try { await updateCronRun({ supabase, runId, patch: { tasks_affected: 0, status: 'failed', error: 'session guard query failed' } }); } catch {}
+      return NextResponse.json({ skipped: true, reason: 'session_guard_error' }, { status: 200 });
     }
     if (existingSession) {
       try { await updateCronRun({ supabase, runId, patch: { tasks_affected: 0, status: 'success' } }); } catch {}

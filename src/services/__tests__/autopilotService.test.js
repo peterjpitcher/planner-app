@@ -168,7 +168,7 @@ function makeSupabase(config) {
         error: null,
       });
     }
-    if (sel === 'id') {
+    if (sel === 'id' || sel === 'id, autoplanned_at') {
       return Promise.resolve({ data: config.autoPlaced || [], error: config.autoPlacedError || null });
     }
     return Promise.resolve({ data: [], error: null });
@@ -267,9 +267,15 @@ describe('buildAutopilotPlan — orchestration (mocked IO)', () => {
 });
 
 describe('clearAutopilotPlan — orchestration (mocked IO)', () => {
-  it('moves every still-auto-placed task back to This Week and clears the flag', async () => {
+  it('clears only tasks auto-placed today, leaving prior-day auto-placements in place', async () => {
+    const today = new Date().toISOString();
     const config = {
-      autoPlaced: [{ id: 'a1' }, { id: 'a2' }],
+      autoPlaced: [
+        { id: 'a1', autoplanned_at: today },
+        { id: 'a2', autoplanned_at: today },
+        // Auto-added on a prior day and kept/carried since — must NOT be cleared.
+        { id: 'old', autoplanned_at: '2020-01-01T09:00:00.000Z' },
+      ],
       maxThisWeek: 1000,
     };
     const supabase = makeSupabase(config);
@@ -277,6 +283,7 @@ describe('clearAutopilotPlan — orchestration (mocked IO)', () => {
     const result = await clearAutopilotPlan({ supabase, userId: 'user-1' });
     expect(result.cleared).toBe(2);
     expect(config.updates).toHaveLength(2);
+    expect(config.updates.map((u) => u.id).sort()).toEqual(['a1', 'a2']);
     for (const upd of config.updates) {
       expect(upd.payload.state).toBe('this_week');
       expect(upd.payload.autoplanned_at).toBeNull();

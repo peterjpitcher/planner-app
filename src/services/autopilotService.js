@@ -1,5 +1,6 @@
 import { sortTasksByPriority } from '@/lib/taskSort';
 import { computeSortOrder } from '@/lib/sortOrder';
+import { getLondonDateKey } from '@/lib/timezone';
 import {
   SOFT_CAPS,
   STALE_BACKLOG_DAYS,
@@ -303,6 +304,10 @@ export async function buildAutopilotPlan({ supabase, userId, windowDate }) {
         today_section: section,
         sort_order: seeds[section],
         autoplanned_at: nowIso,
+        // Placing a task into Today IS a triage decision, so an auto-placed
+        // inbox item is no longer "awaiting triage" — clear the flag so the
+        // digest doesn't list it as both scheduled and inbox.
+        inbox: false,
       })
       .eq('id', id)
       .eq('user_id', userId);
@@ -338,7 +343,7 @@ export async function clearAutopilotPlan({ supabase, userId }) {
 
   const { data: rows, error } = await supabase
     .from('tasks')
-    .select('id')
+    .select('id, autoplanned_at')
     .eq('user_id', userId)
     .eq('state', STATE.TODAY)
     .not('autoplanned_at', 'is', null);
@@ -346,7 +351,13 @@ export async function clearAutopilotPlan({ supabase, userId }) {
     throw new Error(`clearAutopilotPlan: failed to fetch auto-placed tasks: ${error.message || error}`);
   }
 
-  const ids = (rows || []).map((r) => r.id).filter(Boolean);
+  // Only undo TODAY's auto-plan. A Must Do auto-added on a prior day and kept
+  // (carried) since has an older autoplanned_at and must stay in Today.
+  const todayKey = getLondonDateKey();
+  const ids = (rows || [])
+    .filter((r) => r.autoplanned_at && getLondonDateKey(new Date(r.autoplanned_at)) === todayKey)
+    .map((r) => r.id)
+    .filter(Boolean);
   if (ids.length === 0) return { cleared: 0, failures: [] };
 
   // Seed the append order from the current max This Week sort_order.
