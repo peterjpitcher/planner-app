@@ -236,6 +236,19 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  // Carry-forward (A1) "Keep yesterday's plan": restore every task carried from
+  // today back to Today at its remembered section in one action. Reuses
+  // updateTask, so the server re-triage reset clears carried_section/carried_count
+  // and each call dispatches tasks-changed for the boards/views to refresh.
+  async restoreCarriedTasks(carriedTasks = []) {
+    const restorable = (carriedTasks || []).filter((t) => t && t.id && t.carried_section);
+    return Promise.all(
+      restorable.map((t) =>
+        this.updateTask(t.id, { state: 'today', today_section: t.carried_section })
+      )
+    );
+  }
+
   // Update sort order for a list of tasks
   async updateSortOrder(items) {
     const result = await this.fetchWithAuth('/api/tasks/sort-order', {

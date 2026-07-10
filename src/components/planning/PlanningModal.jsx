@@ -47,6 +47,11 @@ export default function PlanningModal({
   // Count of tasks the user acted on in this session (assign / accept / defer / snooze),
   // so Finish Planning can warn only when the user truly did nothing.
   const [actionedCount, setActionedCount] = useState(0);
+  // Carry-forward (A1): one-tap "Keep yesterday's plan" state. keepingPlan guards
+  // the in-flight restore; carriedKept collapses the carried group into a
+  // confirmation once restored, without mutating the candidate props.
+  const [keepingPlan, setKeepingPlan] = useState(false);
+  const [carriedKept, setCarriedKept] = useState(false);
 
   // Reset wizard state whenever the modal opens for a new window. The modal
   // stays mounted in AppShell, so without this a reopened session inherits
@@ -55,6 +60,8 @@ export default function PlanningModal({
     if (!isOpen) return;
     setActionedCount(0);
     setFinishError(null);
+    setCarriedKept(false);
+    setKeepingPlan(false);
 
     if (!isCombinedFlow) {
       setStep(windowType);
@@ -185,9 +192,29 @@ export default function PlanningModal({
   // Determine which tasks to show for the current step
   // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
   const activeTasks = (isCombinedFlow && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
+  const carriedFromToday = activeTasks?.carriedFromToday || [];
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
+    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || [])];
+
+  // Carry-forward (A1): restore every carried task to Today at its remembered
+  // section in one tap. Each updateTask fires the server reset (clearing the carry
+  // markers) and dispatches tasks-changed; carriedKept then collapses the group.
+  const handleKeepYesterday = useCallback(async () => {
+    if (carriedFromToday.length === 0 || keepingPlan) return;
+    setKeepingPlan(true);
+    setFinishError(null);
+    try {
+      await apiClient.restoreCarriedTasks(carriedFromToday);
+      setActionedCount((prev) => prev + carriedFromToday.length);
+      setCarriedKept(true);
+    } catch (err) {
+      console.error('Failed to restore yesterday’s plan:', err);
+      setFinishError('Something went wrong restoring your plan. Please try again.');
+    } finally {
+      setKeepingPlan(false);
+    }
+  }, [carriedFromToday, keepingPlan]);
 
   const handleFinish = useCallback(async () => {
     // Guard against finishing before the user has done anything. Any row
@@ -326,6 +353,46 @@ export default function PlanningModal({
                   ? 'Tap Accept on each task you want on this week\u2019s plan. Complete marks tasks you\u2019ve already done; Defer changes the due date; Snooze hides it until a date you pick. Nothing is added until you pick an action.'
                   : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Complete marks tasks you\u2019ve already done; Defer changes the due date; Snooze hides it until a date you pick. Finish Planning only records the session — tasks won\u2019t move on their own.`}
               </p>
+            )}
+            {step !== 'weekly' && carriedFromToday.length > 0 && (
+              <div className="mb-6">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Carried from today ({carriedFromToday.length})
+                  </h3>
+                  {!carriedKept && (
+                    <button
+                      type="button"
+                      onClick={handleKeepYesterday}
+                      disabled={keepingPlan}
+                      className="shrink-0 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground transition-colors hover:opacity-80 disabled:opacity-50"
+                    >
+                      {keepingPlan ? 'Restoring…' : 'Keep yesterday’s plan'}
+                    </button>
+                  )}
+                </div>
+                {carriedKept ? (
+                  <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    Restored to today at their original sections. Adjust from the Today view if anything has changed.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {carriedFromToday.map((task) => (
+                      <PlanningTaskRow
+                        key={task.id}
+                        task={task}
+                        mode="daily"
+                        sectionCounts={sectionCounts}
+                        onAssign={handleAssign}
+                        onSnooze={handleSnooze}
+                        onDefer={handleDefer}
+                        onMarkDone={handleMarkDone}
+                        onProjectNavigate={onClose}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {taskSections.map((section) => {
               if (section.tasks.length === 0) return null;

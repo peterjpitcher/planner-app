@@ -9,7 +9,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { differenceInCalendarDays, parseISO, addDays, format } from 'date-fns';
 import { getDueDateStatus } from '@/lib/dateUtils';
 import { getLondonDateKey } from '@/lib/timezone';
-import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER } from '@/lib/constants';
+import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
 import ChipBadge from './ChipBadge';
 
 // Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges.
@@ -187,6 +187,14 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   const londonKey = getLondonDateKey();
   const isSnoozed = !!task.snoozed_until && task.snoozed_until > londonKey;
 
+  // Carry-forward (A1): only Today cards carry a counter — unfinished Must Do tasks
+  // that the evening cron keeps in place have carried_count bumped each night.
+  // Below the threshold it is a neutral "carried N days" badge; at/above it turns
+  // amber with a "still today?" nudge so zombies surface instead of silting up Today.
+  const carriedCount = task.state === STATE.TODAY ? (task.carried_count || 0) : 0;
+  const showCarried = carriedCount >= 1 && !isCompleted;
+  const carriedNudge = carriedCount >= CARRY_NUDGE_THRESHOLD;
+
   // Card container classes
   const containerClasses = [
     'group relative flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-sm shadow-sm',
@@ -286,6 +294,19 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
         {isSnoozed && !isCompleted && (
           <span className="mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
             Snoozed until {format(parseISO(task.snoozed_until), 'MMM d')}
+          </span>
+        )}
+
+        {/* Carried badge (A1): how many consecutive days this Today task has been carried */}
+        {showCarried && (
+          <span
+            className={`mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full ${
+              carriedNudge ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            {carriedNudge
+              ? `Carried ${carriedCount} days — still today?`
+              : `Carried ${carriedCount} day${carriedCount !== 1 ? 's' : ''}`}
           </span>
         )}
       </div>

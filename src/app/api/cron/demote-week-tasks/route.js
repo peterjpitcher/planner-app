@@ -102,7 +102,7 @@ export async function GET(request) {
 
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')
-      .select('id, name, due_date, projects(name)')
+      .select('id, name, due_date, carried_section, projects(name)')
       .eq('state', 'this_week')
       .eq('user_id', userId);
 
@@ -140,6 +140,26 @@ export async function GET(request) {
         failedUpdates.push(`${task.id}: ${result.error.message || 'update failed'}`);
       } else {
         demotedTasks.push(task);
+      }
+    }
+
+    // A1 carry-forward hygiene: a task demoted to backlog is no longer a candidate
+    // for the planning modal's "Keep yesterday's plan", so its carried_section
+    // restore marker must not linger. updateTask's re-triage reset already clears it
+    // on the this_week -> backlog transition; this DIRECT batched update is an
+    // explicit belt-and-braces so a stale marker can never survive, and only runs
+    // for the tasks that actually carried one.
+    const carriedIds = demotedTasks
+      .filter((t) => t.carried_section != null)
+      .map((t) => t.id);
+    if (carriedIds.length > 0) {
+      const { error: clearError } = await supabase
+        .from('tasks')
+        .update({ carried_section: null, carried_count: 0 })
+        .eq('user_id', userId)
+        .in('id', carriedIds);
+      if (clearError) {
+        console.error('Failed to clear carried_section on demoted week tasks:', clearError);
       }
     }
 
