@@ -1,8 +1,9 @@
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
+import { sortTasksByPriority } from '@/lib/taskSort';
 import { NextResponse } from 'next/server';
 
-const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, created_at';
+const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, entered_state_at, created_at';
 
 // GET /api/planning-candidates?windowType=daily&windowDate=2026-04-15
 export async function GET(request) {
@@ -70,11 +71,14 @@ export async function GET(request) {
         return NextResponse.json({ error: 'Failed to fetch planning candidates' }, { status: 500 });
       }
 
+      // Re-rank each bucket in JS with the deterministic priority comparator so
+      // the planning modal arrives pre-ranked. windowDate is the reference "today":
+      // buckets are built relative to it, so overdue/today-tomorrow bands stay coherent.
       return NextResponse.json({
         data: {
-          dueTomorrow: flattenProjects(dueTomorrow.data),
-          overdue: flattenProjects(overdue.data),
-          undatedThisWeek: flattenProjects(undatedThisWeek.data),
+          dueTomorrow: sortTasksByPriority(flattenProjects(dueTomorrow.data), { todayKey: windowDate }),
+          overdue: sortTasksByPriority(flattenProjects(overdue.data), { todayKey: windowDate }),
+          undatedThisWeek: sortTasksByPriority(flattenProjects(undatedThisWeek.data), { todayKey: windowDate }),
         },
       });
     }
@@ -118,10 +122,12 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Failed to fetch planning candidates' }, { status: 500 });
     }
 
+    // Re-rank each bucket in JS with the deterministic priority comparator.
+    // windowDate is the reference "today" for the date bands (see daily branch).
     return NextResponse.json({
       data: {
-        dueThisWeek: flattenProjects(dueThisWeek.data),
-        overdue: flattenProjects(overdue.data),
+        dueThisWeek: sortTasksByPriority(flattenProjects(dueThisWeek.data), { todayKey: windowDate }),
+        overdue: sortTasksByPriority(flattenProjects(overdue.data), { todayKey: windowDate }),
       },
     });
   } catch (err) {
