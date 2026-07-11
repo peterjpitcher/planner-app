@@ -2,6 +2,8 @@ import { STATE, TODAY_SECTION, PROJECT_STATUS } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { computeSortOrder } from '@/lib/sortOrder';
+import { getLondonDateKey } from '@/lib/timezone';
+import { isValidRecurrence, nextRecurrenceDate } from '@/lib/recurrence';
 import { deleteOffice365Task, syncOffice365Task } from '@/services/office365SyncService';
 
 const TASK_UPDATE_FIELDS = new Set([
@@ -21,6 +23,11 @@ const TASK_UPDATE_FIELDS = new Set([
   // deliberately NOT here — it is server-managed (see updateTask) so a client
   // can never inflate or reset the escalation counter.
   'snoozed_until',
+  // Recurring tasks (F6/P4): recurrence + recurrence_interval are client-settable
+  // (a user chooses "repeats" on a task). The next-occurrence spawn itself is
+  // server-only (see updateTask) — the client never creates the follow-on task.
+  'recurrence',
+  'recurrence_interval',
   'updated_at',
 ]);
 
@@ -56,6 +63,10 @@ const TASK_CREATE_FIELDS = new Set([
   // deliberately absent from TASK_UPDATE_FIELDS — clients can never flip it; it
   // is cleared only by the server triage rule in updateTask.
   'inbox',
+  // Recurring tasks (F6/P4): settable at create so a task can be born recurring,
+  // and so the server-side next-occurrence spawn can carry them onto the follow-on.
+  'recurrence',
+  'recurrence_interval',
 ]);
 
 function filterTaskCreate(fields = {}) {
@@ -103,7 +114,32 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, recurrence, recurrence_interval, created_at, updated_at';
+
+/**
+ * Recurring tasks (F6/P4): validate + coerce the recurrence fields on any write.
+ * - If `recurrence` is present it must be null or one of the four patterns; an
+ *   invalid value is rejected (mass-assignment safety — the client can never set
+ *   an out-of-range pattern). `undefined` is treated as null (clearing).
+ * - If `recurrence_interval` is present it is coerced to a positive integer
+ *   (default 1), so the interval can never be zero, negative or fractional.
+ * Mutates `fields` in place. Returns an error object on an invalid pattern,
+ * otherwise an empty object.
+ */
+function applyRecurrenceRules(fields) {
+  if (Object.prototype.hasOwnProperty.call(fields, 'recurrence')) {
+    const value = fields.recurrence === undefined ? null : fields.recurrence;
+    if (!isValidRecurrence(value)) {
+      return { error: { status: 400, message: 'Invalid recurrence value' } };
+    }
+    fields.recurrence = value;
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, 'recurrence_interval')) {
+    const n = Math.floor(Number(fields.recurrence_interval));
+    fields.recurrence_interval = Number.isFinite(n) && n >= 1 ? n : 1;
+  }
+  return {};
+}
 
 export async function createTask({ supabase, userId, payload, options = {} }) {
   // Map camelCase frontend fields to snake_case DB columns
@@ -118,6 +154,13 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
   // user_id, id, timestamps or source_idea_id. Legacy fields (priority,
   // importance_score, urgency_score, is_completed, job) are dropped implicitly.
   const taskData = filterTaskCreate(normalized);
+
+  // Recurring tasks (F6/P4): reject an invalid pattern; coerce the interval.
+  const recurrenceCheck = applyRecurrenceRules(taskData);
+  if (recurrenceCheck.error) {
+    return { error: recurrenceCheck.error };
+  }
+
   taskData.user_id = userId;
   taskData.state = taskData.state || STATE.BACKLOG;
 
@@ -204,6 +247,12 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   const updatesToApply = filterTaskUpdates(updates);
   if (Object.keys(updatesToApply).length === 0) {
     return { error: { status: 400, message: 'No valid fields to update' } };
+  }
+
+  // Recurring tasks (F6/P4): reject an invalid pattern; coerce the interval.
+  const recurrenceCheck = applyRecurrenceRules(updatesToApply);
+  if (recurrenceCheck.error) {
+    return { error: recurrenceCheck.error };
   }
 
   const userProvidedArea = Object.prototype.hasOwnProperty.call(updatesToApply, 'area');
@@ -373,15 +422,35 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     return { error: { status: 400, message: 'Validation failed', details: validation.errors } };
   }
 
-  const { data, error } = await supabase
+  const settingDone =
+    Object.prototype.hasOwnProperty.call(updatesToApply, 'state') &&
+    updatesToApply.state === STATE.DONE &&
+    existingTask.state !== STATE.DONE;
+
+  let updateQuery = supabase
     .from('tasks')
     .update(updatesToApply)
     .eq('id', taskId)
-    .eq('user_id', userId)
-    .select(TASK_SELECT_FIELDS)
-    .single();
+    .eq('user_id', userId);
+  // Atomic done-transition (P4): guard the completing write on the prior non-done
+  // state so only the request that actually flips the row FROM non-done wins —
+  // two concurrent completions can't then both spawn the next occurrence.
+  if (settingDone) updateQuery = updateQuery.neq('state', STATE.DONE);
+  const { data, error } = await updateQuery.select(TASK_SELECT_FIELDS).single();
 
   if (error) {
+    // A guarded done-transition that matches no row (PGRST116) means another
+    // request completed the task first — we lost the race. Return the current row
+    // and do NOT spawn a second occurrence.
+    if (settingDone && error.code === 'PGRST116') {
+      const { data: current } = await supabase
+        .from('tasks')
+        .select(TASK_SELECT_FIELDS)
+        .eq('id', taskId)
+        .eq('user_id', userId)
+        .single();
+      return { data: current || existingTask };
+    }
     const errorMessage = handleSupabaseError(error, 'update');
     return { error: { status: 500, message: errorMessage } };
   }
@@ -401,7 +470,72 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     }
   }
 
+  // Recurring tasks (F6/P4): a real completion spawns the next occurrence. The
+  // atomic neq-done guard above means reaching here with settingDone === true is
+  // exactly the one request that won the transition, so precisely one occurrence
+  // is spawned even under concurrent double-completion. The spawn never blocks or
+  // fails the completion (it swallows its own errors).
+  if (settingDone) {
+    await spawnNextRecurrence({ supabase, userId, task: data });
+  }
+
   return { data };
+}
+
+/**
+ * Spawn the next occurrence of a recurring task (F6/P4). Given a task that has
+ * JUST been completed, create a fresh backlog task dated from the later of its
+ * due date and today, carrying the identity fields and the recurrence rule. This
+ * lives in a shared, exported helper so a recurring task completed EITHER in-app
+ * (taskService.updateTask) OR remotely via the Office365 inbound pull keeps the
+ * series going. Never throws: a failure is logged and returned as
+ * { spawned: false } so it can never block the completion.
+ */
+export async function spawnNextRecurrence({ supabase, userId, task }) {
+  if (!task || !task.recurrence || !isValidRecurrence(task.recurrence)) {
+    return { spawned: false };
+  }
+  try {
+    const todayKey = getLondonDateKey();
+    const dueKey = task.due_date ? String(task.due_date).slice(0, 10) : null;
+    // base = the LATER of the completed task's due date and today, so the next
+    // occurrence is always in the future.
+    const base = dueKey && dueKey > todayKey ? dueKey : todayKey;
+    const nextDue = nextRecurrenceDate(base, task.recurrence, task.recurrence_interval || 1);
+    if (!nextDue) {
+      console.warn(
+        `Recurrence spawn skipped for task ${task.id}: could not compute next date ` +
+        `(recurrence=${task.recurrence}, interval=${task.recurrence_interval}).`
+      );
+      return { spawned: false };
+    }
+    const spawn = await createTask({
+      supabase,
+      userId,
+      payload: {
+        name: task.name,
+        description: task.description,
+        project_id: task.project_id,
+        area: task.area,
+        task_type: task.task_type,
+        chips: task.chips,
+        recurrence: task.recurrence,
+        recurrence_interval: task.recurrence_interval || 1,
+        due_date: nextDue,
+        state: STATE.BACKLOG,
+      },
+      // Skip the synchronous Graph call; the periodic Office365 sync picks it up.
+      options: { skipOffice365Sync: true },
+    });
+    if (spawn?.error) {
+      console.warn(`Recurrence spawn failed for task ${task.id}:`, spawn.error);
+      return { spawned: false };
+    }
+    return { spawned: true, task: spawn.data };
+  } catch (err) {
+    console.warn(`Recurrence spawn threw for task ${task?.id}:`, err);
+    return { spawned: false };
+  }
 }
 
 export async function updateSortOrder({ supabase, userId, items }) {

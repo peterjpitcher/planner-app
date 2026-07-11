@@ -3,13 +3,14 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { Menu, Portal } from '@headlessui/react';
-import { EllipsisVerticalIcon, Bars2Icon } from '@heroicons/react/20/solid';
+import { EllipsisVerticalIcon, Bars2Icon, ArrowPathIcon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { differenceInCalendarDays, parseISO, addDays, format } from 'date-fns';
 import { getDueDateStatus } from '@/lib/dateUtils';
 import { getLondonDateKey } from '@/lib/timezone';
 import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
+import { recurrenceBadgeLabel } from '@/lib/recurrenceLabels';
 import ChipBadge from './ChipBadge';
 
 // Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges.
@@ -201,6 +202,13 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   // "Carried" provenance is already covered by the carried badge below.
   const showAutoAdded = !!task.autoplanned_at && task.state === STATE.TODAY && !isCompleted;
 
+  // Recurrence (Wave 6 / P4): a non-colour-only "Repeats" badge (icon + cadence)
+  // so it is clear a task will regenerate a fresh occurrence on completion. Only
+  // renders when a recurrence pattern is set; hidden on done cards like the other
+  // provenance badges (the next occurrence has already been spawned by then).
+  const showRepeats = !!task.recurrence && !isCompleted;
+  const repeatsLabel = recurrenceBadgeLabel(task.recurrence, task.recurrence_interval);
+
   // Card container classes
   const containerClasses = [
     'group relative flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-sm shadow-sm',
@@ -320,6 +328,14 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
             {carriedNudge
               ? `Carried ${carriedCount} days — still today?`
               : `Carried ${carriedCount} day${carriedCount !== 1 ? 's' : ''}`}
+          </span>
+        )}
+
+        {/* Repeats badge (Wave 6 / P4): non-colour-only cadence pill for recurring tasks */}
+        {showRepeats && (
+          <span className="mt-1 ml-1 inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
+            <ArrowPathIcon className="h-3 w-3" aria-hidden="true" />
+            {repeatsLabel}
           </span>
         )}
       </div>

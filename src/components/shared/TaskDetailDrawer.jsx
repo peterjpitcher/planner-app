@@ -6,6 +6,7 @@ import { XMarkIcon, LinkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import ChipBadge from './ChipBadge';
 import { STATE, TASK_TYPE, CHIP_VALUES } from '@/lib/constants';
+import { RECURRENCE_OPTIONS, hasInterval, intervalUnitLabel } from '@/lib/recurrenceLabels';
 import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
 import { useApiClient } from '@/hooks/useApiClient';
 import { createLatestGuard } from '@/lib/requestCache';
@@ -116,6 +117,8 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
   const [dueDate, setDueDate] = useState('');
   const [waitingReason, setWaitingReason] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
+  const [recurrence, setRecurrence] = useState(null);
+  const [recurrenceInterval, setRecurrenceInterval] = useState(1);
 
   // Notes state
   const [notes, setNotes] = useState([]);
@@ -161,6 +164,16 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
       prevTaskIdRef.current = task.id;
       setIsEditingName(false);
       setShowDeleteConfirm(false);
+      // Recurrence is edited via a select (immediate save) + an interval draft
+      // (blur save). Like the note draft, its local state is only re-initialised
+      // when the task.id actually changes — an optimistic save of another field
+      // must not reset an interval the user is mid-edit on (FF-006).
+      setRecurrence(task.recurrence ?? null);
+      setRecurrenceInterval(
+        Number.isInteger(task.recurrence_interval) && task.recurrence_interval >= 1
+          ? task.recurrence_interval
+          : 1
+      );
       setNotes([]);
       setNewNoteContent('');
       setNoteError(null);
@@ -283,6 +296,54 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
   );
 
   // ---------------------------------------------------------------------------
+  // Recurrence (Wave 6 / P4) — recurrence + recurrence_interval saved together
+  // ---------------------------------------------------------------------------
+
+  // Persist the pattern and interval as a single update so the two fields never
+  // land out of step. Uses the same onUpdate path as every other drawer field.
+  const saveRecurrence = useCallback(
+    (nextRecurrence, nextInterval) => {
+      if (!task) return;
+      const safeInterval = Math.max(1, parseInt(nextInterval, 10) || 1);
+      onUpdate(task.id, {
+        recurrence: nextRecurrence,
+        recurrence_interval: safeInterval,
+      });
+    },
+    [task, onUpdate]
+  );
+
+  const handleRecurrenceChange = useCallback(
+    (e) => {
+      const next = e.target.value === '' ? null : e.target.value;
+      const safeInterval = Math.max(1, parseInt(recurrenceInterval, 10) || 1);
+      setRecurrence(next);
+      if (recurrenceInterval !== safeInterval) setRecurrenceInterval(safeInterval);
+      saveRecurrence(next, safeInterval);
+    },
+    [recurrenceInterval, saveRecurrence]
+  );
+
+  const handleIntervalChange = useCallback((e) => {
+    const raw = e.target.value;
+    // Allow an empty box while typing; it is coerced back to a valid integer on blur.
+    if (raw === '') {
+      setRecurrenceInterval('');
+      return;
+    }
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1) setRecurrenceInterval(n);
+  }, []);
+
+  const handleIntervalBlur = useCallback(() => {
+    const safeInterval = Math.max(1, parseInt(recurrenceInterval, 10) || 1);
+    if (recurrenceInterval !== safeInterval) setRecurrenceInterval(safeInterval);
+    if (safeInterval !== (task?.recurrence_interval ?? 1)) {
+      saveRecurrence(recurrence, safeInterval);
+    }
+  }, [recurrence, recurrenceInterval, task, saveRecurrence]);
+
+  // ---------------------------------------------------------------------------
   // Notes
   // ---------------------------------------------------------------------------
 
@@ -331,6 +392,10 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
 
   const isWaiting = task.state === STATE.WAITING;
   const stateBadgeClass = STATE_BADGE_CLASSES[task.state] ?? 'bg-gray-100 text-gray-600';
+
+  // Numeric view of the interval draft (which may be '' mid-edit) for the
+  // singular/plural unit label — the box itself keeps the raw editable value.
+  const intervalNum = Math.max(1, parseInt(recurrenceInterval, 10) || 1);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -523,6 +588,51 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
                   </button>
                 )}
               </div>
+            </FieldRow>
+
+            {/* Repeats (Wave 6 / P4): recurrence pattern + optional interval */}
+            <FieldRow label="Repeats" htmlFor="drawer-recurrence">
+              <select
+                id="drawer-recurrence"
+                value={recurrence ?? ''}
+                onChange={handleRecurrenceChange}
+                aria-describedby="drawer-recurrence-help"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+              >
+                {RECURRENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value ?? 'never'} value={opt.value ?? ''}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+
+              {/* Interval — only for daily / weekly / monthly (hidden for Never and Weekdays) */}
+              {hasInterval(recurrence) && (
+                <div className="mt-2 flex items-center gap-2">
+                  <label htmlFor="drawer-recurrence-interval" className="text-sm text-gray-600">
+                    Every
+                  </label>
+                  <input
+                    id="drawer-recurrence-interval"
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={recurrenceInterval}
+                    onChange={handleIntervalChange}
+                    onBlur={handleIntervalBlur}
+                    className="w-16 rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    aria-label={`Repeat interval in ${intervalUnitLabel(recurrence, 2)}`}
+                  />
+                  <span className="text-sm text-gray-600">
+                    {intervalUnitLabel(recurrence, intervalNum)}
+                  </span>
+                </div>
+              )}
+
+              <p id="drawer-recurrence-help" className="mt-1 text-xs text-gray-400">
+                A new task is created automatically when you complete this one.
+              </p>
             </FieldRow>
 
             {/* Waiting fields — only shown when state is 'waiting' */}
