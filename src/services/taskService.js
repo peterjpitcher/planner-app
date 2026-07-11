@@ -114,7 +114,7 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, recurrence, recurrence_interval, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, recurrence, recurrence_interval, created_at, updated_at';
 
 /**
  * Recurring tasks (F6/P4): validate + coerce the recurrence fields on any write.
@@ -273,6 +273,29 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     const alreadySnoozedToSame = newSnooze != null && newSnooze === existingTask.snoozed_until;
     if (newSnooze != null && !alreadySnoozedToSame) {
       updatesToApply.snooze_count = (existingTask.snooze_count || 0) + 1;
+    }
+  }
+
+  // Waiting chase engine (Wave 7): chase_count is server-managed, mirroring
+  // snooze_count above. Increment it read-modify-write ONLY when this update is a
+  // genuine chase re-arm — the task is already in 'waiting' AND the update pushes
+  // its follow_up_date to a non-null date STRICTLY LATER than the existing
+  // (non-null) one. Compared as date-only YYYY-MM-DD strings (London dates).
+  // Setting the first follow-up (null -> date), an earlier/equal date, or
+  // clearing it (date -> null) never increments. chase_count is deliberately
+  // absent from TASK_UPDATE_FIELDS, so a client can never set it directly.
+  if (
+    existingTask.state === STATE.WAITING &&
+    Object.prototype.hasOwnProperty.call(updatesToApply, 'follow_up_date')
+  ) {
+    const newFollowUp = updatesToApply.follow_up_date
+      ? String(updatesToApply.follow_up_date).slice(0, 10)
+      : null;
+    const currentFollowUp = existingTask.follow_up_date
+      ? String(existingTask.follow_up_date).slice(0, 10)
+      : null;
+    if (newFollowUp != null && currentFollowUp != null && newFollowUp > currentFollowUp) {
+      updatesToApply.chase_count = (existingTask.chase_count || 0) + 1;
     }
   }
 

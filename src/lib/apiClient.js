@@ -236,6 +236,20 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  // Waiting chase engine (Wave 7). chaseTask re-arms a waiting task's self-
+  // reminder: it sets follow_up_date to `until` (a YYYY-MM-DD London date). The
+  // server increments chase_count when the new date is strictly later than the
+  // current one (see taskService.updateTask); the client never sets chase_count.
+  // Dispatches tasks-changed so boards/views refresh.
+  async chaseTask(taskId, until) {
+    const result = await this.fetchWithAuth('/api/tasks', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: taskId, follow_up_date: until }),
+    });
+    dispatchTasksChanged();
+    return result?.data ?? result;
+  }
+
   // Carry-forward (A1) "Keep yesterday's plan": restore every task carried from
   // today back to Today at its remembered section in one action. Reuses
   // updateTask, so the server re-triage reset clears carried_section/carried_count
