@@ -59,6 +59,17 @@ describe('buildProjectRadar — stalled classification', () => {
     expect(rows[0].openTaskCount).toBe(0);
   });
 
+  it('flags an In Progress project with no scheduled task as stalled (active status)', () => {
+    const rows = buildProjectRadar({
+      projects: [project({ id: 'p1', status: 'In Progress' })],
+      tasksByProject: { p1: [task({ project_id: 'p1', state: 'backlog', due_date: null })] },
+      nowMs: NOW_MS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].stalled).toBe(true);
+    expect(rows[0].paused).toBe(false);
+  });
+
   it('flags an Open project whose only task is waiting without a follow-up as stalled', () => {
     const rows = buildProjectRadar({
       projects: [project({ id: 'p1' })],

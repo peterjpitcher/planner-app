@@ -10,7 +10,15 @@ import { getLondonDateKey } from '@/lib/timezone';
 
 // A project's tasks are "terminal" once done — they can never be the next
 // action. Non-terminal project statuses are the only ones on the radar.
-const NON_TERMINAL_STATUSES = new Set([PROJECT_STATUS.OPEN, PROJECT_STATUS.ON_HOLD]);
+// Active statuses that can be "stalled" (actively worked, so they need a next
+// action). On Hold is non-terminal but a deliberate pause, so it is shown as
+// paused, never stalled.
+const STALLABLE_STATUSES = new Set([PROJECT_STATUS.OPEN, PROJECT_STATUS.IN_PROGRESS]);
+const NON_TERMINAL_STATUSES = new Set([
+  PROJECT_STATUS.OPEN,
+  PROJECT_STATUS.IN_PROGRESS,
+  PROJECT_STATUS.ON_HOLD,
+]);
 
 // Normalise a date column (date or timestamp) to a YYYY-MM-DD key, or null.
 function toDateKey(value) {
@@ -100,7 +108,7 @@ export function buildProjectRadar({ projects = [], tasksByProject = {}, nowMs = 
     const paused = project.status === PROJECT_STATUS.ON_HOLD;
     // Stalled = an Open project with no scheduled next action. On Hold is a
     // deliberate pause, so it is flagged 'paused' but never 'stalled'.
-    const stalled = project.status === PROJECT_STATUS.OPEN && !hasNextAction;
+    const stalled = STALLABLE_STATUSES.has(project.status) && !hasNextAction;
 
     rows.push({
       projectId: project.id,
@@ -170,7 +178,7 @@ export async function fetchProjectRadar({ supabase, userId, nowMs = Date.now() }
         .from('projects')
         .select('id, name, status, area, due_date, updated_at')
         .eq('user_id', userId)
-        .in('status', [PROJECT_STATUS.OPEN, PROJECT_STATUS.ON_HOLD])
+        .in('status', [PROJECT_STATUS.OPEN, PROJECT_STATUS.IN_PROGRESS, PROJECT_STATUS.ON_HOLD])
     ),
     safeQuery(() =>
       supabase

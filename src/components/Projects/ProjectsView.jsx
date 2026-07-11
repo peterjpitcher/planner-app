@@ -433,7 +433,14 @@ export default function ProjectsView() {
   const isUnassignedSelected = selectedProjectId === '__unassigned__';
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)]">
+      {/* Wave 5 project-altitude radar — surfaces active projects with no
+          scheduled next action. Hoisted above the list/detail row so it is
+          visible on the mobile projects list too, not just the detail pane.
+          Reuses the existing selection handler; self-hides when healthy. */}
+      <ProjectRadar onSelectProject={openProjectDetail} />
+
+      <div className="flex flex-1 min-h-0">
       <ProjectSidebar
         projects={visibleProjects}
         tasksByProject={tasksByProject}
@@ -472,11 +479,6 @@ export default function ProjectsView() {
           Back to projects
         </button>
 
-        {/* Wave 5 project-altitude radar — surfaces Open projects with no
-            scheduled next action. Reuses the existing selection handler so a
-            stalled row opens exactly like a sidebar row; self-hides when healthy. */}
-        <ProjectRadar onSelectProject={openProjectDetail} />
-
         {isUnassignedSelected ? (
           <ProjectWorkspace
             project={null}
@@ -511,6 +513,7 @@ export default function ProjectsView() {
           />
         )}
       </main>
+      </div>
 
       {/* Task detail drawer */}
       <TaskDetailDrawer
