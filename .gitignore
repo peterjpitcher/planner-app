@@ -46,3 +46,6 @@ next-env.d.ts
 .env*.local
 .superpowers/
 .claude/session-context.md
+
+# Supabase CLI local cache/temp state
+supabase/.temp/
