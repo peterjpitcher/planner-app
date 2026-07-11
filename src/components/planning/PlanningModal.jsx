@@ -165,6 +165,16 @@ export default function PlanningModal({
     setActionedCount((prev) => prev + 1);
   }, []);
 
+  const handleChase = useCallback(async (taskId, until) => {
+    // Waiting chase engine (Wave 7): re-arm a due waiting task's follow-up. The
+    // server increments chase_count when the new date is strictly later than the
+    // current one; the client never sets chase_count. Counts as a real action so
+    // it clears the Finish-Planning inaction guard, like snooze/assign/defer.
+    await apiClient.chaseTask(taskId, until);
+    setActionedIds((prev) => new Set(prev).add(taskId));
+    setActionedCount((prev) => prev + 1);
+  }, []);
+
   const handleMarkDone = useCallback(async (taskId) => {
     // Let the user retrospectively mark a forgotten-but-done task as complete
     // from inside the planning modal. updateTask on state=done sets completed_at
@@ -210,9 +220,13 @@ export default function PlanningModal({
   // reviewBacklogTotal is the full server-side count so we can note "+N more".
   const reviewBacklog = activeTasks?.reviewBacklog || [];
   const reviewBacklogTotal = activeTasks?.reviewBacklogTotal || 0;
+  // Waiting chase engine (Wave 7): waiting tasks whose follow_up_date has arrived.
+  // Surfaced as a "Chase these" group in the daily step and counted toward
+  // currentTasks so the empty state / intro copy / Finish inaction guard include them.
+  const chaseDue = activeTasks?.chaseDue || [];
   const currentTasks = step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || []), ...reviewBacklog];
+    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || []), ...chaseDue, ...reviewBacklog];
 
   // Carry-forward (A1): restore every carried task to Today at its remembered
   // section in one tap. Each updateTask fires the server reset (clearing the carry
@@ -442,6 +456,35 @@ export default function PlanningModal({
                 </div>
               );
             })}
+
+            {/* Chase these (Wave 7): waiting tasks whose follow-up date has arrived.
+                Daily step only, placed after the main candidate groups. Each row's
+                primary action re-arms the follow-up (bumping chase_count server-side);
+                complete / defer / the section pills (unblock) stay available. Snooze is
+                omitted here — chase is the "remind me later" path for waiting tasks. */}
+            {step !== 'weekly' && chaseDue.length > 0 && (
+              <div className="mb-6">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Chase these — waiting on someone ({chaseDue.length})
+                </h3>
+                <div className="space-y-2">
+                  {chaseDue.map((task) => (
+                    <PlanningTaskRow
+                      key={task.id}
+                      task={task}
+                      mode="daily"
+                      variant="chase"
+                      sectionCounts={sectionCounts}
+                      onAssign={handleAssign}
+                      onDefer={handleDefer}
+                      onMarkDone={handleMarkDone}
+                      onChase={handleChase}
+                      onProjectNavigate={onClose}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Review backlog (F4): placed AFTER the main groups as the lowest-urgency
                 prompt. A gentle "still needed?" nudge for undated backlog tasks that

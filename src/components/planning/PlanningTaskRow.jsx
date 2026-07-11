@@ -6,6 +6,7 @@ import { TODAY_SECTION, SOFT_CAPS, CHIP_VALUES, TASK_TYPE } from '@/lib/constant
 import { getDueDateStatus, quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
 import { getLondonDateKey } from '@/lib/timezone';
 import {
+  BellAlertIcon,
   CalendarDaysIcon,
   CheckCircleIcon,
   ClockIcon,
@@ -53,16 +54,18 @@ const TYPE_LABELS = {
 export default function PlanningTaskRow({
   task,
   mode, // 'daily' | 'weekly'
-  variant, // optional: 'review' renders a gentle "still needed?" framing for aged backlog (F4)
+  variant, // optional: 'review' = gentle "still needed?" framing (F4); 'chase' = waiting-task re-arm control (Wave 7)
   sectionCounts, // { must_do: N, good_to_do: N, quick_wins: N }
   onAssign, // (taskId, { state, today_section }) => void
   onSnooze, // (taskId, until) => Promise<void> — persists snoozed_until
   onDefer, // (taskId, newDate, currentState) => void
   onMarkDone, // (taskId) => Promise<void>
+  onChase, // (taskId, until) => Promise<void> — re-arms follow_up_date (server bumps chase_count); only wired for variant="chase"
   onProjectNavigate, // () => void — invoked before the project link navigates so the parent modal can close
 }) {
   const [showDefer, setShowDefer] = useState(false);
   const [showSnooze, setShowSnooze] = useState(false);
+  const [showChase, setShowChase] = useState(false);
   const [isActioned, setIsActioned] = useState(false);
   const [actionLabel, setActionLabel] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -78,6 +81,21 @@ export default function PlanningTaskRow({
   // Snooze "until" is the date the task should reappear as a candidate; a value
   // <= today never hides it, so the shortest preset is tomorrow, not tonight.
   const snoozePresets = [
+    { label: 'Tomorrow', value: addDaysToDateKey(londonKey, 1) },
+    { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
+    { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
+  ];
+
+  // Chase re-arm + escalation (Wave 7): only relevant when this row is rendered
+  // as a due-chase (variant="chase") for a waiting task. Mirrors the snooze
+  // pattern above — presets are derived from the London date key, and once a
+  // task has been chased 3+ times the plain re-arm is flagged (still allowed).
+  const isChase = variant === 'chase';
+  const chaseCount = task.chase_count || 0;
+  const chaseEscalated = chaseCount >= 3;
+  // A chase "remind me in" date must be in the future to actually push the
+  // follow-up forward, so the shortest preset is tomorrow (like snooze).
+  const chasePresets = [
     { label: 'Tomorrow', value: addDaysToDateKey(londonKey, 1) },
     { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
     { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
@@ -132,6 +150,24 @@ export default function PlanningTaskRow({
       setShowSnooze(false);
     } catch {
       setError('Failed to snooze');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleChase = async (until) => {
+    if (!onChase) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Re-arm the waiting task's follow-up; the server bumps chase_count when the
+      // new date is strictly later than the current one (see taskService).
+      await onChase(task.id, until);
+      setIsActioned(true);
+      setActionLabel(`Chased → ${until}`);
+      setShowChase(false);
+    } catch {
+      setError('Failed to re-arm chase');
     } finally {
       setIsLoading(false);
     }
@@ -218,15 +254,45 @@ export default function PlanningTaskRow({
         <p className="mt-2 text-xs text-red-600">{error}</p>
       )}
 
-      {/* Snooze escalation prompt (F2): after 3 snoozes, nudge a real decision */}
-      {snoozeEscalated && (
+      {/* Snooze escalation prompt (F2): after 3 snoozes, nudge a real decision.
+          Gated on onSnooze so a row without a snooze action (e.g. a chase row)
+          never shows a snooze prompt it cannot satisfy. */}
+      {onSnooze && snoozeEscalated && (
         <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
           Snoozed {snoozeCount}× — keep, schedule, or complete this instead of snoozing again.
         </p>
       )}
 
+      {/* Chase escalation prompt (Wave 7): after 3 chases, nudge escalate/drop.
+          A further re-arm is still allowed (flagged "Chase again" below). */}
+      {isChase && chaseEscalated && (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+          Chased {chaseCount}× — escalate or drop? Complete it, unblock it, or chase again if you must.
+        </p>
+      )}
+
       {/* Action buttons */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* Chase re-arm (Wave 7): primary control for a due-chase row. Sits first
+            so re-arming the reminder is the obvious action; complete / defer /
+            unblock (section pills) remain available below. */}
+        {isChase && onChase && (
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => setShowChase((v) => !v)}
+            aria-expanded={showChase}
+            className={
+              chaseEscalated
+                ? 'rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50'
+                : 'rounded-full border border-blue-200 bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 transition-colors hover:opacity-80 disabled:opacity-50'
+            }
+          >
+            <BellAlertIcon className="mr-1 inline h-3 w-3" aria-hidden="true" />
+            {chaseEscalated ? 'Chase again' : 'Chased — remind me in…'}
+          </button>
+        )}
+
         {mode === 'daily' ? (
           // Daily: section assignment pills
           <>
@@ -278,19 +344,21 @@ export default function PlanningTaskRow({
           </button>
         )}
 
-        <button
-          type="button"
-          disabled={isLoading}
-          onClick={() => setShowSnooze((v) => !v)}
-          className={
-            snoozeEscalated
-              ? 'rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50'
-              : 'rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 disabled:opacity-50'
-          }
-        >
-          <ClockIcon className="mr-1 inline h-3 w-3" />
-          {snoozeEscalated ? 'Snooze anyway' : 'Snooze until…'}
-        </button>
+        {onSnooze && (
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => setShowSnooze((v) => !v)}
+            className={
+              snoozeEscalated
+                ? 'rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50'
+                : 'rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 disabled:opacity-50'
+            }
+          >
+            <ClockIcon className="mr-1 inline h-3 w-3" />
+            {snoozeEscalated ? 'Snooze anyway' : 'Snooze until…'}
+          </button>
+        )}
 
         <button
           type="button"
@@ -347,6 +415,33 @@ export default function PlanningTaskRow({
             className="rounded border border-border bg-card px-2 py-1 text-xs"
             onChange={(e) => {
               if (e.target.value) handleSnooze(e.target.value);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Chase re-arm picker (Wave 7): presets computed from the London date key.
+          Setting a date forward re-arms follow_up_date and bumps chase_count. */}
+      {isChase && showChase && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-2">
+          <span className="text-xs text-muted-foreground">Remind me in</span>
+          {chasePresets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              disabled={isLoading}
+              onClick={() => handleChase(preset.value)}
+              className="rounded border border-border bg-card px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              {preset.label}
+            </button>
+          ))}
+          <input
+            type="date"
+            min={addDaysToDateKey(londonKey, 1)}
+            className="rounded border border-border bg-card px-2 py-1 text-xs"
+            onChange={(e) => {
+              if (e.target.value) handleChase(e.target.value);
             }}
           />
         </div>
