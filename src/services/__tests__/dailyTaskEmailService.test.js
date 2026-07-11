@@ -309,6 +309,44 @@ describe('buildDigestEmail — Projects needing a next action (Wave 5)', () => {
   });
 });
 
+describe('buildDigestEmail — signed email actions (Wave 8)', () => {
+  it('renders the confirm-plan button and per-overdue Done links when actions are present', () => {
+    const overdueTask = task({
+      id: 'ov-1', name: 'Late thing', state: 'this_week', today_section: null, due_date: '2026-07-01',
+    });
+    const email = buildDigestEmail(baseData({
+      decisions: { ...baseData().decisions, overdue: [overdueTask] },
+      actions: {
+        confirmPlanUrl: 'https://planner.example.com/api/actions/tok-confirm',
+        doneUrls: { 'ov-1': 'https://planner.example.com/api/actions/tok-done' },
+      },
+    }));
+    expect(email).not.toBeNull();
+    // Confirm-plan button (HTML + text).
+    expect(email.html).toContain('Confirm today');
+    expect(email.html).toContain('/api/actions/tok-confirm');
+    expect(email.text).toContain('/api/actions/tok-confirm');
+    // Per-task Done link on the overdue item (HTML + text).
+    expect(email.html).toContain('/api/actions/tok-done');
+    expect(email.html).toContain('[Done]');
+    expect(email.text).toContain('/api/actions/tok-done');
+  });
+
+  it('renders no action buttons or links when actions are absent (feature off)', () => {
+    const overdueTask = task({
+      id: 'ov-2', name: 'Late thing', state: 'this_week', today_section: null, due_date: '2026-07-01',
+    });
+    const email = buildDigestEmail(baseData({
+      decisions: { ...baseData().decisions, overdue: [overdueTask] },
+    }));
+    expect(email).not.toBeNull();
+    expect(email.html).not.toContain('/api/actions/');
+    expect(email.html).not.toContain('Confirm today');
+    expect(email.html).not.toContain('[Done]');
+    expect(email.text).not.toContain('/api/actions/');
+  });
+});
+
 describe('buildDailyTaskEmail — route-facing adapter', () => {
   it('renders the assembled digest passed by fetchOutstandingTasks', () => {
     const digest = {

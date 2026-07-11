@@ -3,6 +3,60 @@ import { sortTasksByPriority } from '@/lib/taskSort';
 import { SOFT_CAPS, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
 import { listIdeasDueForReview } from '@/services/ideaService';
 import { fetchProjectRadar } from '@/services/projectRadarService';
+import { signActionToken } from '@/lib/emailActionToken';
+
+// Wave 8 — tap-to-confirm email actions. When EMAIL_ACTION_SECRET is set the
+// digest carries freshly-signed, single-use tokens (a "Confirm today's plan"
+// button + a per-task "Done" link on overdue items, capped). When it is unset no
+// tokens are generated and the digest renders exactly as before (feature off).
+const ACTION_TOKEN_TTL_MINUTES = 2880; // 48h — see emailActionToken.js
+const DONE_LINK_CAP = 5; // never sign more than this many per-task Done links
+
+// Build the app origin used for absolute action URLs. DIGEST_DASHBOARD_URL /
+// NEXTAUTH_URL may include a path (e.g. .../dashboard); we only want the origin,
+// then append /api/actions/<token>.
+function actionsBaseUrl() {
+  const raw =
+    process.env.DIGEST_DASHBOARD_URL || process.env.NEXTAUTH_URL || 'https://planner.orangejelly.co.uk';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+// Assemble the signed action URLs for a digest, or null when the feature is off.
+// Never throws — a signing problem simply yields no buttons.
+function buildDigestActions({ userId, overdue }) {
+  if (!process.env.EMAIL_ACTION_SECRET) return null;
+  try {
+    const base = actionsBaseUrl();
+    const confirmToken = signActionToken({
+      userId,
+      action: 'confirm_plan',
+      ttlMinutes: ACTION_TOKEN_TTL_MINUTES,
+    });
+    const confirmPlanUrl = confirmToken ? `${base}/api/actions/${confirmToken}` : null;
+
+    const doneUrls = {};
+    for (const task of (Array.isArray(overdue) ? overdue : []).slice(0, DONE_LINK_CAP)) {
+      const taskId = task?.id;
+      if (!taskId) continue;
+      const token = signActionToken({
+        userId,
+        action: 'task_done',
+        taskId,
+        ttlMinutes: ACTION_TOKEN_TTL_MINUTES,
+      });
+      if (token) doneUrls[taskId] = `${base}/api/actions/${token}`;
+    }
+
+    if (!confirmPlanUrl && Object.keys(doneUrls).length === 0) return null;
+    return { confirmPlanUrl, doneUrls };
+  } catch {
+    return null;
+  }
+}
 
 // A4 — proposal-style morning digest. The email is a picture of the whole
 // planned day (all three Today sections, incl. undated tasks) plus what needs a
@@ -351,6 +405,8 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
     },
     ideas,
     stalledProjects,
+    // Signed tap-to-confirm action URLs (Wave 8), or null when the feature is off.
+    actions: buildDigestActions({ userId, overdue }),
   };
 
   return { dueToday: todayTasks, overdue, inboxCount: inbox.length, digest };
@@ -376,7 +432,7 @@ function renderTodayTaskHtml(task) {
   return `<li>${name} <span style="color:#555;">(${project})</span>${chipSuffix}</li>`;
 }
 
-function renderDecisionTaskText(task, { timeZone, withDue, withChase } = {}) {
+function renderDecisionTaskText(task, { timeZone, withDue, withChase, doneUrl } = {}) {
   const name = task?.name || '(Untitled task)';
   const project = getProjectName(task);
   const due = withDue ? normalizeDueDate(task?.due_date) : null;
@@ -385,10 +441,12 @@ function renderDecisionTaskText(task, { timeZone, withDue, withChase } = {}) {
   // already been chased, so a repeatedly re-armed item reads its own history.
   const chaseCount = withChase ? (Number(task?.chase_count) || 0) : 0;
   const chaseSuffix = chaseCount > 0 ? ` — chased ${chaseCount}×` : '';
-  return `- ${name} (${project})${dueSuffix}${chaseSuffix}`;
+  // Wave 8: signed one-tap "Done" link (overdue items only). The URL is safe.
+  const doneSuffix = doneUrl ? ` — Done: ${doneUrl}` : '';
+  return `- ${name} (${project})${dueSuffix}${chaseSuffix}${doneSuffix}`;
 }
 
-function renderDecisionTaskHtml(task, { timeZone, withDue, withChase } = {}) {
+function renderDecisionTaskHtml(task, { timeZone, withDue, withChase, doneUrl } = {}) {
   const name = escapeHtml(task?.name || '(Untitled task)');
   const project = escapeHtml(getProjectName(task));
   const due = withDue ? normalizeDueDate(task?.due_date) : null;
@@ -397,7 +455,12 @@ function renderDecisionTaskHtml(task, { timeZone, withDue, withChase } = {}) {
   const chaseSuffix = chaseCount > 0
     ? ` <span style="color:#555;">— chased ${escapeHtml(String(chaseCount))}×</span>`
     : '';
-  return `<li>${name} <span style="color:#555;">(${project})</span>${dueSuffix}${chaseSuffix}</li>`;
+  // Wave 8: signed one-tap "Done" link (overdue items only). The token is signed,
+  // so the URL is trusted; escape it defensively all the same.
+  const doneSuffix = doneUrl
+    ? ` <a href="${escapeHtml(doneUrl)}" style="color:#2563eb;text-decoration:none;font-size:12px;">[Done]</a>`
+    : '';
+  return `<li>${name} <span style="color:#555;">(${project})</span>${dueSuffix}${chaseSuffix}${doneSuffix}</li>`;
 }
 
 // Whole-day difference between two YYYY-MM-DD keys (toKey − fromKey), or null
@@ -460,6 +523,7 @@ function renderStalledProjectHtml(project, { timeZone, todayDateKey } = {}) {
  * @param {object} [data.decisions] { inbox, snoozedToday, overdue, overCapSections, staleWaiting, thriceSnoozed, carried3Days }
  * @param {object[]} [data.ideas] { title, area }
  * @param {object[]} [data.stalledProjects] stalled open projects { name, area, lastActivityAt }
+ * @param {object} [data.actions] Wave 8 tap-to-confirm URLs { confirmPlanUrl, doneUrls: { [taskId]: url } }; absent = feature off
  * @param {string} [data.dashboardUrl]
  * @param {string} [data.timeZone]
  */
@@ -524,6 +588,12 @@ export function buildDigestEmail(data = {}) {
   const ideas = Array.isArray(data.ideas) ? data.ideas : [];
   const stalledProjects = Array.isArray(data.stalledProjects) ? data.stalledProjects : [];
 
+  // Wave 8 tap-to-confirm actions. Absent (feature off) → no buttons rendered,
+  // digest identical to before.
+  const actions = (data.actions && typeof data.actions === 'object') ? data.actions : {};
+  const confirmPlanUrl = typeof actions.confirmPlanUrl === 'string' ? actions.confirmPlanUrl : null;
+  const doneUrls = (actions.doneUrls && typeof actions.doneUrls === 'object') ? actions.doneUrls : {};
+
   // Nothing to say → no email (preserves the route's "no_outstanding_tasks").
   // A digest whose only content is stalled projects still sends — the point of
   // Wave 5 is that a silently-stalling project gets its morning nudge.
@@ -578,6 +648,18 @@ export function buildDigestEmail(data = {}) {
     }
   }
 
+  // --- 1b. Confirm today's plan (Wave 8, feature-flagged) ---
+  // A single tap-to-confirm button; the signed token URL is safe.
+  if (confirmPlanUrl) {
+    textParts.push(`Confirm today's plan: ${confirmPlanUrl}`);
+    textParts.push('');
+    htmlParts.push(
+      `<p style="margin:12px 0 16px 0;"><a href="${escapeHtml(confirmPlanUrl)}" ` +
+      `style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 18px;` +
+      `border-radius:6px;text-decoration:none;font-weight:600;">Confirm today's plan</a></p>`
+    );
+  }
+
   // --- 2. Carried forward ---
   if (hasCarried) {
     const bits = [];
@@ -593,7 +675,7 @@ export function buildDigestEmail(data = {}) {
   const decisionGroups = [
     { key: 'inbox', label: 'Inbox — awaiting triage', list: inbox, withDue: false },
     { key: 'snoozedToday', label: 'Snooze returns today', list: snoozedToday, withDue: false },
-    { key: 'overdue', label: 'Overdue', list: overdue, withDue: true },
+    { key: 'overdue', label: 'Overdue', list: overdue, withDue: true, doneUrls },
     { key: 'staleWaiting', label: 'Waiting — needs a chase', list: staleWaiting, withDue: false, withChase: true },
     { key: 'thriceSnoozed', label: 'Snoozed 3+ times — decide', list: thriceSnoozed, withDue: false },
     { key: 'carried3Days', label: 'Carried 3+ days — still today?', list: carried3Days, withDue: false },
@@ -622,13 +704,13 @@ export function buildDigestEmail(data = {}) {
       const shown = group.list.slice(0, DECISION_LIST_CAP);
       const extra = group.list.length - shown.length;
       textParts.push(`${group.label} (${group.list.length})`);
-      textParts.push(...shown.map((t) => renderDecisionTaskText(t, { timeZone, withDue: group.withDue, withChase: group.withChase })));
+      textParts.push(...shown.map((t) => renderDecisionTaskText(t, { timeZone, withDue: group.withDue, withChase: group.withChase, doneUrl: group.doneUrls ? group.doneUrls[t?.id] : null })));
       if (extra > 0) textParts.push(`- +${extra} more`);
       textParts.push('');
 
       htmlParts.push(`<p style="margin:12px 0 4px 0;"><strong>${escapeHtml(group.label)}</strong> (${group.list.length})</p>`);
       htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-      htmlParts.push(...shown.map((t) => renderDecisionTaskHtml(t, { timeZone, withDue: group.withDue, withChase: group.withChase })));
+      htmlParts.push(...shown.map((t) => renderDecisionTaskHtml(t, { timeZone, withDue: group.withDue, withChase: group.withChase, doneUrl: group.doneUrls ? group.doneUrls[t?.id] : null })));
       if (extra > 0) htmlParts.push(`<li>+${extra} more</li>`);
       htmlParts.push('</ul>');
     }
