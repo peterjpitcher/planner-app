@@ -1,6 +1,7 @@
 import { sortTasksByPriority } from '@/lib/taskSort';
 import { computeSortOrder } from '@/lib/sortOrder';
 import { getLondonDateKey } from '@/lib/timezone';
+import { draftPlanWithAI } from '@/services/aiPlannerService';
 import {
   SOFT_CAPS,
   STALE_BACKLOG_DAYS,
@@ -40,9 +41,13 @@ const QUICK_WIN_TASK_TYPES = new Set([
 
 // Lean projection — enough for the F1 comparator (due_date, chips,
 // entered_state_at, sort_order, created_at, name, id), the section routing
-// (task_type), and the placement update (id).
+// (task_type), and the placement update (id). description + projects(name) are
+// additive AI context (A5): the rules path ignores them, so the deterministic
+// plan is unchanged, but the AI day-planner can send the user's notes and the
+// task's project to the model. projects(name) is a LEFT-join embed, so tasks
+// without a project are still returned (projects: null).
 const POOL_SELECT =
-  'id, name, due_date, state, today_section, sort_order, task_type, chips, entered_state_at, created_at';
+  'id, name, description, due_date, state, today_section, sort_order, task_type, chips, entered_state_at, created_at, projects(name)';
 
 // Normalise any date/timestamp value to a lexically-comparable YYYY-MM-DD key.
 function toDateKey(value) {
@@ -154,7 +159,7 @@ export function assignAutopilotSections(pool = [], { windowDate, existingCounts 
  * @param {{ supabase:any, userId:string, windowDate:string }}
  * @returns {Promise<object[]>}
  */
-async function fetchAutopilotPool({ supabase, userId, windowDate }) {
+export async function fetchAutopilotPool({ supabase, userId, windowDate }) {
   // Snooze filter (F2): a task is only a candidate when not snoozed past the
   // window. windowDate is validated YYYY-MM-DD upstream, so it is safe to
   // interpolate here (same as the candidate route).
@@ -255,7 +260,7 @@ async function fetchAutopilotPool({ supabase, userId, windowDate }) {
  * @returns {Promise<{ placed:{must_do:number,good_to_do:number,quick_wins:number},
  *                     leftOver:number, failures:string[] }>}
  */
-export async function buildAutopilotPlan({ supabase, userId, windowDate }) {
+export async function buildAutopilotPlan({ supabase, userId, windowDate, aiEnabled = false }) {
   if (!supabase) throw new Error('buildAutopilotPlan: supabase is required');
   if (!userId) throw new Error('buildAutopilotPlan: userId is required');
   if (!windowDate || !/^\d{4}-\d{2}-\d{2}$/.test(windowDate)) {
@@ -283,9 +288,35 @@ export async function buildAutopilotPlan({ supabase, userId, windowDate }) {
     }
   }
 
-  // 2. Fetch and rank the eligible pool; assign to sections respecting caps.
+  // 2. Fetch the eligible pool, then decide placements.
   const pool = await fetchAutopilotPool({ supabase, userId, windowDate });
-  const { placements } = assignAutopilotSections(pool, { windowDate, existingCounts });
+
+  // A5 (Wave 8) — AI day-planner. When the user has opted in, ask the model to
+  // arrange the ranked pool first. The caps are still enforced IN CODE: the AI is
+  // handed only the REMAINING per-section capacity (cap − existing Today
+  // occupancy), and draftPlanWithAI trims any overflow the model returns. Any
+  // failure (no key, error, timeout, empty/invalid response) returns null and we
+  // fall through to the deterministic Wave-1 rules below, so a plan is always
+  // produced. Each AI placement carries the model's one-line plan_reason.
+  //
+  // When aiEnabled is false this branch is skipped entirely — OpenAI is never
+  // touched and the rules path runs exactly as it did in Waves 1–7.
+  let placements = null;
+  if (aiEnabled) {
+    const ranked = sortTasksByPriority(pool, { todayKey: windowDate });
+    const remainingCaps = {
+      MUST_DO: Math.max(0, SOFT_CAPS.MUST_DO - (existingCounts.must_do || 0)),
+      GOOD_TO_DO: Math.max(0, SOFT_CAPS.GOOD_TO_DO - (existingCounts.good_to_do || 0)),
+      QUICK_WINS: Math.max(0, SOFT_CAPS.QUICK_WINS - (existingCounts.quick_wins || 0)),
+    };
+    const aiPlan = await draftPlanWithAI({ candidates: ranked, caps: remainingCaps, todayKey: windowDate });
+    if (aiPlan && Array.isArray(aiPlan.assignments) && aiPlan.assignments.length > 0) {
+      placements = aiPlan.assignments.map((a) => ({ id: a.taskId, section: a.section, reason: a.reason }));
+    }
+  }
+  if (!placements) {
+    ({ placements } = assignAutopilotSections(pool, { windowDate, existingCounts }));
+  }
 
   // 3. Apply placements. Append sort_order per section, stepping from the
   //    current max in that section by a gap per task.
@@ -295,20 +326,28 @@ export async function buildAutopilotPlan({ supabase, userId, windowDate }) {
   const failures = [];
   let leftOver = 0;
 
-  for (const { id, section } of placements) {
+  for (const placement of placements) {
+    const { id, section } = placement;
     seeds[section] = computeSortOrder(seeds[section], null);
+    const updatePayload = {
+      state: STATE.TODAY,
+      today_section: section,
+      sort_order: seeds[section],
+      autoplanned_at: nowIso,
+      // Placing a task into Today IS a triage decision, so an auto-placed
+      // inbox item is no longer "awaiting triage" — clear the flag so the
+      // digest doesn't list it as both scheduled and inbox.
+      inbox: false,
+    };
+    // A5: only the AI path carries a reason, so only it writes plan_reason. The
+    // rules path writes exactly the same fields as it did in Waves 1–7
+    // (plan_reason is never touched there), keeping the rules behaviour intact.
+    if (Object.prototype.hasOwnProperty.call(placement, 'reason')) {
+      updatePayload.plan_reason = placement.reason || null;
+    }
     const { error } = await supabase
       .from('tasks')
-      .update({
-        state: STATE.TODAY,
-        today_section: section,
-        sort_order: seeds[section],
-        autoplanned_at: nowIso,
-        // Placing a task into Today IS a triage decision, so an auto-placed
-        // inbox item is no longer "awaiting triage" — clear the flag so the
-        // digest doesn't list it as both scheduled and inbox.
-        inbox: false,
-      })
+      .update(updatePayload)
       .eq('id', id)
       .eq('user_id', userId);
 
@@ -380,7 +419,10 @@ export async function clearAutopilotPlan({ supabase, userId }) {
     // the user touched between the read and the write is not clobbered.
     const { data, error: updErr } = await supabase
       .from('tasks')
-      .update({ state: STATE.THIS_WEEK, autoplanned_at: null, sort_order: order })
+      // A5: clear plan_reason alongside autoplanned_at — a demoted task is no
+      // longer auto-placed, so it must not keep the AI's stale provenance (the
+      // two markers are set together on placement, so they clear together).
+      .update({ state: STATE.THIS_WEEK, autoplanned_at: null, plan_reason: null, sort_order: order })
       .eq('id', id)
       .eq('user_id', userId)
       .eq('state', STATE.TODAY)

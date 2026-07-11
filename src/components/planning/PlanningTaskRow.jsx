@@ -10,6 +10,7 @@ import {
   CalendarDaysIcon,
   CheckCircleIcon,
   ClockIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 // Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges
@@ -62,6 +63,8 @@ export default function PlanningTaskRow({
   onMarkDone, // (taskId) => Promise<void>
   onChase, // (taskId, until) => Promise<void> — re-arms follow_up_date (server bumps chase_count); only wired for variant="chase"
   onProjectNavigate, // () => void — invoked before the project link navigates so the parent modal can close
+  suggestion, // AI day-planner (A5): optional { section, reason } — advisory only, highlights the suggested pill + shows the reason. Nothing auto-applies.
+  acceptedSection, // AI day-planner (A5): set when "Accept all suggestions" applied this row's suggestion, so it renders its actioned confirmation like a tapped pill.
 }) {
   const [showDefer, setShowDefer] = useState(false);
   const [showSnooze, setShowSnooze] = useState(false);
@@ -71,6 +74,13 @@ export default function PlanningTaskRow({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const dueDateStatus = task.due_date ? getDueDateStatus(task.due_date) : null;
+
+  // AI day-planner (A5 / Wave 8): advisory suggestion for this row. Only shown in
+  // the daily step (section pills exist there). suggestedSection highlights the
+  // matching pill with a ring + "Suggested" text (never colour-only); the reason
+  // is shown beneath. The user still taps a pill — nothing here auto-applies.
+  const suggestedSection = mode === 'daily' && suggestion?.section ? suggestion.section : null;
+  const suggestionReason = mode === 'daily' ? suggestion?.reason || null : null;
 
   // Snooze escalation (F2): once a task has been snoozed 3+ times, stop offering a
   // plain snooze and force a keep / schedule / complete decision. A snooze is still
@@ -107,12 +117,18 @@ export default function PlanningTaskRow({
     { label: '1 week', value: addDaysToDateKey(chaseBase, 7) },
   ];
 
-  if (isActioned) {
+  // Render the actioned confirmation either when this row actioned itself (a
+  // tapped pill / Accept / Snooze / Defer) or when the parent's "Accept all
+  // suggestions" applied its AI suggestion (acceptedSection). Both paths land in
+  // the same one-line confirmation so the row can never be tapped twice.
+  if (isActioned || acceptedSection) {
+    const confirmationLabel =
+      actionLabel || (acceptedSection ? `→ ${SECTION_LABELS[acceptedSection]}` : null);
     return (
       <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
         <CheckCircleIcon className="h-5 w-5 text-green-500" />
         <span className="font-medium">{task.name}</span>
-        <span className="ml-auto text-xs">{actionLabel}</span>
+        <span className="ml-auto text-xs">{confirmationLabel}</span>
       </div>
     );
   }
@@ -306,16 +322,26 @@ export default function PlanningTaskRow({
               const count = sectionCounts?.[section] || 0;
               const cap = SOFT_CAPS[section.toUpperCase()] || 999;
               const isOverCap = count >= cap;
+              const isSuggested = section === suggestedSection;
               return (
                 <div key={section} className="flex flex-col items-start">
                   <button
                     type="button"
                     disabled={isLoading}
                     onClick={() => handleAssignSection(section)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-50 ${SECTION_COLORS[section]}`}
+                    aria-pressed={isSuggested}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-50 ${SECTION_COLORS[section]} ${
+                      isSuggested ? 'ring-2 ring-primary ring-offset-1' : ''
+                    }`}
                   >
                     {label}
                   </button>
+                  {isSuggested && (
+                    <span className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] font-medium text-primary">
+                      <SparklesIcon className="h-2.5 w-2.5" aria-hidden="true" />
+                      Suggested
+                    </span>
+                  )}
                   {isOverCap && (
                     <span className="mt-0.5 text-[10px] text-amber-600">
                       Already {count} tasks
@@ -376,6 +402,14 @@ export default function PlanningTaskRow({
           Defer
         </button>
       </div>
+
+      {/* AI day-planner reason (A5): the model's one-line rationale for the
+          suggested section, shown muted + italic. Advisory — the user still taps. */}
+      {suggestionReason && (
+        <p className="mt-2 text-xs italic text-muted-foreground">
+          AI suggests {SECTION_LABELS[suggestedSection] || 'a section'}: {suggestionReason}
+        </p>
+      )}
 
       {/* Defer date picker */}
       {showDefer && (

@@ -55,9 +55,11 @@ export async function GET(request) {
     }
 
     // Trust control: autopilot is off by default. No row → treat as 'off'.
+    // ai_planning_enabled (A5) is likewise opt-in; when true the plan is drafted
+    // by the AI first, falling back to the rules on any failure.
     const { data: settings, error: settingsError } = await supabase
       .from('user_settings')
-      .select('autopilot_level')
+      .select('autopilot_level, ai_planning_enabled')
       .eq('user_id', userId)
       .maybeSingle();
     if (settingsError) {
@@ -99,7 +101,12 @@ export async function GET(request) {
 
     let result;
     try {
-      result = await buildAutopilotPlan({ supabase, userId, windowDate: todayKey });
+      result = await buildAutopilotPlan({
+        supabase,
+        userId,
+        windowDate: todayKey,
+        aiEnabled: settings?.ai_planning_enabled === true,
+      });
     } catch (planError) {
       try { await updateCronRun({ supabase, runId, patch: { status: 'failed', error: String(planError.message) } }); } catch {}
       throw planError;

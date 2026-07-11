@@ -317,9 +317,15 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
           </span>
         )}
 
-        {/* Auto-added provenance label (A3): non-colour-only, subtle chip */}
+        {/* Auto-added provenance label (A3): non-colour-only, subtle chip. When the
+            AI day-planner (A5) placed the task it leaves a one-line plan_reason —
+            surface it as a hover tooltip so the reasoning is inspectable without any
+            layout change. */}
         {showAutoAdded && (
-          <span className="mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+          <span
+            className="mt-1 ml-1 inline-block text-xs font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"
+            title={task.plan_reason ? `Auto-added: ${task.plan_reason}` : 'Auto-added'}
+          >
             Auto-added
           </span>
         )}

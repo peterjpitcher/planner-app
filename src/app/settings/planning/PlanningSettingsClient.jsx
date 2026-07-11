@@ -15,6 +15,9 @@ const DEFAULT_SETTINGS = {
   // Morning digest email on/off (Wave 4). Defaults to true so the owner keeps
   // getting the digest until they explicitly switch it off.
   digest_enabled: true,
+  // AI day-planner on/off (A5 / Wave 8). Off by default — opting in is what
+  // sends task titles and notes to OpenAI, so it must be a deliberate choice.
+  ai_planning_enabled: false,
 };
 
 // Morning autopilot options (A3 / F5-lite). Off is the safe default — the app
@@ -56,6 +59,7 @@ export default function PlanningSettingsClient() {
             weekly_plan_end: data.weekly_plan_end ?? DEFAULT_SETTINGS.weekly_plan_end,
             autopilot_level: data.autopilot_level ?? DEFAULT_SETTINGS.autopilot_level,
             digest_enabled: data.digest_enabled ?? DEFAULT_SETTINGS.digest_enabled,
+            ai_planning_enabled: data.ai_planning_enabled ?? DEFAULT_SETTINGS.ai_planning_enabled,
           });
         }
       } catch {
@@ -172,6 +176,46 @@ export default function PlanningSettingsClient() {
               />
             </button>
           </div>
+        </fieldset>
+
+        {/* AI day-planner on/off (A5 / Wave 8). Saved through the same handleSave /
+            updateUserSettings path as autopilot_level / digest_enabled. Off by
+            default; opting in is what permits sending titles/notes to OpenAI. */}
+        <fieldset>
+          <legend className="text-sm font-medium text-foreground mb-1">AI day-planner</legend>
+          <p className="text-xs text-muted-foreground mb-3">
+            Let an AI suggest how to arrange your day from your candidate tasks. You still confirm each
+            one — nothing is placed automatically.
+          </p>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+            <span id="ai-planning-toggle-label" className="text-sm text-foreground">
+              Suggest my day with AI
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.ai_planning_enabled}
+              aria-labelledby="ai-planning-toggle-label"
+              aria-describedby="ai-planning-toggle-help"
+              onClick={() => handleChange('ai_planning_enabled', !settings.ai_planning_enabled)}
+              className={cn(
+                'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                settings.ai_planning_enabled ? 'bg-primary' : 'bg-muted'
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
+                  settings.ai_planning_enabled ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </div>
+          <p id="ai-planning-toggle-help" className="mt-2 text-xs text-muted-foreground">
+            When on, your task titles and notes are sent to an external AI service (OpenAI) so it can
+            suggest how to arrange your day. Off by default.
+          </p>
         </fieldset>
 
         {/* Daily window */}
