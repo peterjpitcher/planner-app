@@ -163,8 +163,11 @@ export async function GET(request) {
           carried_count: nextCarried,
           sort_order: thisWeekOrder,
           // Leaving Today ends any autopilot provenance (the "Auto-added" label
-          // is Today-only; keeps the flag from lingering on This Week cards).
+          // is Today-only; keeps the flag from lingering on This Week cards). Also
+          // clear the AI plan_reason so a stale reason can't resurface on a later
+          // rules-based auto-placement (A5).
           autoplanned_at: null,
+          plan_reason: null,
         };
       }
 

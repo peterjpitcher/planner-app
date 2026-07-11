@@ -27,7 +27,7 @@ function actionsBaseUrl() {
 
 // Assemble the signed action URLs for a digest, or null when the feature is off.
 // Never throws — a signing problem simply yields no buttons.
-function buildDigestActions({ userId, overdue }) {
+function buildDigestActions({ userId, overdue, inbox, snoozedToday }) {
   if (!process.env.EMAIL_ACTION_SECRET) return null;
   try {
     const base = actionsBaseUrl();
@@ -38,8 +38,20 @@ function buildDigestActions({ userId, overdue }) {
     });
     const confirmPlanUrl = confirmToken ? `${base}/api/actions/${confirmToken}` : null;
 
+    // Sign Done links only for the overdue tasks the digest will actually SHOW.
+    // buildDigestEmail dedups the decision lists in precedence order (inbox and
+    // snoozedToday before overdue), so an overdue task also claimed by one of
+    // those is not rendered in the overdue group — mirror that here so the signed
+    // set matches the displayed set (otherwise a shown row could lack its link).
+    const claimedIds = new Set();
+    for (const t of (Array.isArray(inbox) ? inbox : [])) if (t?.id) claimedIds.add(t.id);
+    for (const t of (Array.isArray(snoozedToday) ? snoozedToday : [])) if (t?.id) claimedIds.add(t.id);
+    const displayedOverdue = (Array.isArray(overdue) ? overdue : [])
+      .filter((t) => t?.id && !claimedIds.has(t.id))
+      .slice(0, DONE_LINK_CAP);
+
     const doneUrls = {};
-    for (const task of (Array.isArray(overdue) ? overdue : []).slice(0, DONE_LINK_CAP)) {
+    for (const task of displayedOverdue) {
       const taskId = task?.id;
       if (!taskId) continue;
       const token = signActionToken({
@@ -406,7 +418,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
     ideas,
     stalledProjects,
     // Signed tap-to-confirm action URLs (Wave 8), or null when the feature is off.
-    actions: buildDigestActions({ userId, overdue }),
+    actions: buildDigestActions({ userId, overdue, inbox, snoozedToday }),
   };
 
   return { dueToday: todayTasks, overdue, inboxCount: inbox.length, digest };

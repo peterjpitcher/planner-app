@@ -285,7 +285,7 @@ export default function PlanningModal({
     setDraftNote(null);
     setFinishError(null);
     try {
-      const assignments = await apiClient.draftDayWithAI();
+      const assignments = await apiClient.draftDayWithAI(windowDate);
       const next = new Map();
       for (const a of assignments || []) {
         if (a && a.taskId && VALID_AI_SECTIONS.has(a.section)) {
@@ -304,7 +304,7 @@ export default function PlanningModal({
     } finally {
       setIsDrafting(false);
     }
-  }, [isDrafting]);
+  }, [isDrafting, windowDate]);
 
   // AI day-planner (A5): apply every currently-shown candidate that has a suggestion
   // in one tap. Reuses handleAssign (state=today + suggested section) so each row

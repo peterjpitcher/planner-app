@@ -22,8 +22,21 @@ export async function POST(request) {
     }
     const userId = session.user.id;
 
+    // Draft against the window the modal is planning (usually tomorrow in the
+    // evening flow), not today, so the AI's pool/ranking matches what the user
+    // sees. Falls back to today's London date when no valid window is supplied.
+    let body = {};
+    try { body = await request.json(); } catch { body = {}; }
+    const requested = typeof body?.windowDate === 'string' ? body.windowDate : null;
+    let windowDate = getLondonDateKey();
+    if (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested)) {
+      const parsed = new Date(requested + 'T12:00:00Z');
+      if (!isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === requested) {
+        windowDate = requested;
+      }
+    }
+
     const supabase = getSupabaseServiceRole();
-    const todayKey = getLondonDateKey();
 
     // Respect the opt-in server-side (defence in depth): never call OpenAI for a
     // user who has not enabled AI planning, regardless of what the UI sends.
@@ -36,9 +49,9 @@ export async function POST(request) {
       return NextResponse.json({ assignments: [] });
     }
 
-    const pool = await fetchAutopilotPool({ supabase, userId, windowDate: todayKey });
-    const ranked = sortTasksByPriority(pool, { todayKey });
-    const aiPlan = await draftPlanWithAI({ candidates: ranked, caps: SOFT_CAPS, todayKey });
+    const pool = await fetchAutopilotPool({ supabase, userId, windowDate });
+    const ranked = sortTasksByPriority(pool, { todayKey: windowDate });
+    const aiPlan = await draftPlanWithAI({ candidates: ranked, caps: SOFT_CAPS, todayKey: windowDate });
 
     return NextResponse.json({ assignments: aiPlan?.assignments || [] });
   } catch (error) {

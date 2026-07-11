@@ -44,10 +44,12 @@ describe('signActionToken / verifyActionToken', () => {
   it('rejects a tampered signature', () => {
     const token = signActionToken({ userId: 'user-1', action: 'confirm_plan' });
     const [payloadB64, sigB64] = token.split('.');
-    // Flip the last character of the signature.
-    const lastChar = sigB64.slice(-1);
-    const swapped = lastChar === 'A' ? 'B' : 'A';
-    const tampered = `${payloadB64}.${sigB64.slice(0, -1)}${swapped}`;
+    // Flip a whole byte of the decoded signature (deterministic — flipping the
+    // last base64url char alone could land in that char's non-significant
+    // padding bits and decode to the identical bytes, which made this flaky).
+    const sigBytes = Buffer.from(sigB64, 'base64url');
+    sigBytes[0] ^= 0xff;
+    const tampered = `${payloadB64}.${sigBytes.toString('base64url')}`;
 
     const result = verifyActionToken(tampered);
     expect(result.valid).toBe(false);

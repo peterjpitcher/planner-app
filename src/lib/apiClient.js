@@ -429,9 +429,12 @@ class APIClient {
   // { taskId, section, reason }. Advisory only — nothing is placed server-side;
   // the planning modal pre-selects the suggestions for the user to confirm.
   // Returns an empty array when AI is off, unconfigured, or the draft failed.
-  async draftDayWithAI() {
+  async draftDayWithAI(windowDate) {
     const response = await this.fetchWithAuth('/api/planning/ai-draft', {
       method: 'POST',
+      // Pass the window being planned (usually tomorrow in the evening flow) so the
+      // AI drafts against the SAME candidate pool the modal shows, not today's.
+      ...(windowDate ? { body: JSON.stringify({ windowDate }) } : {}),
     });
     return response.assignments || [];
   }
