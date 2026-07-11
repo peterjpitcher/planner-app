@@ -6,7 +6,7 @@ import { createTask, updateTask, deleteTask } from '@/services/taskService';
 import { maybeAutoSyncOffice365 } from '@/services/office365SyncService';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, recurrence, recurrence_interval, created_at, updated_at';
 
 // GET /api/tasks - Fetch tasks with support for state-based filtering
 export async function GET(request) {
