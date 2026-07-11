@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { Menu, Portal } from '@headlessui/react';
-import { EllipsisVerticalIcon, Bars2Icon, ArrowPathIcon } from '@heroicons/react/20/solid';
+import { EllipsisVerticalIcon, Bars2Icon, ArrowPathIcon, BellAlertIcon } from '@heroicons/react/20/solid';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { differenceInCalendarDays, parseISO, addDays, format } from 'date-fns';
@@ -209,6 +209,12 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   const showRepeats = !!task.recurrence && !isCompleted;
   const repeatsLabel = recurrenceBadgeLabel(task.recurrence, task.recurrence_interval);
 
+  // Waiting chase engine (Wave 7): a non-colour-only "Chased N×" pill (icon + text)
+  // so a waiting card shows how many times its follow-up has been re-armed. Only
+  // renders for waiting tasks that have been chased at least once.
+  const chaseCount = task.state === STATE.WAITING ? (task.chase_count || 0) : 0;
+  const showChased = chaseCount > 0 && !isCompleted;
+
   // Card container classes
   const containerClasses = [
     'group relative flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-sm shadow-sm',
@@ -336,6 +342,18 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
           <span className="mt-1 ml-1 inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
             <ArrowPathIcon className="h-3 w-3" aria-hidden="true" />
             {repeatsLabel}
+          </span>
+        )}
+
+        {/* Chased badge (Wave 7): non-colour-only "Chased N×" pill (icon + count) so a
+            waiting task's chase history is visible on the card. */}
+        {showChased && (
+          <span
+            className="mt-1 ml-1 inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500"
+            title={`Follow-up re-armed ${chaseCount} time${chaseCount !== 1 ? 's' : ''}`}
+          >
+            <BellAlertIcon className="h-3 w-3" aria-hidden="true" />
+            Chased {chaseCount}×
           </span>
         )}
       </div>

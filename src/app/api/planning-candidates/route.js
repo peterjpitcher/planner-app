@@ -4,7 +4,7 @@ import { sortTasksByPriority } from '@/lib/taskSort';
 import { STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP } from '@/lib/constants';
 import { NextResponse } from 'next/server';
 
-const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, entered_state_at, snoozed_until, snooze_count, carried_section, carried_count, created_at';
+const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, chase_count, entered_state_at, snoozed_until, snooze_count, carried_section, carried_count, created_at';
 
 // GET /api/planning-candidates?windowType=daily&windowDate=2026-04-15
 export async function GET(request) {
@@ -55,7 +55,7 @@ export async function GET(request) {
       staleThreshold.setUTCDate(staleThreshold.getUTCDate() - (STALE_BACKLOG_DAYS - 1));
       const staleThresholdDate = staleThreshold.toISOString().slice(0, 10);
 
-      const [carriedFromToday, inbox, dueTomorrow, overdue, undatedThisWeek, reviewBacklog, reviewBacklogCount] = await Promise.all([
+      const [carriedFromToday, inbox, dueTomorrow, overdue, undatedThisWeek, reviewBacklog, reviewBacklogCount, chaseDue] = await Promise.all([
         // 0. Carry-forward (A1): unfinished Good to Do / Quick Wins demoted from
         //    Today by the evening cron keep their original today_section in
         //    carried_section. Surface them FIRST as their own group so the modal
@@ -165,10 +165,30 @@ export async function GET(request) {
           .is('due_date', null)
           .lt('entered_state_at', staleThresholdDate)
           .or(snoozeFilter),
+
+        // 7. Chase-due (Wave 7): waiting tasks whose self-reminder has arrived —
+        //    state='waiting', a non-null follow_up_date on/before windowDate. So
+        //    the evening plan can prompt "chase these". Snooze-aware via the same
+        //    shared filter. A waiting task that ALSO has a due_date on/before the
+        //    window already appears in the dueTomorrow/overdue buckets (which do
+        //    not exclude waiting), so exclude those here (due_date NULL or in the
+        //    future) to avoid a duplicate row and inflated totals. Re-ranked by
+        //    the F1 comparator for display below.
+        supabase
+          .from('tasks')
+          .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
+          .eq('user_id', userId)
+          .eq('state', 'waiting')
+          .not('follow_up_date', 'is', null)
+          .lte('follow_up_date', windowDate)
+          .or(`due_date.is.null,due_date.gt.${windowDate}`)
+          .or(snoozeFilter)
+          .order('follow_up_date', { ascending: true })
+          .order('created_at', { ascending: true }),
       ]);
 
-      if (carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error || reviewBacklog.error || reviewBacklogCount.error) {
-        const err = carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error || reviewBacklog.error || reviewBacklogCount.error;
+      if (carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error || reviewBacklog.error || reviewBacklogCount.error || chaseDue.error) {
+        const err = carriedFromToday.error || inbox.error || dueTomorrow.error || overdue.error || undatedThisWeek.error || reviewBacklog.error || reviewBacklogCount.error || chaseDue.error;
         console.error('Planning candidates query error:', err);
         return NextResponse.json({ error: 'Failed to fetch planning candidates' }, { status: 500 });
       }
@@ -185,6 +205,7 @@ export async function GET(request) {
           undatedThisWeek: sortTasksByPriority(flattenProjects(undatedThisWeek.data), { todayKey: windowDate }),
           reviewBacklog: sortTasksByPriority(flattenProjects(reviewBacklog.data), { todayKey: windowDate }),
           reviewBacklogTotal: reviewBacklogCount.count ?? 0,
+          chaseDue: sortTasksByPriority(flattenProjects(chaseDue.data), { todayKey: windowDate }),
         },
       });
     }

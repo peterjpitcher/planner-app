@@ -3,11 +3,21 @@
 import { useState, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/20/solid';
+import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, FunnelIcon, BellAlertIcon } from '@heroicons/react/20/solid';
 import { Menu } from '@headlessui/react';
 import TaskCard from '@/components/shared/TaskCard';
+import { apiClient } from '@/lib/apiClient';
 import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, SOFT_CAPS, TASK_TYPE } from '@/lib/constants';
 import { getLondonDateKey } from '@/lib/timezone';
+
+// Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges
+// (mirrors the helper in PlanningTaskRow / TaskCard). Chase "remind me in"
+// presets are always derived from the London date key, never a raw new Date().
+function addDaysToDateKey(dateKey, days) {
+  const d = new Date(dateKey + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // ---------------------------------------------------------------------------
 // Today sub-section component
@@ -97,6 +107,8 @@ function TodaySubSection({ sectionKey, tasks, onComplete, onMove, onUpdate, onCl
 
 function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze }) {
   const [editing, setEditing] = useState(false);
+  const [showChase, setShowChase] = useState(false);
+  const [chasing, setChasing] = useState(false);
   const inputRef = useRef(null);
 
   const followUpDisplay = task.follow_up_date
@@ -109,12 +121,30 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete,
 
   // Compare date keys lexically against today's London date key so a follow-up
   // due today is not flagged overdue from 00:00 UTC (FF-036).
+  const londonKey = getLondonDateKey();
   const isOverdue =
-    task.follow_up_date && task.follow_up_date.slice(0, 10) < getLondonDateKey();
+    task.follow_up_date && task.follow_up_date.slice(0, 10) < londonKey;
   const isStale =
     !task.follow_up_date &&
     task.entered_state_at &&
     (new Date() - new Date(task.entered_state_at)) / (1000 * 60 * 60 * 24) > 7;
+
+  // Chase re-arm + escalation (Wave 7): re-arming a waiting task's follow-up is a
+  // one-tap action here on the board, mirroring the planning modal. Once a task has
+  // been chased 3+ times the button is flagged (still allowed, per the design spec).
+  const chaseCount = task.chase_count || 0;
+  const chaseEscalated = chaseCount >= 3;
+  // Base the presets on the later of today and the current follow-up so a re-arm
+  // is always a strictly-later move (never a silent no-op that the server ignores).
+  const chaseBase =
+    task.follow_up_date && task.follow_up_date.slice(0, 10) > londonKey
+      ? task.follow_up_date.slice(0, 10)
+      : londonKey;
+  const chasePresets = [
+    { label: 'Tomorrow', value: addDaysToDateKey(chaseBase, 1) },
+    { label: '3 days', value: addDaysToDateKey(chaseBase, 3) },
+    { label: '1 week', value: addDaysToDateKey(chaseBase, 7) },
+  ];
 
   function handleBadgeClick(e) {
     e.stopPropagation();
@@ -131,10 +161,27 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete,
     setEditing(false);
   }
 
+  async function handleChase(until) {
+    setChasing(true);
+    try {
+      // Reuse apiClient.chaseTask: PATCHes follow_up_date (server bumps chase_count
+      // when the new date is strictly later) and dispatches tasks-changed, which the
+      // Plan board debounces into a refetch — so the card reflects the new state.
+      await apiClient.chaseTask(task.id, until);
+      setShowChase(false);
+    } catch (err) {
+      // Best-effort: the board's tasks-changed refetch restores server truth if the
+      // re-arm failed, so no per-card error UI is needed here.
+      console.error('Failed to re-arm chase:', err);
+    } finally {
+      setChasing(false);
+    }
+  }
+
   return (
     <div className="relative">
       {(followUpDisplay || isStale || editing) && (
-        <div className="mb-0.5 flex items-center gap-1.5 px-1">
+        <div className="mb-0.5 flex flex-wrap items-center gap-1.5 px-1">
           {editing ? (
             <input
               ref={inputRef}
@@ -170,6 +217,68 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete,
               Stale — no follow-up date
             </button>
           ) : null}
+
+          {/* Chase re-arm (Wave 7): one-tap "remind me in…" for a follow-up that
+              already exists. Icon + text so it is not colour-only; flagged amber
+              once chased 3+ times (still allowed, per spec). */}
+          {task.follow_up_date && !editing && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowChase((v) => !v);
+              }}
+              disabled={chasing}
+              aria-expanded={showChase}
+              title={chaseEscalated ? `Chased ${chaseCount}× — escalate, or chase again` : 'Chased — remind me again in…'}
+              className={`inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full cursor-pointer transition-colors disabled:opacity-50 ${
+                chaseEscalated
+                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <BellAlertIcon className="h-3 w-3" aria-hidden="true" />
+              {chaseEscalated ? 'Chase again' : 'Chase'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Chase preset picker (Wave 7): presets derived from the London date key.
+          Setting a date forward re-arms follow_up_date and bumps chase_count. */}
+      {showChase && task.follow_up_date && (
+        <div className="mb-1 px-1">
+          {chaseEscalated && (
+            <p className="mb-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-xs font-medium text-amber-700">
+              Chased {chaseCount}× — escalate or drop? Complete or unblock it, or chase again if you must.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-white px-1.5 py-1">
+            <span className="text-xs text-gray-500">Remind me in</span>
+            {chasePresets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                disabled={chasing}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleChase(preset.value);
+                }}
+                className="rounded border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                {preset.label}
+              </button>
+            ))}
+            <input
+              type="date"
+              min={addDaysToDateKey(londonKey, 1)}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                if (e.target.value) handleChase(e.target.value);
+              }}
+              className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+          </div>
         </div>
       )}
       <TaskCard

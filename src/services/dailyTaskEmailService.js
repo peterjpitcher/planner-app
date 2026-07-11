@@ -156,7 +156,7 @@ export async function resolveDigestUserId({ supabase, email }) {
 // entered_state_at, sort_order, created_at, name, id) plus the fields the
 // decision/carried lenses read.
 const DIGEST_SELECT =
-  'id, name, due_date, state, today_section, project_id, chips, carried_count, carried_section, snooze_count, snoozed_until, follow_up_date, entered_state_at, sort_order, created_at, projects(name)';
+  'id, name, due_date, state, today_section, project_id, chips, carried_count, carried_section, snooze_count, snoozed_until, follow_up_date, chase_count, entered_state_at, sort_order, created_at, projects(name)';
 
 // Run a select and degrade to [] on any error/throw. Auxiliary decision queries
 // must never take the whole digest down — a richer email has more failure
@@ -314,11 +314,13 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
     fetchProjectRadar({ supabase, userId, nowMs: Date.now() }).catch(() => ({ projects: [], stalledCount: 0 })),
   ]);
 
-  // Stale waiting follow-ups: follow_up_date has passed, OR no follow_up_date and
-  // the task has sat in 'waiting' for more than WAITING_STALE_DAYS.
+  // Stale waiting follow-ups: follow_up_date is due (on or before today), OR no
+  // follow_up_date and the task has sat in 'waiting' for more than
+  // WAITING_STALE_DAYS. Uses <= today so a chase due exactly today is surfaced in
+  // the morning digest too, matching the evening plan's chaseDue bucket.
   const staleWaiting = (waitingRows || []).filter((task) => {
     const followUp = normalizeDueDate(task?.follow_up_date);
-    if (followUp) return followUp < today;
+    if (followUp) return followUp <= today;
     if (!waitingStaleCutoff) return false;
     const enteredKey = task?.entered_state_at ? getLondonDateKey(new Date(task.entered_state_at)) : null;
     return enteredKey !== null && enteredKey < waitingStaleCutoff;
@@ -374,20 +376,28 @@ function renderTodayTaskHtml(task) {
   return `<li>${name} <span style="color:#555;">(${project})</span>${chipSuffix}</li>`;
 }
 
-function renderDecisionTaskText(task, { timeZone, withDue } = {}) {
+function renderDecisionTaskText(task, { timeZone, withDue, withChase } = {}) {
   const name = task?.name || '(Untitled task)';
   const project = getProjectName(task);
   const due = withDue ? normalizeDueDate(task?.due_date) : null;
   const dueSuffix = due ? ` — due ${formatDueDateLabel(due, timeZone)}` : '';
-  return `- ${name} (${project})${dueSuffix}`;
+  // Waiting chase engine (Wave 7): show how many times this waiting task has
+  // already been chased, so a repeatedly re-armed item reads its own history.
+  const chaseCount = withChase ? (Number(task?.chase_count) || 0) : 0;
+  const chaseSuffix = chaseCount > 0 ? ` — chased ${chaseCount}×` : '';
+  return `- ${name} (${project})${dueSuffix}${chaseSuffix}`;
 }
 
-function renderDecisionTaskHtml(task, { timeZone, withDue } = {}) {
+function renderDecisionTaskHtml(task, { timeZone, withDue, withChase } = {}) {
   const name = escapeHtml(task?.name || '(Untitled task)');
   const project = escapeHtml(getProjectName(task));
   const due = withDue ? normalizeDueDate(task?.due_date) : null;
   const dueSuffix = due ? ` <span style="color:#555;">— due ${escapeHtml(formatDueDateLabel(due, timeZone))}</span>` : '';
-  return `<li>${name} <span style="color:#555;">(${project})</span>${dueSuffix}</li>`;
+  const chaseCount = withChase ? (Number(task?.chase_count) || 0) : 0;
+  const chaseSuffix = chaseCount > 0
+    ? ` <span style="color:#555;">— chased ${escapeHtml(String(chaseCount))}×</span>`
+    : '';
+  return `<li>${name} <span style="color:#555;">(${project})</span>${dueSuffix}${chaseSuffix}</li>`;
 }
 
 // Whole-day difference between two YYYY-MM-DD keys (toKey − fromKey), or null
@@ -584,7 +594,7 @@ export function buildDigestEmail(data = {}) {
     { key: 'inbox', label: 'Inbox — awaiting triage', list: inbox, withDue: false },
     { key: 'snoozedToday', label: 'Snooze returns today', list: snoozedToday, withDue: false },
     { key: 'overdue', label: 'Overdue', list: overdue, withDue: true },
-    { key: 'staleWaiting', label: 'Waiting — needs a chase', list: staleWaiting, withDue: false },
+    { key: 'staleWaiting', label: 'Waiting — needs a chase', list: staleWaiting, withDue: false, withChase: true },
     { key: 'thriceSnoozed', label: 'Snoozed 3+ times — decide', list: thriceSnoozed, withDue: false },
     { key: 'carried3Days', label: 'Carried 3+ days — still today?', list: carried3Days, withDue: false },
   ];
@@ -612,13 +622,13 @@ export function buildDigestEmail(data = {}) {
       const shown = group.list.slice(0, DECISION_LIST_CAP);
       const extra = group.list.length - shown.length;
       textParts.push(`${group.label} (${group.list.length})`);
-      textParts.push(...shown.map((t) => renderDecisionTaskText(t, { timeZone, withDue: group.withDue })));
+      textParts.push(...shown.map((t) => renderDecisionTaskText(t, { timeZone, withDue: group.withDue, withChase: group.withChase })));
       if (extra > 0) textParts.push(`- +${extra} more`);
       textParts.push('');
 
       htmlParts.push(`<p style="margin:12px 0 4px 0;"><strong>${escapeHtml(group.label)}</strong> (${group.list.length})</p>`);
       htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-      htmlParts.push(...shown.map((t) => renderDecisionTaskHtml(t, { timeZone, withDue: group.withDue })));
+      htmlParts.push(...shown.map((t) => renderDecisionTaskHtml(t, { timeZone, withDue: group.withDue, withChase: group.withChase })));
       if (extra > 0) htmlParts.push(`<li>+${extra} more</li>`);
       htmlParts.push('</ul>');
     }
