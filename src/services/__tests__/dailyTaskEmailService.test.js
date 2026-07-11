@@ -247,6 +247,68 @@ describe('buildDigestEmail — HTML escaping', () => {
   });
 });
 
+describe('buildDigestEmail — Projects needing a next action (Wave 5)', () => {
+  function stalledProject(overrides = {}) {
+    return {
+      projectId: overrides.projectId || Math.random().toString(36).slice(2),
+      name: overrides.name || 'A project',
+      area: overrides.area ?? null,
+      lastActivityAt: overrides.lastActivityAt ?? '2026-07-01T00:00:00Z',
+      stalled: true,
+      ...overrides,
+    };
+  }
+
+  it('renders the stalled-projects section with name, area and last-touched', () => {
+    const email = buildDigestEmail(baseData({
+      stalledProjects: [
+        stalledProject({ name: 'Website revamp', area: 'Growth', lastActivityAt: '2026-06-20T00:00:00Z' }),
+      ],
+    }));
+    expect(email).not.toBeNull();
+    expect(email.text).toContain('PROJECTS NEEDING A NEXT ACTION (1)');
+    expect(email.text).toContain('Website revamp (Growth) — last touched');
+    expect(email.html).toContain('Projects needing a next action (1)');
+    expect(email.html).toContain('Website revamp');
+  });
+
+  it('sends when the ONLY content is stalled projects (null-guard)', () => {
+    const email = buildDigestEmail(baseData({
+      stalledProjects: [stalledProject({ name: 'Lonely project' })],
+    }));
+    expect(email).not.toBeNull();
+    expect(email.text).toContain('Lonely project');
+  });
+
+  it('omits the stalled-projects section when there are none', () => {
+    const email = buildDigestEmail(baseData({
+      todayBySection: { must_do: [task({ name: 'x', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
+      stalledProjects: [],
+    }));
+    expect(email.text).not.toContain('PROJECTS NEEDING A NEXT ACTION');
+    expect(email.html).not.toContain('Projects needing a next action');
+  });
+
+  it('truncates a long stalled-projects list with "+N more"', () => {
+    const stalledProjects = Array.from({ length: 7 }, (_, i) =>
+      stalledProject({ projectId: `p-${i}`, name: `Project ${i}` })
+    );
+    const email = buildDigestEmail(baseData({ stalledProjects }));
+    expect(email.text).toContain('PROJECTS NEEDING A NEXT ACTION (7)');
+    expect(email.text).toContain('+2 more'); // cap is 5
+    expect(email.html).toContain('<li>+2 more</li>');
+  });
+
+  it('escapes stalled-project names and areas', () => {
+    const email = buildDigestEmail(baseData({
+      stalledProjects: [stalledProject({ name: '<b>Proj</b>', area: 'R&D' })],
+    }));
+    expect(email.html).toContain('&lt;b&gt;Proj&lt;/b&gt;');
+    expect(email.html).toContain('R&amp;D');
+    expect(email.html).not.toContain('<b>Proj</b>');
+  });
+});
+
 describe('buildDailyTaskEmail — route-facing adapter', () => {
   it('renders the assembled digest passed by fetchOutstandingTasks', () => {
     const digest = {
