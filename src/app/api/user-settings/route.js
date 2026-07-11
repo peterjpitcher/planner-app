@@ -6,6 +6,12 @@ import { PLANNING_DEFAULTS, AUTOPILOT_LEVEL } from '@/lib/constants';
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const AUTOPILOT_LEVELS = Object.values(AUTOPILOT_LEVEL); // ['off','review','auto']
 
+// Postgres `time` columns read back as HH:MM:SS (e.g. "20:05:00"), but the app
+// (and the <input type="time"> in the form) works in HH:MM. The form re-sends
+// whatever GET returned, so normalise to HH:MM on both read and write — otherwise
+// an unedited "20:05:00" fails the HH:MM-only validation and blocks every save.
+const toHM = (t) => (typeof t === 'string' ? t.slice(0, 5) : t);
+
 // Columns returned by GET/PATCH. autopilot_level (A3) defaults to 'off';
 // digest_enabled (Wave 4) defaults to true (DB column is NOT NULL DEFAULT true);
 // ai_planning_enabled (A5) defaults to false (DB column is NOT NULL DEFAULT false).
@@ -48,6 +54,12 @@ export async function GET(request) {
       data: data
         ? {
             ...data,
+            // Normalise the Postgres `time` values (HH:MM:SS) to HH:MM so the form
+            // round-trips clean values that pass the PATCH validator.
+            daily_plan_start: toHM(data.daily_plan_start),
+            daily_plan_end: toHM(data.daily_plan_end),
+            weekly_plan_start: toHM(data.weekly_plan_start),
+            weekly_plan_end: toHM(data.weekly_plan_end),
             autopilot_level: data.autopilot_level || DEFAULTS.autopilot_level,
             // A row that predates the digest_enabled column reads back the DB
             // default (true); guard here too so null/undefined never leaks out.
@@ -106,7 +118,8 @@ export async function PATCH(request) {
     const errors = {};
     for (const [key, value] of Object.entries(fields)) {
       if (value === undefined) continue; // allow partial updates
-      if (typeof value !== 'string' || !TIME_REGEX.test(value)) {
+      // Accept HH:MM or HH:MM:SS (the DB round-trips seconds); validate on HH:MM.
+      if (typeof value !== 'string' || !TIME_REGEX.test(toHM(value))) {
         errors[key] = 'Must be a valid time in HH:MM format (00:00 to 23:59)';
       }
     }
@@ -131,7 +144,6 @@ export async function PATCH(request) {
     // row exists yet). Stored values may be 'HH:MM:SS' (Postgres TIME) while
     // provided values are 'HH:MM', so normalise both sides to HH:MM before the
     // equality comparison — otherwise a zero-length window could slip through.
-    const toHM = (t) => (t || '').slice(0, 5);
     const effectiveDaily = {
       start: daily_plan_start !== undefined ? daily_plan_start : storedSettings.daily_plan_start,
       end: daily_plan_end !== undefined ? daily_plan_end : storedSettings.daily_plan_end,
@@ -153,10 +165,10 @@ export async function PATCH(request) {
 
     // Build update object with only provided fields
     const updates = {};
-    if (daily_plan_start !== undefined) updates.daily_plan_start = daily_plan_start;
-    if (daily_plan_end !== undefined) updates.daily_plan_end = daily_plan_end;
-    if (weekly_plan_start !== undefined) updates.weekly_plan_start = weekly_plan_start;
-    if (weekly_plan_end !== undefined) updates.weekly_plan_end = weekly_plan_end;
+    if (daily_plan_start !== undefined) updates.daily_plan_start = toHM(daily_plan_start);
+    if (daily_plan_end !== undefined) updates.daily_plan_end = toHM(daily_plan_end);
+    if (weekly_plan_start !== undefined) updates.weekly_plan_start = toHM(weekly_plan_start);
+    if (weekly_plan_end !== undefined) updates.weekly_plan_end = toHM(weekly_plan_end);
     if (autopilot_level !== undefined) updates.autopilot_level = autopilot_level;
     if (digest_enabled !== undefined) updates.digest_enabled = digest_enabled;
     if (ai_planning_enabled !== undefined) updates.ai_planning_enabled = ai_planning_enabled;
