@@ -119,6 +119,20 @@ export async function GET(request) {
     const supabase = getSupabaseServiceRole();
     const userId = await resolveDigestUserId({ supabase, email: digestUserEmail });
 
+    // Wave 4 digest gating: honour the owner's Morning digest email off switch.
+    // Only skip when the setting is explicitly false — an absent row, a null, or
+    // a failed read all fall through and send, so the digest never stops
+    // silently on a transient error. Mirrors the other early-return skips (no
+    // run row recorded), leaving idempotency untouched.
+    const { data: digestSettings } = await supabase
+      .from('user_settings')
+      .select('digest_enabled')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (digestSettings?.digest_enabled === false) {
+      return NextResponse.json({ sent: false, reason: 'digest_disabled' }, { status: 200 });
+    }
+
     const { dueToday, overdue, inboxCount, digest } = await fetchOutstandingTasks({
       supabase,
       userId,
@@ -136,6 +150,15 @@ export async function GET(request) {
     });
 
     if (!email) {
+      // Record a lightweight 'skipped' run so the automation heartbeat tracks the
+      // last cron EXECUTION, not just the last send — otherwise a run of genuinely
+      // empty days would falsely read as "hasn't run recently". Skip on dry-run.
+      if (!auth.dryRun) {
+        const claim = await claimDailyRun({ supabase, userId, runDateKey, toEmail, counts: { dueToday: 0, overdue: 0 } });
+        if (claim.claimed && claim.runId) {
+          await updateDailyRun({ supabase, runId: claim.runId, patch: { status: 'skipped' } });
+        }
+      }
       return NextResponse.json({ sent: false, reason: 'no_outstanding_tasks' }, { status: 200 });
     }
 

@@ -423,6 +423,13 @@ class APIClient {
     return response.data;
   }
 
+  // Wave 4 automation control panel + heartbeat. Returns the full payload
+  // ({ settings, health }) so callers can render both the toggles and the
+  // per-automation status list.
+  async getAutomations() {
+    return this.fetchWithAuth('/api/automations');
+  }
+
   // Areas
   async getAreas() {
     const response = await this.fetchWithAuth('/api/areas');
