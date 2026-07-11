@@ -2,13 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
-import { STATE, TODAY_SECTION, SOFT_CAPS, WINDOW_TYPE, STALE_BACKLOG_DAYS } from '@/lib/constants';
+import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, SOFT_CAPS, WINDOW_TYPE, STALE_BACKLOG_DAYS } from '@/lib/constants';
 import { getMondayOfWeek } from '@/lib/planningWindow';
 import { getLondonDateKey } from '@/lib/timezone';
 import PlanningTaskRow from './PlanningTaskRow';
+
+// AI day-planner (A5 / Wave 8): only accept the model's known section buckets, so
+// a malformed suggestion can never highlight a phantom pill or be applied.
+const VALID_AI_SECTIONS = new Set(TODAY_SECTION_ORDER);
 
 /**
  * Full-screen planning wizard modal.
@@ -56,6 +60,16 @@ export default function PlanningModal({
   // confirmation once restored, without mutating the candidate props.
   const [keepingPlan, setKeepingPlan] = useState(false);
   const [carriedKept, setCarriedKept] = useState(false);
+  // AI day-planner (A5 / Wave 8) — daily step only. aiSuggestions maps taskId →
+  // { section, reason } from the advisory /ai-draft route; nothing is placed until
+  // the user taps a pill or "Accept all suggestions". aiAcceptedIds tracks rows
+  // applied by "Accept all" so each renders its actioned confirmation. draftNote
+  // carries the gentle inline note when the draft returns nothing (AI off/unavailable).
+  const [aiSuggestions, setAiSuggestions] = useState(() => new Map());
+  const [aiAcceptedIds, setAiAcceptedIds] = useState(() => new Set());
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [acceptingAll, setAcceptingAll] = useState(false);
+  const [draftNote, setDraftNote] = useState(null);
 
   // Reset wizard state whenever the modal opens for a new window. The modal
   // stays mounted in AppShell, so without this a reopened session inherits
@@ -67,6 +81,13 @@ export default function PlanningModal({
     setFinishError(null);
     setCarriedKept(false);
     setKeepingPlan(false);
+    // Clear any AI draft from a previous session so suggestions never leak across
+    // opens or between the weekly and daily steps.
+    setAiSuggestions(new Map());
+    setAiAcceptedIds(new Set());
+    setIsDrafting(false);
+    setAcceptingAll(false);
+    setDraftNote(null);
 
     if (!isCombinedFlow) {
       setStep(windowType);
@@ -253,6 +274,72 @@ export default function PlanningModal({
     }
   }, [carriedFromToday, actionedIds, keepingPlan]);
 
+  // AI day-planner (A5): fetch the model's advisory day-draft for the current daily
+  // candidates. Stores each suggestion as taskId → { section, reason }; the rows
+  // highlight their suggested pill but nothing is placed until the user confirms.
+  // Fails soft — an empty result (AI off / unavailable / no candidates) just shows a
+  // gentle inline note and leaves manual planning untouched.
+  const handleDraftWithAI = useCallback(async () => {
+    if (isDrafting) return;
+    setIsDrafting(true);
+    setDraftNote(null);
+    setFinishError(null);
+    try {
+      const assignments = await apiClient.draftDayWithAI();
+      const next = new Map();
+      for (const a of assignments || []) {
+        if (a && a.taskId && VALID_AI_SECTIONS.has(a.section)) {
+          next.set(a.taskId, { section: a.section, reason: a.reason || null });
+        }
+      }
+      setAiSuggestions(next);
+      if (next.size === 0) {
+        setDraftNote('No AI suggestions right now.');
+      }
+    } catch (err) {
+      // Network / unexpected failure — degrade to manual, same as an empty draft.
+      console.error('AI draft failed:', err);
+      setAiSuggestions(new Map());
+      setDraftNote('No AI suggestions right now.');
+    } finally {
+      setIsDrafting(false);
+    }
+  }, [isDrafting]);
+
+  // AI day-planner (A5): apply every currently-shown candidate that has a suggestion
+  // in one tap. Reuses handleAssign (state=today + suggested section) so each row
+  // actions itself exactly like a tapped pill — counts, actionedIds and the server
+  // update all flow through the existing path. Rows already handled this session are
+  // skipped so nothing is double-assigned.
+  const handleAcceptAllSuggestions = useCallback(async () => {
+    if (acceptingAll) return;
+    const targets = currentTasks.filter(
+      (t) => aiSuggestions.has(t.id) && !actionedIds.has(t.id)
+    );
+    if (targets.length === 0) return;
+    setAcceptingAll(true);
+    setFinishError(null);
+    const acceptedNow = [];
+    const results = await Promise.allSettled(
+      targets.map(async (t) => {
+        const { section } = aiSuggestions.get(t.id);
+        await handleAssign(t.id, { state: STATE.TODAY, today_section: section });
+        acceptedNow.push(t.id);
+      })
+    );
+    if (acceptedNow.length > 0) {
+      setAiAcceptedIds((prev) => {
+        const nextSet = new Set(prev);
+        acceptedNow.forEach((id) => nextSet.add(id));
+        return nextSet;
+      });
+    }
+    if (results.some((r) => r.status === 'rejected')) {
+      setFinishError('Some AI suggestions could not be applied. Please try again.');
+    }
+    setAcceptingAll(false);
+  }, [acceptingAll, currentTasks, aiSuggestions, actionedIds, handleAssign]);
+
   const handleFinish = useCallback(async () => {
     // Guard against finishing before the user has done anything. Any row
     // action (pill, Accept, Snooze, Defer) counts; we only warn on true inaction.
@@ -391,6 +478,47 @@ export default function PlanningModal({
                   : `Tap Must Do, Good to Do or Quick Wins on each task to add it to ${targetIsToday ? 'today' : 'tomorrow'}. Complete marks tasks you\u2019ve already done; Defer changes the due date; Snooze hides it until a date you pick. Finish Planning only records the session — tasks won\u2019t move on their own.`}
               </p>
             )}
+            {/* AI day-planner (A5 / Wave 8): daily step only. "Draft my day with AI"
+                asks the model to arrange the candidates; suggestions are advisory and
+                pre-select a section per task. "Accept all suggestions" applies the
+                whole draft in one tap. Works even with AI off — the draft simply
+                returns nothing and the inline note explains it. */}
+            {step !== 'weekly' && currentTasks.length > 0 && (
+              <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDraftWithAI}
+                    disabled={isDrafting || acceptingAll}
+                    aria-busy={isDrafting}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+                  >
+                    <SparklesIcon className="h-4 w-4" aria-hidden="true" />
+                    {isDrafting ? 'Drafting…' : 'Draft my day with AI'}
+                  </button>
+                  {aiSuggestions.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleAcceptAllSuggestions}
+                      disabled={acceptingAll || isDrafting}
+                      aria-busy={acceptingAll}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+                    >
+                      {acceptingAll ? 'Applying…' : `Accept all suggestions (${aiSuggestions.size})`}
+                    </button>
+                  )}
+                </div>
+                {draftNote ? (
+                  <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                    {draftNote}
+                  </p>
+                ) : aiSuggestions.size > 0 ? (
+                  <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                    AI suggested a section for {aiSuggestions.size} task{aiSuggestions.size !== 1 ? 's' : ''} (ringed below). Tap a suggestion to accept, or pick your own — nothing moves until you do.
+                  </p>
+                ) : null}
+              </div>
+            )}
             {step !== 'weekly' && carriedFromToday.length > 0 && (
               <div className="mb-6">
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -425,6 +553,8 @@ export default function PlanningModal({
                         onDefer={handleDefer}
                         onMarkDone={handleMarkDone}
                         onProjectNavigate={onClose}
+                        suggestion={aiSuggestions.get(task.id)}
+                        acceptedSection={aiAcceptedIds.has(task.id) ? (aiSuggestions.get(task.id)?.section ?? null) : null}
                       />
                     ))}
                   </div>
@@ -450,6 +580,8 @@ export default function PlanningModal({
                         onDefer={handleDefer}
                         onMarkDone={handleMarkDone}
                         onProjectNavigate={onClose}
+                        suggestion={aiSuggestions.get(task.id)}
+                        acceptedSection={aiAcceptedIds.has(task.id) ? (aiSuggestions.get(task.id)?.section ?? null) : null}
                       />
                     ))}
                   </div>
