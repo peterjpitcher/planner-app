@@ -6,9 +6,10 @@ import { PLANNING_DEFAULTS, AUTOPILOT_LEVEL } from '@/lib/constants';
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const AUTOPILOT_LEVELS = Object.values(AUTOPILOT_LEVEL); // ['off','review','auto']
 
-// Columns returned by GET/PATCH. autopilot_level (A3) defaults to 'off'.
+// Columns returned by GET/PATCH. autopilot_level (A3) defaults to 'off';
+// digest_enabled (Wave 4) defaults to true (DB column is NOT NULL DEFAULT true).
 const SETTINGS_SELECT =
-  'daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end, autopilot_level';
+  'daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end, autopilot_level, digest_enabled';
 
 const DEFAULTS = {
   daily_plan_start: PLANNING_DEFAULTS.DAILY_START,
@@ -16,6 +17,7 @@ const DEFAULTS = {
   weekly_plan_start: PLANNING_DEFAULTS.WEEKLY_START,
   weekly_plan_end: PLANNING_DEFAULTS.WEEKLY_END,
   autopilot_level: AUTOPILOT_LEVEL.OFF,
+  digest_enabled: true,
 };
 
 // GET /api/user-settings — returns user's planning settings or defaults
@@ -42,13 +44,20 @@ export async function GET(request) {
     // the autopilot column still reads back the DB default, but guard here too.
     return NextResponse.json({
       data: data
-        ? { ...data, autopilot_level: data.autopilot_level || DEFAULTS.autopilot_level }
+        ? {
+            ...data,
+            autopilot_level: data.autopilot_level || DEFAULTS.autopilot_level,
+            // A row that predates the digest_enabled column reads back the DB
+            // default (true); guard here too so null/undefined never leaks out.
+            digest_enabled: data.digest_enabled ?? DEFAULTS.digest_enabled,
+          }
         : {
             daily_plan_start: DEFAULTS.daily_plan_start,
             daily_plan_end: DEFAULTS.daily_plan_end,
             weekly_plan_start: DEFAULTS.weekly_plan_start,
             weekly_plan_end: DEFAULTS.weekly_plan_end,
             autopilot_level: DEFAULTS.autopilot_level,
+            digest_enabled: DEFAULTS.digest_enabled,
           },
     });
   } catch (err) {
@@ -66,7 +75,7 @@ export async function PATCH(request) {
     }
 
     const body = await request.json();
-    const { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end, autopilot_level } = body;
+    const { daily_plan_start, daily_plan_end, weekly_plan_start, weekly_plan_end, autopilot_level, digest_enabled } = body;
 
     const supabase = getSupabaseServiceRole();
 
@@ -102,6 +111,11 @@ export async function PATCH(request) {
       errors.autopilot_level = `Must be one of: ${AUTOPILOT_LEVELS.join(', ')}`;
     }
 
+    // Validate digest_enabled (Wave 4) — must be a boolean when provided.
+    if (digest_enabled !== undefined && typeof digest_enabled !== 'boolean') {
+      errors.digest_enabled = 'Must be a boolean (true or false)';
+    }
+
     // Check start != end for daily and weekly pairs, merging provided values
     // over the user's stored settings (falling back to defaults only when no
     // row exists yet). Stored values may be 'HH:MM:SS' (Postgres TIME) while
@@ -134,6 +148,7 @@ export async function PATCH(request) {
     if (weekly_plan_start !== undefined) updates.weekly_plan_start = weekly_plan_start;
     if (weekly_plan_end !== undefined) updates.weekly_plan_end = weekly_plan_end;
     if (autopilot_level !== undefined) updates.autopilot_level = autopilot_level;
+    if (digest_enabled !== undefined) updates.digest_enabled = digest_enabled;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
