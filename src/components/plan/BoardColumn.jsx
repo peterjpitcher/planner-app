@@ -134,10 +134,16 @@ function WaitingTaskRow({ task, onComplete, onMove, onUpdate, onClick, onDelete,
   // been chased 3+ times the button is flagged (still allowed, per the design spec).
   const chaseCount = task.chase_count || 0;
   const chaseEscalated = chaseCount >= 3;
+  // Base the presets on the later of today and the current follow-up so a re-arm
+  // is always a strictly-later move (never a silent no-op that the server ignores).
+  const chaseBase =
+    task.follow_up_date && task.follow_up_date.slice(0, 10) > londonKey
+      ? task.follow_up_date.slice(0, 10)
+      : londonKey;
   const chasePresets = [
-    { label: 'Tomorrow', value: addDaysToDateKey(londonKey, 1) },
-    { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
-    { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
+    { label: 'Tomorrow', value: addDaysToDateKey(chaseBase, 1) },
+    { label: '3 days', value: addDaysToDateKey(chaseBase, 3) },
+    { label: '1 week', value: addDaysToDateKey(chaseBase, 7) },
   ];
 
   function handleBadgeClick(e) {

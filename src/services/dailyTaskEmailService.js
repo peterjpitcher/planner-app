@@ -314,11 +314,13 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
     fetchProjectRadar({ supabase, userId, nowMs: Date.now() }).catch(() => ({ projects: [], stalledCount: 0 })),
   ]);
 
-  // Stale waiting follow-ups: follow_up_date has passed, OR no follow_up_date and
-  // the task has sat in 'waiting' for more than WAITING_STALE_DAYS.
+  // Stale waiting follow-ups: follow_up_date is due (on or before today), OR no
+  // follow_up_date and the task has sat in 'waiting' for more than
+  // WAITING_STALE_DAYS. Uses <= today so a chase due exactly today is surfaced in
+  // the morning digest too, matching the evening plan's chaseDue bucket.
   const staleWaiting = (waitingRows || []).filter((task) => {
     const followUp = normalizeDueDate(task?.follow_up_date);
-    if (followUp) return followUp < today;
+    if (followUp) return followUp <= today;
     if (!waitingStaleCutoff) return false;
     const enteredKey = task?.entered_state_at ? getLondonDateKey(new Date(task.entered_state_at)) : null;
     return enteredKey !== null && enteredKey < waitingStaleCutoff;

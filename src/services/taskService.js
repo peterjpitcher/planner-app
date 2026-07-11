@@ -284,8 +284,12 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   // Setting the first follow-up (null -> date), an earlier/equal date, or
   // clearing it (date -> null) never increments. chase_count is deliberately
   // absent from TASK_UPDATE_FIELDS, so a client can never set it directly.
+  const leavingWaiting =
+    Object.prototype.hasOwnProperty.call(updatesToApply, 'state') &&
+    updatesToApply.state !== STATE.WAITING;
   if (
     existingTask.state === STATE.WAITING &&
+    !leavingWaiting &&
     Object.prototype.hasOwnProperty.call(updatesToApply, 'follow_up_date')
   ) {
     const newFollowUp = updatesToApply.follow_up_date

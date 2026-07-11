@@ -93,12 +93,18 @@ export default function PlanningTaskRow({
   const isChase = variant === 'chase';
   const chaseCount = task.chase_count || 0;
   const chaseEscalated = chaseCount >= 3;
-  // A chase "remind me in" date must be in the future to actually push the
-  // follow-up forward, so the shortest preset is tomorrow (like snooze).
+  // A chase "remind me in" date must be STRICTLY LATER than the current follow-up
+  // to actually push it forward (and so the server credits a chase). Base the
+  // presets on the later of today and the existing follow-up, so re-arming a task
+  // whose follow-up is already tomorrow still moves it and isn't a silent no-op.
+  const chaseBase =
+    task.follow_up_date && String(task.follow_up_date).slice(0, 10) > londonKey
+      ? String(task.follow_up_date).slice(0, 10)
+      : londonKey;
   const chasePresets = [
-    { label: 'Tomorrow', value: addDaysToDateKey(londonKey, 1) },
-    { label: '3 days', value: addDaysToDateKey(londonKey, 3) },
-    { label: '1 week', value: addDaysToDateKey(londonKey, 7) },
+    { label: 'Tomorrow', value: addDaysToDateKey(chaseBase, 1) },
+    { label: '3 days', value: addDaysToDateKey(chaseBase, 3) },
+    { label: '1 week', value: addDaysToDateKey(chaseBase, 7) },
   ];
 
   if (isActioned) {

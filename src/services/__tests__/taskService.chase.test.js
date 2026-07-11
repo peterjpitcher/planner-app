@@ -15,6 +15,12 @@ function makeSupabase(existingTask) {
         select() {
           const chain = {
             eq() { return chain; },
+            not() { return chain; },
+            is() { return chain; },
+            order() { return chain; },
+            // computeAppendSortOrder awaits .order().limit() when a state change
+            // triggers the server-side sort_order append; an empty bucket is fine.
+            limit: async () => ({ data: [], error: null }),
             single: async () => ({ data: existingTask, error: null }),
           };
           return chain;
@@ -114,6 +120,16 @@ describe('updateTask — waiting chase engine (Wave 7)', () => {
       { follow_up_date: '2026-07-18' }
     );
     expect(payload.follow_up_date).toBe('2026-07-18');
+    expect(payload.chase_count).toBeUndefined();
+  });
+
+  it('does NOT increment when the same update also moves the task OUT of waiting', async () => {
+    // Unblocking a waiting task (state -> backlog) while pushing the follow-up
+    // later must not credit a chase to a task that is leaving the waiting state.
+    const { payload } = await runUpdate(
+      { state: 'waiting', follow_up_date: '2026-07-11', chase_count: 0 },
+      { state: 'backlog', follow_up_date: '2026-07-18' }
+    );
     expect(payload.chase_count).toBeUndefined();
   });
 

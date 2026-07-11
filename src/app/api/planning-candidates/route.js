@@ -169,9 +169,11 @@ export async function GET(request) {
         // 7. Chase-due (Wave 7): waiting tasks whose self-reminder has arrived —
         //    state='waiting', a non-null follow_up_date on/before windowDate. So
         //    the evening plan can prompt "chase these". Snooze-aware via the same
-        //    shared filter. Waiting tasks never appear in the other buckets (those
-        //    require this_week/backlog/today or inbox), so no cross-bucket dedup is
-        //    needed. Re-ranked by the F1 comparator for display below.
+        //    shared filter. A waiting task that ALSO has a due_date on/before the
+        //    window already appears in the dueTomorrow/overdue buckets (which do
+        //    not exclude waiting), so exclude those here (due_date NULL or in the
+        //    future) to avoid a duplicate row and inflated totals. Re-ranked by
+        //    the F1 comparator for display below.
         supabase
           .from('tasks')
           .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
@@ -179,6 +181,7 @@ export async function GET(request) {
           .eq('state', 'waiting')
           .not('follow_up_date', 'is', null)
           .lte('follow_up_date', windowDate)
+          .or(`due_date.is.null,due_date.gt.${windowDate}`)
           .or(snoozeFilter)
           .order('follow_up_date', { ascending: true })
           .order('created_at', { ascending: true }),
