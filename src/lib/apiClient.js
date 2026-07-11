@@ -430,6 +430,12 @@ class APIClient {
     return this.fetchWithAuth('/api/automations');
   }
 
+  // Wave 5 project-altitude radar. Returns { projects: [...radar rows...],
+  // stalledCount } for the caller — the "needs a next action" board data.
+  async getProjectRadar() {
+    return this.fetchWithAuth('/api/projects/radar');
+  }
+
   // Areas
   async getAreas() {
     const response = await this.fetchWithAuth('/api/areas');

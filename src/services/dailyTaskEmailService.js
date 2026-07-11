@@ -1,7 +1,8 @@
-import { LONDON_TIME_ZONE, getLondonDateKey } from '@/lib/timezone';
+import { LONDON_TIME_ZONE, getLondonDateKey, getTimeZoneParts } from '@/lib/timezone';
 import { sortTasksByPriority } from '@/lib/taskSort';
 import { SOFT_CAPS, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
 import { listIdeasDueForReview } from '@/services/ideaService';
+import { fetchProjectRadar } from '@/services/projectRadarService';
 
 // A4 — proposal-style morning digest. The email is a picture of the whole
 // planned day (all three Today sections, incl. undated tasks) plus what needs a
@@ -13,6 +14,8 @@ import { listIdeasDueForReview } from '@/services/ideaService';
 const DECISION_LIST_CAP = 5;
 // Same idea for the ideas-to-revisit list.
 const IDEAS_CAP = 5;
+// Same idea for the stalled-projects list ("Projects needing a next action").
+const STALLED_PROJECTS_CAP = 5;
 // A 'waiting' task with no follow_up_date is stale once it has sat in state for
 // more than this many days (spec: "> 7 days in state with no follow_up_date").
 const WAITING_STALE_DAYS = 7;
@@ -232,6 +235,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
     waitingRows,
     thisWeekCarried,
     ideasResult,
+    radarResult,
   ] = await Promise.all([
     // Overdue exceptions: due before today, not already in Today (surfaced in
     // "Your day") and not done.
@@ -303,6 +307,11 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
     ),
     // Ideas due for review (F4) — reuse the shared service.
     listIdeasDueForReview({ supabase, userId }).catch(() => ({ data: [] })),
+    // Stalled open projects (Wave 5) — reuse the radar fetcher. It is internally
+    // resilient (returns an empty radar on a failed sub-query), and the extra
+    // catch guards any unexpected throw so a radar problem never takes the
+    // digest down. The morning nudge to un-stall a project.
+    fetchProjectRadar({ supabase, userId, nowMs: Date.now() }).catch(() => ({ projects: [], stalledCount: 0 })),
   ]);
 
   // Stale waiting follow-ups: follow_up_date has passed, OR no follow_up_date and
@@ -316,6 +325,11 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
   });
 
   const ideas = ideasResult?.data || [];
+
+  // Only the stalled open projects reach the digest — the daily nudge is
+  // "these have no next action". The builder caps the visible list with
+  // "+N more", so the full stalled set is passed through.
+  const stalledProjects = (radarResult?.projects || []).filter((project) => project?.stalled);
 
   const digest = {
     todayDateKey: today,
@@ -334,6 +348,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
       carried3Days,
     },
     ideas,
+    stalledProjects,
   };
 
   return { dueToday: todayTasks, overdue, inboxCount: inbox.length, digest };
@@ -375,6 +390,52 @@ function renderDecisionTaskHtml(task, { timeZone, withDue } = {}) {
   return `<li>${name} <span style="color:#555;">(${project})</span>${dueSuffix}</li>`;
 }
 
+// Whole-day difference between two YYYY-MM-DD keys (toKey − fromKey), or null
+// when either key is malformed.
+function diffDaysBetweenKeys(fromKey, toKey) {
+  const [fy, fm, fd] = String(fromKey).slice(0, 10).split('-').map(Number);
+  const [ty, tm, td] = String(toKey).slice(0, 10).split('-').map(Number);
+  if (!fy || !fm || !fd || !ty || !tm || !td) return null;
+  const fromMs = Date.UTC(fy, fm - 1, fd);
+  const toMs = Date.UTC(ty, tm - 1, td);
+  return Math.round((toMs - fromMs) / 86400000);
+}
+
+// "last touched" phrasing for a stalled project, relative to today's London
+// date. Recent activity reads relatively (today / yesterday / N days ago); older
+// activity falls back to a plain date so the nudge never becomes vague.
+function formatLastTouched(lastActivityAt, todayDateKey, timeZone) {
+  if (!lastActivityAt) return 'not touched yet';
+  const activityDate = new Date(lastActivityAt);
+  if (Number.isNaN(activityDate.getTime())) return 'not touched yet';
+  let activityKey;
+  try {
+    activityKey = getTimeZoneParts(activityDate, timeZone).dateKey;
+  } catch {
+    return 'not touched yet';
+  }
+  const diff = diffDaysBetweenKeys(activityKey, todayDateKey);
+  if (diff === null) return `on ${formatDueDateLabel(activityKey, timeZone)}`;
+  if (diff <= 0) return 'today';
+  if (diff === 1) return 'yesterday';
+  if (diff < 7) return `${diff} days ago`;
+  return `on ${formatDueDateLabel(activityKey, timeZone)}`;
+}
+
+function renderStalledProjectText(project, { timeZone, todayDateKey } = {}) {
+  const name = project?.name || '(Untitled project)';
+  const area = project?.area ? ` (${project.area})` : '';
+  const touched = formatLastTouched(project?.lastActivityAt, todayDateKey, timeZone);
+  return `- ${name}${area} — last touched ${touched}`;
+}
+
+function renderStalledProjectHtml(project, { timeZone, todayDateKey } = {}) {
+  const name = escapeHtml(project?.name || '(Untitled project)');
+  const areaHtml = project?.area ? ` <span style="color:#555;">(${escapeHtml(project.area)})</span>` : '';
+  const touched = escapeHtml(formatLastTouched(project?.lastActivityAt, todayDateKey, timeZone));
+  return `<li>${name}${areaHtml} <span style="color:#555;">— last touched ${touched}</span></li>`;
+}
+
 // --- Pure builder ----------------------------------------------------------
 
 /**
@@ -388,6 +449,7 @@ function renderDecisionTaskHtml(task, { timeZone, withDue } = {}) {
  * @param {object} [data.carried] { mustDoCarried, thisWeekCarried }
  * @param {object} [data.decisions] { inbox, snoozedToday, overdue, overCapSections, staleWaiting, thriceSnoozed, carried3Days }
  * @param {object[]} [data.ideas] { title, area }
+ * @param {object[]} [data.stalledProjects] stalled open projects { name, area, lastActivityAt }
  * @param {string} [data.dashboardUrl]
  * @param {string} [data.timeZone]
  */
@@ -450,9 +512,18 @@ export function buildDigestEmail(data = {}) {
     carried3Days.length;
 
   const ideas = Array.isArray(data.ideas) ? data.ideas : [];
+  const stalledProjects = Array.isArray(data.stalledProjects) ? data.stalledProjects : [];
 
   // Nothing to say → no email (preserves the route's "no_outstanding_tasks").
-  if (todayCount === 0 && decisionCount === 0 && ideas.length === 0 && !hasCarried) {
+  // A digest whose only content is stalled projects still sends — the point of
+  // Wave 5 is that a silently-stalling project gets its morning nudge.
+  if (
+    todayCount === 0 &&
+    decisionCount === 0 &&
+    ideas.length === 0 &&
+    !hasCarried &&
+    stalledProjects.length === 0
+  ) {
     return null;
   }
 
@@ -575,7 +646,23 @@ export function buildDigestEmail(data = {}) {
     textParts.push('');
   }
 
-  // --- 5. Single app link ---
+  // --- 5. Projects needing a next action (Wave 5) ---
+  if (stalledProjects.length) {
+    const shown = stalledProjects.slice(0, STALLED_PROJECTS_CAP);
+    const extra = stalledProjects.length - shown.length;
+    textParts.push(`PROJECTS NEEDING A NEXT ACTION (${stalledProjects.length})`);
+    textParts.push(...shown.map((p) => renderStalledProjectText(p, { timeZone, todayDateKey: today })));
+    if (extra > 0) textParts.push(`- +${extra} more`);
+    textParts.push('');
+
+    htmlParts.push(`<h3 style="margin:18px 0 8px 0;">Projects needing a next action (${stalledProjects.length})</h3>`);
+    htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
+    htmlParts.push(...shown.map((p) => renderStalledProjectHtml(p, { timeZone, todayDateKey: today })));
+    if (extra > 0) htmlParts.push(`<li>+${extra} more</li>`);
+    htmlParts.push('</ul>');
+  }
+
+  // --- 6. Single app link ---
   textParts.push(`Open Planner: ${dashboardLink}`);
   htmlParts.push(`<p style="margin:18px 0 0 0;"><a href="${escapeHtml(dashboardLink)}">Open Planner</a></p>`);
 
@@ -605,6 +692,7 @@ function buildLegacyData({ dueToday, overdue }) {
       carried3Days: [],
     },
     ideas: [],
+    stalledProjects: [],
   };
 }
 
