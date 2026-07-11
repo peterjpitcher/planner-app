@@ -5,9 +5,12 @@ import { AUTOPILOT_LEVEL } from '@/lib/constants';
 import { fetchAutomationHealth } from '@/services/automationStatusService';
 
 // GET /api/automations — Wave 4 automation control panel + heartbeat.
-// Returns the owner's automation toggles and one health row per automation.
-// User-scoped by user_id (the service-role client is fine here); never leaks
-// another user's data and never returns any Outlook token/secret ids.
+// Returns the caller's automation toggles and one health row per automation.
+// The settings, digest and Outlook rows are scoped by user_id. The three cron
+// rows (autopilot/evening-tidy/weekly-tidy) come from cron_runs, which has no
+// user_id — they are APP-GLOBAL operational status (this is a single-owner app
+// where all crons run for the one DIGEST_USER). Never returns any Outlook
+// token/secret ids.
 export async function GET(request) {
   try {
     const { session } = await getAuthContext(request);

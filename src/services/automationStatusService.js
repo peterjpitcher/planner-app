@@ -19,7 +19,10 @@ const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000;
 const CRON_STATUS_MAP = { success: 'ok', partial: 'partial', failed: 'failed' };
 // daily_task_email_runs.status → health status. 'claimed' (send in progress /
 // crashed mid-send) falls through to 'partial'.
-const EMAIL_STATUS_MAP = { sent: 'ok', failed: 'failed' };
+// 'skipped' = the cron ran but there was nothing to send (a healthy no-op). It
+// is recorded so lastRunAt tracks the last cron EXECUTION, not the last send —
+// otherwise a run of genuinely-empty days would falsely read as "stopped".
+const EMAIL_STATUS_MAP = { sent: 'ok', skipped: 'ok', failed: 'failed' };
 
 // The cron_runs operations surfaced in the heartbeat. Excludes the
 // 'office365-sync-lock:*' advisory-lock rows, which are not automations.
@@ -114,7 +117,7 @@ function normaliseCronAutomation(auto, row, settings, nowMs) {
 }
 
 function emailDetail(status, row) {
-  if (status === 'ok') return 'Sent';
+  if (status === 'ok') return row?.status === 'skipped' ? 'Ran — nothing to send' : 'Sent';
   if (status === 'failed') return row?.error ? String(row.error) : 'Last send failed';
   return 'In progress';
 }

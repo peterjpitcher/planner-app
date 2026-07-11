@@ -150,6 +150,15 @@ export async function GET(request) {
     });
 
     if (!email) {
+      // Record a lightweight 'skipped' run so the automation heartbeat tracks the
+      // last cron EXECUTION, not just the last send — otherwise a run of genuinely
+      // empty days would falsely read as "hasn't run recently". Skip on dry-run.
+      if (!auth.dryRun) {
+        const claim = await claimDailyRun({ supabase, userId, runDateKey, toEmail, counts: { dueToday: 0, overdue: 0 } });
+        if (claim.claimed && claim.runId) {
+          await updateDailyRun({ supabase, runId: claim.runId, patch: { status: 'skipped' } });
+        }
+      }
       return NextResponse.json({ sent: false, reason: 'no_outstanding_tasks' }, { status: 200 });
     }
 

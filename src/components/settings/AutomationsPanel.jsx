@@ -181,13 +181,18 @@ export default function AutomationsPanel() {
         load({ showSkeleton: false });
       }
     };
+    // Also refresh when settings are saved (the digest toggle lives in the same
+    // page), so the heartbeat's digest row matches the toggle without a reload.
+    const onSettingsSaved = () => load({ showSkeleton: false });
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('focus', refresh);
+    window.addEventListener('planning-settings-updated', onSettingsSaved);
 
     return () => {
       mountedRef.current = false;
       document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('focus', refresh);
+      window.removeEventListener('planning-settings-updated', onSettingsSaved);
     };
   }, [load]);
 

@@ -107,6 +107,16 @@ describe('normaliseAutomationHealth', () => {
     expect(off.digest.lastRunAt).toBe(iso(2 * HOUR));
   });
 
+  it('treats a "skipped" (ran, nothing to send) digest run as healthy and not stale', () => {
+    // The cron records a 'skipped' row on empty days so lastRunAt tracks the last
+    // EXECUTION — a run of quiet days must not read as "hasn't run recently".
+    const skipped = byKey(run({ lastEmailRun: { status: 'skipped', created_at: iso(3 * HOUR) } }));
+    expect(skipped.digest.status).toBe('ok');
+    expect(skipped.digest.detail).toBe('Ran — nothing to send');
+    expect(skipped.digest.lastRunAt).toBe(iso(3 * HOUR));
+    expect(skipped.digest.stale).toBe(false);
+  });
+
   it('reports Outlook sync as off / failed / ok and never leaks secret fields', () => {
     expect(byKey(run({ connection: null })).outlook_sync.status).toBe('off');
 
