@@ -114,7 +114,7 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, recurrence, recurrence_interval, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, plan_reason, recurrence, recurrence_interval, created_at, updated_at';
 
 /**
  * Recurring tasks (F6/P4): validate + coerce the recurrence fields on any write.
@@ -353,6 +353,11 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     // (absent from TASK_UPDATE_FIELDS) — only the autopilot sets it and only this
     // reset clears it, so the client can never touch it directly.
     updatesToApply.autoplanned_at = null;
+    // AI day-planner (A5): the AI's rationale for an auto-placement is only valid
+    // while the task is still auto-placed, so clear plan_reason on the same
+    // re-triage. It is server-managed (absent from TASK_UPDATE_FIELDS), so only
+    // the AI autopilot sets it and only this reset clears it.
+    updatesToApply.plan_reason = null;
   }
 
   const touches = new Set();

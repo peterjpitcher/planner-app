@@ -424,6 +424,18 @@ class APIClient {
     return result;
   }
 
+  // A5 (Wave 8): on-demand "Draft my day with AI". POSTs to the advisory
+  // ai-draft route and returns the model's suggested placements as an array of
+  // { taskId, section, reason }. Advisory only — nothing is placed server-side;
+  // the planning modal pre-selects the suggestions for the user to confirm.
+  // Returns an empty array when AI is off, unconfigured, or the draft failed.
+  async draftDayWithAI() {
+    const response = await this.fetchWithAuth('/api/planning/ai-draft', {
+      method: 'POST',
+    });
+    return response.assignments || [];
+  }
+
   async getUserSettings() {
     const response = await this.fetchWithAuth('/api/user-settings');
     return response.data;
