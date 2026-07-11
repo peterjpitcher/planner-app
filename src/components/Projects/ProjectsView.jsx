@@ -18,6 +18,7 @@ import CreateProjectModal from './CreateProjectModal';
 import ProjectSidebar from './ProjectSidebar';
 import ProjectDashboard from './ProjectDashboard';
 import ProjectWorkspace from './ProjectWorkspace';
+import ProjectRadar from './ProjectRadar';
 
 function ProjectsViewSkeleton() {
   return (
@@ -470,6 +471,11 @@ export default function ProjectsView() {
           <ArrowLeftIcon className="h-4 w-4" />
           Back to projects
         </button>
+
+        {/* Wave 5 project-altitude radar — surfaces Open projects with no
+            scheduled next action. Reuses the existing selection handler so a
+            stalled row opens exactly like a sidebar row; self-hides when healthy. */}
+        <ProjectRadar onSelectProject={openProjectDetail} />
 
         {isUnassignedSelected ? (
           <ProjectWorkspace
