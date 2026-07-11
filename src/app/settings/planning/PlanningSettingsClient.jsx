@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { AUTOPILOT_LEVEL } from '@/lib/constants';
+import { cn } from '@/lib/utils';
+import AutomationsPanel from '@/components/settings/AutomationsPanel';
 
 const DEFAULT_SETTINGS = {
   daily_plan_start: '20:05',
@@ -10,6 +12,9 @@ const DEFAULT_SETTINGS = {
   weekly_plan_start: '20:05',
   weekly_plan_end: '20:00',
   autopilot_level: AUTOPILOT_LEVEL.OFF,
+  // Morning digest email on/off (Wave 4). Defaults to true so the owner keeps
+  // getting the digest until they explicitly switch it off.
+  digest_enabled: true,
 };
 
 // Morning autopilot options (A3 / F5-lite). Off is the safe default — the app
@@ -50,6 +55,7 @@ export default function PlanningSettingsClient() {
             weekly_plan_start: data.weekly_plan_start ?? DEFAULT_SETTINGS.weekly_plan_start,
             weekly_plan_end: data.weekly_plan_end ?? DEFAULT_SETTINGS.weekly_plan_end,
             autopilot_level: data.autopilot_level ?? DEFAULT_SETTINGS.autopilot_level,
+            digest_enabled: data.digest_enabled ?? DEFAULT_SETTINGS.digest_enabled,
           });
         }
       } catch {
@@ -132,6 +138,39 @@ export default function PlanningSettingsClient() {
                 </label>
               );
             })}
+          </div>
+        </fieldset>
+
+        {/* Morning digest email on/off (Wave 4). Saved through the same
+            handleSave / updateUserSettings path as the fields above. */}
+        <fieldset>
+          <legend className="text-sm font-medium text-foreground mb-1">Morning digest email</legend>
+          <p className="text-xs text-muted-foreground mb-3">
+            A short email each morning with your plan for the day.
+          </p>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+            <span id="digest-toggle-label" className="text-sm text-foreground">
+              Send me the morning digest
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.digest_enabled}
+              aria-labelledby="digest-toggle-label"
+              onClick={() => handleChange('digest_enabled', !settings.digest_enabled)}
+              className={cn(
+                'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                settings.digest_enabled ? 'bg-primary' : 'bg-muted'
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
+                  settings.digest_enabled ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              />
+            </button>
           </div>
         </fieldset>
 
@@ -222,6 +261,10 @@ export default function PlanningSettingsClient() {
           </button>
         </div>
       </form>
+
+      {/* Wave 4 heartbeat: read-only status of every background automation.
+          Fetches independently and refreshes on tab focus. */}
+      <AutomationsPanel />
     </div>
   );
 }
