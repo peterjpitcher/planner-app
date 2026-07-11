@@ -53,3 +53,19 @@ export function intervalUnitLabel(recurrence, interval) {
   if (!unit) return '';
   return interval === 1 ? unit : `${unit}s`;
 }
+
+/**
+ * Card badge label including the interval when it is greater than 1, so an
+ * "every 2 weeks" task doesn't read the same as a weekly one. Falls back to the
+ * short cadence label for interval 1 and for intervalless patterns (weekdays).
+ * @param {string|null} recurrence
+ * @param {number} [interval]
+ * @returns {string}
+ */
+export function recurrenceBadgeLabel(recurrence, interval = 1) {
+  const n = Math.max(1, Math.floor(Number(interval)) || 1);
+  if (hasInterval(recurrence) && n > 1) {
+    return `Every ${n} ${intervalUnitLabel(recurrence, n)}`;
+  }
+  return RECURRENCE_BADGE_LABEL[recurrence] || 'Repeats';
+}

@@ -422,15 +422,35 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     return { error: { status: 400, message: 'Validation failed', details: validation.errors } };
   }
 
-  const { data, error } = await supabase
+  const settingDone =
+    Object.prototype.hasOwnProperty.call(updatesToApply, 'state') &&
+    updatesToApply.state === STATE.DONE &&
+    existingTask.state !== STATE.DONE;
+
+  let updateQuery = supabase
     .from('tasks')
     .update(updatesToApply)
     .eq('id', taskId)
-    .eq('user_id', userId)
-    .select(TASK_SELECT_FIELDS)
-    .single();
+    .eq('user_id', userId);
+  // Atomic done-transition (P4): guard the completing write on the prior non-done
+  // state so only the request that actually flips the row FROM non-done wins —
+  // two concurrent completions can't then both spawn the next occurrence.
+  if (settingDone) updateQuery = updateQuery.neq('state', STATE.DONE);
+  const { data, error } = await updateQuery.select(TASK_SELECT_FIELDS).single();
 
   if (error) {
+    // A guarded done-transition that matches no row (PGRST116) means another
+    // request completed the task first — we lost the race. Return the current row
+    // and do NOT spawn a second occurrence.
+    if (settingDone && error.code === 'PGRST116') {
+      const { data: current } = await supabase
+        .from('tasks')
+        .select(TASK_SELECT_FIELDS)
+        .eq('id', taskId)
+        .eq('user_id', userId)
+        .single();
+      return { data: current || existingTask };
+    }
     const errorMessage = handleSupabaseError(error, 'update');
     return { error: { status: 500, message: errorMessage } };
   }
@@ -450,64 +470,72 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
     }
   }
 
-  // Recurring tasks (F6/P4): when a recurring task transitions INTO done — a real
-  // completion, not a re-save of an already-done row — spawn the next occurrence
-  // as a fresh backlog task so the series can never be forgotten. Purely additive:
-  // a non-recurring task, or any update that is not a transition into done, is
-  // completely unaffected. The whole spawn is wrapped so a failure is logged and
-  // NEVER blocks or fails the completion itself; updateTask's return value is
-  // unchanged (still the updated task).
-  const transitionedIntoDone =
-    existingTask.state !== STATE.DONE && data?.state === STATE.DONE;
-  if (transitionedIntoDone && existingTask.recurrence && isValidRecurrence(existingTask.recurrence)) {
-    try {
-      const todayKey = getLondonDateKey();
-      const dueKey = existingTask.due_date ? String(existingTask.due_date).slice(0, 10) : null;
-      // base = the LATER of the completing task's due date and today, so the next
-      // occurrence is always in the future: an overdue or undated task advances
-      // from today; a future-dated one advances from its own due date.
-      const base = dueKey && dueKey > todayKey ? dueKey : todayKey;
-      const nextDue = nextRecurrenceDate(
-        base,
-        existingTask.recurrence,
-        existingTask.recurrence_interval || 1
-      );
-      if (!nextDue) {
-        console.warn(
-          `Recurrence spawn skipped for task ${taskId}: could not compute next date ` +
-          `(recurrence=${existingTask.recurrence}, interval=${existingTask.recurrence_interval}).`
-        );
-      } else {
-        const spawn = await createTask({
-          supabase,
-          userId,
-          payload: {
-            name: existingTask.name,
-            description: existingTask.description,
-            project_id: existingTask.project_id,
-            area: existingTask.area,
-            task_type: existingTask.task_type,
-            chips: existingTask.chips,
-            recurrence: existingTask.recurrence,
-            recurrence_interval: existingTask.recurrence_interval || 1,
-            due_date: nextDue,
-            state: STATE.BACKLOG,
-          },
-          // Skip the synchronous Graph call inside a completion; the periodic
-          // Office365 sync will pick the new occurrence up.
-          options: { skipOffice365Sync: true },
-        });
-        if (spawn?.error) {
-          console.warn(`Recurrence spawn failed for task ${taskId}:`, spawn.error);
-        }
-      }
-    } catch (err) {
-      // A spawn failure must never block or fail the completion itself.
-      console.warn(`Recurrence spawn threw for task ${taskId}:`, err);
-    }
+  // Recurring tasks (F6/P4): a real completion spawns the next occurrence. The
+  // atomic neq-done guard above means reaching here with settingDone === true is
+  // exactly the one request that won the transition, so precisely one occurrence
+  // is spawned even under concurrent double-completion. The spawn never blocks or
+  // fails the completion (it swallows its own errors).
+  if (settingDone) {
+    await spawnNextRecurrence({ supabase, userId, task: data });
   }
 
   return { data };
+}
+
+/**
+ * Spawn the next occurrence of a recurring task (F6/P4). Given a task that has
+ * JUST been completed, create a fresh backlog task dated from the later of its
+ * due date and today, carrying the identity fields and the recurrence rule. This
+ * lives in a shared, exported helper so a recurring task completed EITHER in-app
+ * (taskService.updateTask) OR remotely via the Office365 inbound pull keeps the
+ * series going. Never throws: a failure is logged and returned as
+ * { spawned: false } so it can never block the completion.
+ */
+export async function spawnNextRecurrence({ supabase, userId, task }) {
+  if (!task || !task.recurrence || !isValidRecurrence(task.recurrence)) {
+    return { spawned: false };
+  }
+  try {
+    const todayKey = getLondonDateKey();
+    const dueKey = task.due_date ? String(task.due_date).slice(0, 10) : null;
+    // base = the LATER of the completed task's due date and today, so the next
+    // occurrence is always in the future.
+    const base = dueKey && dueKey > todayKey ? dueKey : todayKey;
+    const nextDue = nextRecurrenceDate(base, task.recurrence, task.recurrence_interval || 1);
+    if (!nextDue) {
+      console.warn(
+        `Recurrence spawn skipped for task ${task.id}: could not compute next date ` +
+        `(recurrence=${task.recurrence}, interval=${task.recurrence_interval}).`
+      );
+      return { spawned: false };
+    }
+    const spawn = await createTask({
+      supabase,
+      userId,
+      payload: {
+        name: task.name,
+        description: task.description,
+        project_id: task.project_id,
+        area: task.area,
+        task_type: task.task_type,
+        chips: task.chips,
+        recurrence: task.recurrence,
+        recurrence_interval: task.recurrence_interval || 1,
+        due_date: nextDue,
+        state: STATE.BACKLOG,
+      },
+      // Skip the synchronous Graph call; the periodic Office365 sync picks it up.
+      options: { skipOffice365Sync: true },
+    });
+    if (spawn?.error) {
+      console.warn(`Recurrence spawn failed for task ${task.id}:`, spawn.error);
+      return { spawned: false };
+    }
+    return { spawned: true, task: spawn.data };
+  } catch (err) {
+    console.warn(`Recurrence spawn threw for task ${task?.id}:`, err);
+    return { spawned: false };
+  }
 }
 
 export async function updateSortOrder({ supabase, userId, items }) {

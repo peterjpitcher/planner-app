@@ -29,6 +29,7 @@ function makeSupabase(existingTask) {
           updatePayload = payload;
           const chain = {
             eq() { return chain; },
+            neq() { return chain; },
             select() {
               return {
                 single: async () => ({ data: { ...existingTask, ...payload }, error: null }),

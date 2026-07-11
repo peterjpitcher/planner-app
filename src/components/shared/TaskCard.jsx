@@ -10,7 +10,7 @@ import { differenceInCalendarDays, parseISO, addDays, format } from 'date-fns';
 import { getDueDateStatus } from '@/lib/dateUtils';
 import { getLondonDateKey } from '@/lib/timezone';
 import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
-import { RECURRENCE_BADGE_LABEL } from '@/lib/recurrenceLabels';
+import { recurrenceBadgeLabel } from '@/lib/recurrenceLabels';
 import ChipBadge from './ChipBadge';
 
 // Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges.
@@ -207,7 +207,7 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
   // renders when a recurrence pattern is set; hidden on done cards like the other
   // provenance badges (the next occurrence has already been spawned by then).
   const showRepeats = !!task.recurrence && !isCompleted;
-  const repeatsLabel = RECURRENCE_BADGE_LABEL[task.recurrence] || 'Repeats';
+  const repeatsLabel = recurrenceBadgeLabel(task.recurrence, task.recurrence_interval);
 
   // Card container classes
   const containerClasses = [

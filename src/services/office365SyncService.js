@@ -1009,6 +1009,23 @@ async function performFullSync({ supabase, userId }) {
               localTasksById.set(localTask.id, updatedLocalTask);
               pulledUpdatedTasks += 1;
 
+              // Recurring tasks (P4): a recurring task completed remotely in
+              // Outlook / Microsoft To Do must also spawn its next occurrence,
+              // exactly as an in-app completion does. Fire only on the transition
+              // into done (it was not already done) and never block the sync.
+              if (
+                updatedLocalTask?.state === 'done' &&
+                localTask.state !== 'done' &&
+                localTask.recurrence
+              ) {
+                try {
+                  const { spawnNextRecurrence } = await import('@/services/taskService');
+                  await spawnNextRecurrence({ supabase, userId, task: updatedLocalTask });
+                } catch (spawnErr) {
+                  console.warn('Office365 pull: recurrence spawn failed:', spawnErr);
+                }
+              }
+
               await supabase
                 .from('projects')
                 .update({ updated_at: new Date().toISOString() })

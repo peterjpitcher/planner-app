@@ -10,7 +10,7 @@ import { nextRecurrenceDate } from '@/lib/recurrence';
 // next-occurrence spawn then calls createTask, which inserts via
 // .from('tasks').insert(payload).select().single(). We capture both the update
 // and the insert payloads so we can assert the spawn behaviour precisely.
-function makeSupabase(existingTask, { insertFails = false } = {}) {
+function makeSupabase(existingTask, { insertFails = false, lostRace = false } = {}) {
   let updatePayload = null;
   let insertPayload = null;
 
@@ -34,9 +34,14 @@ function makeSupabase(existingTask, { insertFails = false } = {}) {
           updatePayload = payload;
           const chain = {
             eq() { return chain; },
+            neq() { return chain; },
             select() {
               return {
-                single: async () => ({ data: { ...existingTask, ...payload }, error: null }),
+                // lostRace simulates the atomic neq('state','done') guard matching
+                // no row because another request completed the task first.
+                single: async () => (lostRace
+                  ? { data: null, error: { code: 'PGRST116', message: 'no rows' } }
+                  : { data: { ...existingTask, ...payload }, error: null }),
               };
             },
           };
@@ -199,6 +204,14 @@ describe('updateTask — recurrence next-occurrence spawn (F6/P4)', () => {
     expect(insert).not.toBeNull();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('does NOT spawn when it loses the concurrent done-transition race', async () => {
+    // The atomic neq('state','done') guard matched no row — another request
+    // already completed it — so this request must not spawn a second occurrence.
+    const { result, insert } = await runUpdate({}, { state: 'done' }, { lostRace: true });
+    expect(result.error).toBeUndefined();
+    expect(insert).toBeNull();
   });
 });
 
