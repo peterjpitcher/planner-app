@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
-import { verifyCronAuth } from '@/lib/cronAuth';
+import { verifyCronAuth, isLondonWeekend } from '@/lib/cronAuth';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
 import { buildDailyTaskEmail, fetchOutstandingTasks, resolveDigestUserId } from '@/services/dailyTaskEmailService';
@@ -131,6 +131,21 @@ export async function GET(request) {
       .maybeSingle();
     if (digestSettings?.digest_enabled === false) {
       return NextResponse.json({ sent: false, reason: 'digest_disabled' }, { status: 200 });
+    }
+
+    // Working week only: never send the digest on Saturday or Sunday. Recorded
+    // as a 'skipped' no-op (like a genuinely-empty day) so the automation
+    // heartbeat still sees the cron execute across the weekend — otherwise the
+    // Fri→Mon gap would falsely read as "hasn't run recently". A forced run
+    // (?force=true) bypasses this so the digest can still be sent manually.
+    if (!auth.force && isLondonWeekend()) {
+      if (!auth.dryRun) {
+        const claim = await claimDailyRun({ supabase, userId, runDateKey, toEmail, counts: { dueToday: 0, overdue: 0 } });
+        if (claim.claimed && claim.runId) {
+          await updateDailyRun({ supabase, runId: claim.runId, patch: { status: 'skipped' } });
+        }
+      }
+      return NextResponse.json({ sent: false, reason: 'weekend' }, { status: 200 });
     }
 
     const { dueToday, overdue, inboxCount, digest } = await fetchOutstandingTasks({

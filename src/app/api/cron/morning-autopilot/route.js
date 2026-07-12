@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyCronAuth, claimCronRun, updateCronRun } from '@/lib/cronAuth';
+import { verifyCronAuth, claimCronRun, updateCronRun, isLondonWeekend } from '@/lib/cronAuth';
 import { getTimeZoneParts, LONDON_TIME_ZONE, getLondonDateKey } from '@/lib/timezone';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { resolveDigestUserId } from '@/services/dailyTaskEmailService';
@@ -70,6 +70,16 @@ export async function GET(request) {
     if (level === AUTOPILOT_LEVEL.OFF) {
       try { await updateCronRun({ supabase, runId, patch: { tasks_affected: 0, status: 'success' } }); } catch {}
       return NextResponse.json({ skipped: true, reason: 'autopilot_off' }, { status: 200 });
+    }
+
+    // Working week only: never auto-plan on Saturday or Sunday. Recorded as a
+    // successful no-op (like the autopilot-off path) so the automation heartbeat
+    // still sees the cron execute across the weekend — otherwise the Fri→Mon gap
+    // would read as "hasn't run recently". A forced run (?force=true) bypasses
+    // this so the plan can still be built manually.
+    if (!auth.force && isLondonWeekend()) {
+      try { await updateCronRun({ supabase, runId, patch: { tasks_affected: 0, status: 'success' } }); } catch {}
+      return NextResponse.json({ skipped: true, reason: 'weekend' }, { status: 200 });
     }
 
     // Never override an evening plan: if a daily planning session already exists

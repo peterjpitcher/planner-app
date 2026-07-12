@@ -64,12 +64,12 @@ export function isLondonHour(targetHour) {
 }
 
 /**
- * Returns the current day of the week in London timezone (0=Sunday, 6=Saturday).
+ * Returns the day of the week in London timezone (0=Sunday, 6=Saturday).
  *
+ * @param {Date} [date] instant to evaluate (defaults to now).
  * @returns {number}
  */
-export function getLondonDayOfWeek() {
-  const date = new Date();
+export function getLondonDayOfWeek(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: LONDON_TIME_ZONE,
     weekday: 'short',
@@ -77,6 +77,18 @@ export function getLondonDayOfWeek() {
   const weekday = formatter.format(date);
   const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return dayMap[weekday] ?? date.getDay();
+}
+
+/**
+ * True when the London day is Saturday or Sunday. Used to keep the automated
+ * planner and digest email to the Monday–Friday working week.
+ *
+ * @param {Date} [date] instant to evaluate (defaults to now).
+ * @returns {boolean}
+ */
+export function isLondonWeekend(date = new Date()) {
+  const day = getLondonDayOfWeek(date);
+  return day === 0 || day === 6;
 }
 
 /**
