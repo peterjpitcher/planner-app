@@ -14,6 +14,7 @@ import {
   matchesFilter,
 } from '@/lib/projectFilters';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
+import ErrorToast, { useErrorToast } from '@/components/ui/ErrorToast';
 import CreateProjectModal from './CreateProjectModal';
 import ProjectSidebar from './ProjectSidebar';
 import ProjectDashboard from './ProjectDashboard';
@@ -48,6 +49,9 @@ export default function ProjectsView() {
   const [unassignedTasks, setUnassignedTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Mutation failures. `error` above is the load-failed state that replaces the
+  // whole view; this surfaces a failed edit without destroying what is on screen.
+  const { error: mutationError, reportError, dismiss: dismissMutationError } = useErrorToast();
 
   // Selection & filters
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('id') || null);
@@ -247,10 +251,11 @@ export default function ProjectsView() {
     setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, ...updates } : p)));
     try {
       await apiClient.updateProject(projectId, updates);
-    } catch {
+    } catch (err) {
+      reportError(err.message || 'Could not save the project. Your change was undone.');
       loadData({ silent: true }); // Revert on failure without a skeleton flash
     }
-  }, [loadData]);
+  }, [loadData, reportError]);
 
   // ---- Project lifecycle confirmations ----
   //
@@ -387,10 +392,11 @@ export default function ProjectsView() {
 
     try {
       await apiClient.updateTask(taskId, updates);
-    } catch {
+    } catch (err) {
+      reportError(err.message || 'Could not update the task. Your change was undone.');
       loadData({ silent: true });
     }
-  }, [loadData]);
+  }, [loadData, reportError]);
 
   const handleMoveTask = useCallback(async (taskId, targetState, targetSection) => {
     const updates = { state: targetState };
@@ -411,10 +417,11 @@ export default function ProjectsView() {
 
     try {
       await apiClient.updateTask(taskId, updates);
-    } catch {
+    } catch (err) {
+      reportError(err.message || 'Could not move the task. It has been put back.');
       loadData({ silent: true });
     }
-  }, [loadData]);
+  }, [loadData, reportError]);
 
   const handleUpdateTask = useCallback(async (taskId, updates) => {
     // Project reassignment must regroup the task under its new project (or unassigned),
@@ -461,10 +468,11 @@ export default function ProjectsView() {
     setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     try {
       await apiClient.updateTask(taskId, updates);
-    } catch {
+    } catch (err) {
+      reportError(err.message || 'Could not save the task. Your change was undone.');
       loadData({ silent: true });
     }
-  }, [loadData]);
+  }, [loadData, reportError]);
 
   const handleDeleteTask = useCallback(async (taskId) => {
     setTasksByProject((prev) => {
@@ -478,10 +486,11 @@ export default function ProjectsView() {
     setSelectedTask((prev) => (prev && prev.id === taskId ? null : prev));
     try {
       await apiClient.deleteTask(taskId);
-    } catch {
+    } catch (err) {
+      reportError(err.message || 'Could not delete the task. It has been restored.');
       loadData({ silent: true });
     }
-  }, [loadData]);
+  }, [loadData, reportError]);
 
   const handleTaskClick = useCallback((taskId) => {
     for (const tasks of Object.values(tasksByProject)) {
@@ -622,6 +631,9 @@ export default function ProjectsView() {
         submitting={confirmSubmitting}
         error={confirmError}
       />
+
+      {/* Optimistic edits that failed server-side and were rolled back */}
+      <ErrorToast message={mutationError} onDismiss={dismissMutationError} />
 
       {/* Deleting a project destroys its notes: confirm with the counts */}
       <ProjectDeleteModal
