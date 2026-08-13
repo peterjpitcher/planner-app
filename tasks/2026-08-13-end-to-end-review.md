@@ -14,8 +14,8 @@ Nothing here is a broken build. Every finding is behaviour: things the app does 
 | 2 | Cancelled-project tasks stay live everywhere | **Fixed** |
 | 3 | Office 365 disagreement | **Fixed** (app now matches O365) |
 | 4 | Project delete destroys notes silently | **Fixed** (warned, FK unchanged) |
-| 5 | Silent mutation failures on /projects | **Partly fixed**: close and delete now surface errors, the other four handlers still revert silently |
-| 6 | Inconsistent error surfaces | Open |
+| 5 | Silent mutation failures on /projects | **Fixed**: all handlers now report |
+| 6 | Inconsistent error surfaces | Partly: /projects has a toast, Today and Calendar still use `window.alert` |
 | 7 | Dead code | **Fixed** (16 files removed) |
 | 8 | CLAUDE.md wrong | **Fixed** |
 | 9 | Minor (double redirect, `next lint`, RLS policies) | Open |
@@ -33,6 +33,22 @@ Verification after changes: lint clean, 289/289 tests pass (16 new), build succe
   fails rather than reporting success on a half-applied change.
 - `GET /api/projects/[id]/impact`: backs the dialogs with the real task list and note count.
 - `ProjectStatusChangeModal` and `ProjectDeleteModal` replace the dead modal and the `window.confirm`.
+
+### Backfill (applied to production)
+
+Finding 2 left historical damage: tasks already orphaned under a closed project.
+`20260813120000_backfill_closed_project_tasks.sql` applied the cascade retrospectively.
+
+Three tasks were affected, all under Cancelled projects, none under Completed:
+
+| Task | Project | Was |
+|------|---------|-----|
+| Chase AI Taskforce for information classification | MediaHub | `today` |
+| Submit intake for this project | MediaHub | `backlog` |
+| Get an update from Alli on StudioG | Project Spark | `backlog` |
+
+Post-checks: 0 remaining leaks, task total unchanged at 547, `done` count unchanged at 459,
+and 0 done tasks left with a null `completed_at`, so the completed report is untouched.
 
 ### Decisions taken
 
