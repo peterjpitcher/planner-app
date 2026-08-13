@@ -89,6 +89,16 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  /**
+   * What a status change or delete would affect: the project's open tasks (by
+   * name) and the number of notes a delete would destroy. Backs the projects
+   * page confirmation dialogs. Never cached, because it must reflect the state
+   * at the moment the user is asked to confirm.
+   */
+  async getProjectImpact(projectId) {
+    return this.fetchWithAuth(`/api/projects/${projectId}/impact`);
+  }
+
   async deleteProject(projectId) {
     const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
       method: 'DELETE',

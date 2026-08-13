@@ -90,6 +90,7 @@ export default function ProjectWorkspace({
   project,
   tasks,
   onUpdateProject,
+  onChangeStatus,
   onDeleteProject,
   onTaskAdded,
   onCompleteTask,
@@ -149,7 +150,10 @@ export default function ProjectWorkspace({
               />
               <select
                 value={project.status}
-                onChange={(e) => onUpdateProject(project.id, { status: e.target.value })}
+                // Routed through onChangeStatus, not a direct update: closing a
+                // project cascades to its open tasks, so it has to be confirmed
+                // with the affected task list first.
+                onChange={(e) => onChangeStatus(project.id, e.target.value)}
                 disabled={isReadOnly}
                 className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500', statusClasses)}
               >
@@ -177,11 +181,10 @@ export default function ProjectWorkspace({
                   {({ active }) => (
                     <button
                       type="button"
-                      onClick={() => {
-                        if (window.confirm('Delete this project? Tasks will become unassigned.')) {
-                          onDeleteProject(project.id);
-                        }
-                      }}
+                      // Confirmation lives in ProjectDeleteModal, which states
+                      // that notes are destroyed permanently. The old
+                      // window.confirm mentioned only the tasks.
+                      onClick={() => onDeleteProject(project.id)}
                       className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600', active && 'bg-red-50')}
                     >
                       <TrashIcon className="h-4 w-4" />

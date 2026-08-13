@@ -6,7 +6,7 @@ import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
 import { cn } from '@/lib/styleUtils';
-import { STATE } from '@/lib/constants';
+import { STATE, PROJECT_STATUS } from '@/lib/constants';
 import {
   computeAttentionCounts,
   deriveAreas,
@@ -19,6 +19,8 @@ import ProjectSidebar from './ProjectSidebar';
 import ProjectDashboard from './ProjectDashboard';
 import ProjectWorkspace from './ProjectWorkspace';
 import ProjectRadar from './ProjectRadar';
+import ProjectStatusChangeModal from './ProjectStatusChangeModal';
+import ProjectDeleteModal from './ProjectDeleteModal';
 
 function ProjectsViewSkeleton() {
   return (
@@ -250,16 +252,92 @@ export default function ProjectsView() {
     }
   }, [loadData]);
 
-  const handleDeleteProject = useCallback(async (projectId) => {
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    if (selectedProjectId === projectId) selectProject(null);
+  // ---- Project lifecycle confirmations ----
+  //
+  // Closing a project (Completed / Cancelled) cascades to its open tasks, and
+  // deleting one destroys its notes. Both need an explicit confirmation showing
+  // what is actually about to change, so they route through a modal rather than
+  // firing straight at the API.
+
+  const [pendingStatus, setPendingStatus] = useState(null); // { projectId, name, status }
+  const [pendingDelete, setPendingDelete] = useState(null); // { projectId, name }
+  const [impact, setImpact] = useState(null); // { openTasks, noteCount }
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [confirmError, setConfirmError] = useState(null);
+
+  // Load the impact preview whenever a confirmation opens. Fetched fresh rather
+  // than read from local state so the list the user approves is the server's
+  // current truth, not a stale render.
+  const loadImpact = useCallback(async (projectId) => {
+    setImpactLoading(true);
+    setImpact(null);
+    setConfirmError(null);
     try {
-      await apiClient.deleteProject(projectId);
-    } catch {
+      const result = await apiClient.getProjectImpact(projectId);
+      setImpact({ openTasks: result.openTasks || [], noteCount: result.noteCount || 0 });
+    } catch (err) {
+      setConfirmError(err.message || 'Could not load what this would affect.');
+      setImpact({ openTasks: [], noteCount: 0 });
+    } finally {
+      setImpactLoading(false);
+    }
+  }, []);
+
+  const requestStatusChange = useCallback((projectId, status) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+    // Only closing transitions need confirming. Open / In Progress / On Hold
+    // change nothing about the tasks, so they stay instant.
+    if (status !== PROJECT_STATUS.COMPLETED && status !== PROJECT_STATUS.CANCELLED) {
+      handleUpdateProject(projectId, { status });
+      return;
+    }
+    setPendingStatus({ projectId, name: project.name, status });
+    loadImpact(projectId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, loadImpact]);
+
+  const confirmStatusChange = useCallback(async () => {
+    if (!pendingStatus) return;
+    setConfirmSubmitting(true);
+    setConfirmError(null);
+    try {
+      await apiClient.updateProject(pendingStatus.projectId, { status: pendingStatus.status });
+      setPendingStatus(null);
+      // Full reload: the cascade changed task states server-side, so local task
+      // lists are stale in a way an optimistic patch cannot express.
       loadData({ silent: true });
+    } catch (err) {
+      setConfirmError(err.message || 'Could not update the project. Nothing was changed.');
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  }, [pendingStatus, loadData]);
+
+  const handleDeleteProject = useCallback((projectId) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+    setPendingDelete({ projectId, name: project.name });
+    loadImpact(projectId);
+  }, [projects, loadImpact]);
+
+  const confirmDeleteProject = useCallback(async () => {
+    if (!pendingDelete) return;
+    setConfirmSubmitting(true);
+    setConfirmError(null);
+    try {
+      await apiClient.deleteProject(pendingDelete.projectId);
+      if (selectedProjectId === pendingDelete.projectId) selectProject(null);
+      setPendingDelete(null);
+      loadData({ silent: true });
+    } catch (err) {
+      setConfirmError(err.message || 'Could not delete the project.');
+    } finally {
+      setConfirmSubmitting(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadData, selectedProjectId]);
+  }, [pendingDelete, loadData, selectedProjectId]);
 
   const handleProjectCreated = useCallback((newProject) => {
     setIsCreateOpen(false);
@@ -495,6 +573,7 @@ export default function ProjectsView() {
             project={selectedProject}
             tasks={selectedProjectTasks}
             onUpdateProject={handleUpdateProject}
+            onChangeStatus={requestStatusChange}
             onDeleteProject={handleDeleteProject}
             onTaskAdded={handleTaskAdded}
             onCompleteTask={handleCompleteTask}
@@ -529,6 +608,32 @@ export default function ProjectsView() {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         onCreated={handleProjectCreated}
+      />
+
+      {/* Closing a project cascades to its open tasks: confirm with the list */}
+      <ProjectStatusChangeModal
+        isOpen={!!pendingStatus}
+        onClose={() => { setPendingStatus(null); setConfirmError(null); }}
+        onConfirm={confirmStatusChange}
+        projectName={pendingStatus?.name}
+        targetStatus={pendingStatus?.status}
+        openTasks={impact?.openTasks}
+        loading={impactLoading}
+        submitting={confirmSubmitting}
+        error={confirmError}
+      />
+
+      {/* Deleting a project destroys its notes: confirm with the counts */}
+      <ProjectDeleteModal
+        isOpen={!!pendingDelete}
+        onClose={() => { setPendingDelete(null); setConfirmError(null); }}
+        onConfirm={confirmDeleteProject}
+        projectName={pendingDelete?.name}
+        taskCount={impact?.openTasks?.length || 0}
+        noteCount={impact?.noteCount || 0}
+        loading={impactLoading}
+        submitting={confirmSubmitting}
+        error={confirmError}
       />
     </div>
   );

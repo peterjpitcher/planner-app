@@ -5,6 +5,7 @@ import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { deleteOffice365Project, syncOffice365Project } from '@/services/office365SyncService';
+import { cascadeProjectStatusToTasks } from '@/services/projectLifecycleService';
 
 const PROJECT_UPDATE_FIELDS = [
   'name',
@@ -100,13 +101,39 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
 
+    // Cascade a status change to the project's tasks. Closing a project closes
+    // its open work (Completed -> done, Cancelled -> cancelled); reopening a
+    // cancelled project returns its tasks to backlog. Done server-side so the
+    // rule holds for every caller, not just the projects page.
+    let cascade = { tasksChanged: 0, taskState: null };
+    if (Object.prototype.hasOwnProperty.call(updates, 'status')
+        && updates.status !== existingProject.status) {
+      const cascadeResult = await cascadeProjectStatusToTasks({
+        supabase,
+        userId: session.user.id,
+        projectId: id,
+        previousStatus: existingProject.status,
+        nextStatus: updates.status,
+      });
+      // A failed cascade leaves the project closed but its tasks live, which is
+      // exactly the inconsistency this route exists to prevent. Surface it
+      // rather than reporting a clean success.
+      if (cascadeResult.error) {
+        return NextResponse.json(
+          { error: cascadeResult.error.message, projectUpdated: true },
+          { status: cascadeResult.error.status || 500 }
+        );
+      }
+      cascade = cascadeResult.data;
+    }
+
     try {
       await syncOffice365Project({ userId: session.user.id, projectId: id });
     } catch (err) {
       console.warn('Office365 sync failed for updated project:', err);
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, tasksChanged: cascade.tasksChanged, taskState: cascade.taskState });
   } catch (error) {
     console.error('PATCH /api/projects/[id] error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
