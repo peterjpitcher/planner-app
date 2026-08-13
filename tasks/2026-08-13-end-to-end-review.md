@@ -19,6 +19,7 @@ Nothing here is a broken build. Every finding is behaviour: things the app does 
 | 7 | Dead code | **Fixed** (16 files removed) |
 | 8 | CLAUDE.md wrong | **Fixed** |
 | 9 | Minor (double redirect, `next lint`, RLS policies) | Open |
+| 10 | Migration drift, remote had a migration absent from the repo | **Fixed**, plus a `search_path` regression found while recovering it |
 
 Verification after changes: lint clean, 289/289 tests pass (16 new), build succeeds.
 
@@ -49,6 +50,23 @@ Three tasks were affected, all under Cancelled projects, none under Completed:
 
 Post-checks: 0 remaining leaks, task total unchanged at 547, `done` count unchanged at 459,
 and 0 done tasks left with a null `completed_at`, so the completed report is untouched.
+
+### Migration drift, and what recovering it uncovered
+
+`20260527061836_security_hardening_2026_05_27` was applied to production on 2026-05-27 but never
+committed. Recovered verbatim from `supabase_migrations.schema_migrations` and added to the repo.
+Local and remote migration histories now match exactly: 31 versions, zero drift either way.
+
+Reading it surfaced a live regression. That migration set an immutable `search_path` on nine public
+functions. Eight still had it; `fn_task_state_cleanup` did not, because `CREATE OR REPLACE FUNCTION`
+resets any property not restated in the command, including `SET` clauses. Two migrations replaced
+that function without restating it: `20260709000001_fix_completed_at_coalesce` dropped it, and
+`20260813111540_task_cancelled_state` (from this session) reproduced the omission.
+
+Impact was low, the function is SECURITY INVOKER, so it already ran with the caller's privileges.
+Fixed in `20260813113504` by carrying `SET search_path` **inside** the function definition rather
+than as a separate `ALTER FUNCTION`, since an out-of-band ALTER is precisely what got silently
+undone twice. All nine functions verified hardened.
 
 ### Decisions taken
 
