@@ -2,12 +2,35 @@ import { describe, it, expect } from 'vitest';
 import {
   STATE, TODAY_SECTION, TODAY_SECTION_ORDER, IDEA_STATE_ORDER,
   TASK_TYPE, CHIP_VALUES, IDEA_STATE, SOFT_CAPS,
-  STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP
+  STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP,
+  CLOSED_STATES, ACTIVE_STATES, closedStatesFilter
 } from '../constants';
 
 describe('constants', () => {
-  it('STATE has all 5 values', () => {
-    expect(Object.values(STATE)).toEqual(['today', 'this_week', 'backlog', 'waiting', 'done']);
+  it('STATE has all 6 values', () => {
+    expect(Object.values(STATE)).toEqual(['today', 'this_week', 'backlog', 'waiting', 'done', 'cancelled']);
+  });
+
+  it('CLOSED_STATES and ACTIVE_STATES partition STATE exactly', () => {
+    // A state that is in neither list would silently escape both the "hide
+    // finished work" filters and the "these are live tasks" queries.
+    expect([...ACTIVE_STATES, ...CLOSED_STATES].sort()).toEqual(Object.values(STATE).sort());
+    expect(CLOSED_STATES.filter((s) => ACTIVE_STATES.includes(s))).toEqual([]);
+  });
+
+  it('CLOSED_STATES covers both terminal states', () => {
+    expect(CLOSED_STATES).toContain('done');
+    expect(CLOSED_STATES).toContain('cancelled');
+  });
+
+  it('closedStatesFilter builds a PostgREST list excluding all terminal states', () => {
+    expect(closedStatesFilter()).toBe('("done","cancelled")');
+  });
+
+  it('closedStatesFilter prepends extra states before the terminal ones', () => {
+    expect(closedStatesFilter([STATE.TODAY])).toBe('("today","done","cancelled")');
+    expect(closedStatesFilter([STATE.THIS_WEEK, STATE.TODAY]))
+      .toBe('("this_week","today","done","cancelled")');
   });
 
   it('TODAY_SECTION has 3 values', () => {

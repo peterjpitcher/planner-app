@@ -1,4 +1,4 @@
-import { PROJECT_STATUS, STATE } from '@/lib/constants';
+import { PROJECT_STATUS, STATE, CLOSED_STATES, closedStatesFilter } from '@/lib/constants';
 import { getLondonDateKey } from '@/lib/timezone';
 
 // Wave 5 — project-altitude radar. Tasks can no longer get lost (Waves 1–2),
@@ -72,8 +72,8 @@ export function buildProjectRadar({ projects = [], tasksByProject = {}, nowMs = 
 
     const projectTasks = tasksByProject[project.id] || [];
     // Defensive: the IO layer only loads incomplete tasks, but the pure builder
-    // must not count a 'done' row even if a caller hands one in.
-    const incompleteTasks = projectTasks.filter((t) => t && t.state !== STATE.DONE);
+    // must not count a closed (done or cancelled) row even if a caller hands one in.
+    const incompleteTasks = projectTasks.filter((t) => t && !CLOSED_STATES.includes(t.state));
 
     const hasNextAction = incompleteTasks.some(isScheduledNextAction);
     const openTaskCount = incompleteTasks.length;
@@ -185,7 +185,7 @@ export async function fetchProjectRadar({ supabase, userId, nowMs = Date.now() }
         .from('tasks')
         .select('project_id, state, due_date, follow_up_date, updated_at')
         .eq('user_id', userId)
-        .neq('state', STATE.DONE)
+        .not('state', 'in', closedStatesFilter())
     ),
   ]);
 

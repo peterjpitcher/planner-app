@@ -15,8 +15,36 @@ export const STATE = {
   THIS_WEEK: 'this_week',
   BACKLOG: 'backlog',
   WAITING: 'waiting',
-  DONE: 'done'
+  DONE: 'done',
+  CANCELLED: 'cancelled'
 };
+
+// Terminal states. A task in a CLOSED state is finished with, one way or the
+// other, and must never surface in Today, the Plan board, planning candidates,
+// the autopilot pool or the daily digest.
+//
+// Every query that excludes finished work must filter on CLOSED_STATES rather
+// than hardcoding 'done'. Before this existed the exclusions were scattered
+// denylists ('("today","done")'), so adding 'cancelled' would have leaked
+// cancelled tasks into all six of those surfaces. Add a new terminal state here
+// and every consumer picks it up.
+export const CLOSED_STATES = [STATE.DONE, STATE.CANCELLED];
+
+// States a task can be in while it is still live work.
+export const ACTIVE_STATES = [STATE.TODAY, STATE.THIS_WEEK, STATE.BACKLOG, STATE.WAITING];
+
+/**
+ * Build a PostgREST `in` filter list, e.g. '("today","done","cancelled")'.
+ * Use with `.not('state', 'in', ...)` so exclusions stay in one place.
+ *
+ * @param {string[]} [extraStates] additional states to exclude alongside the
+ *   terminal ones (typically STATE.TODAY when building a promotion pool).
+ * @returns {string} PostgREST-formatted list.
+ */
+export function closedStatesFilter(extraStates = []) {
+  const all = [...extraStates, ...CLOSED_STATES];
+  return `(${all.map((s) => `"${s}"`).join(',')})`;
+}
 
 // Today Section Buckets
 export const TODAY_SECTION = {

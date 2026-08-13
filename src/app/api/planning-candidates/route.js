@@ -1,7 +1,7 @@
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { sortTasksByPriority } from '@/lib/taskSort';
-import { STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP } from '@/lib/constants';
+import { STALE_BACKLOG_DAYS, REVIEW_BACKLOG_CAP, STATE, closedStatesFilter } from '@/lib/constants';
 import { NextResponse } from 'next/server';
 
 const CANDIDATE_SELECT = 'id, name, due_date, state, today_section, sort_order, area, task_type, chips, project_id, waiting_reason, follow_up_date, chase_count, entered_state_at, snoozed_until, snooze_count, carried_section, carried_count, created_at';
@@ -85,7 +85,7 @@ export async function GET(request) {
           .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
           .eq('user_id', userId)
           .eq('inbox', true)
-          .not('state', 'in', '("done")')
+          .not('state', 'in', closedStatesFilter())
           .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
@@ -99,7 +99,7 @@ export async function GET(request) {
           .eq('due_date', windowDate)
           .eq('inbox', false)
           .is('carried_section', null)
-          .not('state', 'in', '("today","done")')
+          .not('state', 'in', closedStatesFilter([STATE.TODAY]))
           .or(snoozeFilter)
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
@@ -113,7 +113,7 @@ export async function GET(request) {
           .lt('due_date', windowDate)
           .eq('inbox', false)
           .is('carried_section', null)
-          .not('state', 'in', '("today","done")')
+          .not('state', 'in', closedStatesFilter([STATE.TODAY]))
           .or(snoozeFilter)
           .order('due_date', { ascending: true })
           .order('created_at', { ascending: true }),
@@ -225,7 +225,7 @@ export async function GET(request) {
         .eq('user_id', userId)
         .gte('due_date', windowDate)
         .lte('due_date', weekEndStr)
-        .not('state', 'in', '("this_week","today","done")')
+        .not('state', 'in', closedStatesFilter([STATE.THIS_WEEK, STATE.TODAY]))
         .or(snoozeFilter)
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true }),
@@ -239,7 +239,7 @@ export async function GET(request) {
         .select(CANDIDATE_SELECT + ', projects!tasks_project_id_fkey(name, area)')
         .eq('user_id', userId)
         .lt('due_date', windowDate)
-        .not('state', 'in', '("today","done")')
+        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
         .or(snoozeFilter)
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true }),

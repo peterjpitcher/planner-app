@@ -1,6 +1,6 @@
 import { LONDON_TIME_ZONE, getLondonDateKey, getTimeZoneParts } from '@/lib/timezone';
 import { sortTasksByPriority } from '@/lib/taskSort';
-import { SOFT_CAPS, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
+import { SOFT_CAPS, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD, STATE, closedStatesFilter } from '@/lib/constants';
 import { listIdeasDueForReview } from '@/services/ideaService';
 import { fetchProjectRadar } from '@/services/projectRadarService';
 import { signActionToken } from '@/lib/emailActionToken';
@@ -311,7 +311,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .lt('due_date', today)
-        .not('state', 'in', '("today","done")')
+        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
         .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: true })
@@ -325,7 +325,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .eq('inbox', true)
-        .neq('state', 'done')
+        .not('state', 'in', closedStatesFilter())
         .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
         .order('created_at', { ascending: true })
     ),
@@ -337,7 +337,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .eq('snoozed_until', today)
-        .not('state', 'in', '("today","done")')
+        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
         .order('created_at', { ascending: true })
     ),
     // Snoozed 3+ times (F2): a repeatedly-deferred item that should be decided.
@@ -347,7 +347,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
         .select(DIGEST_SELECT)
         .eq('user_id', userId)
         .gte('snooze_count', 3)
-        .not('state', 'in', '("today","done")')
+        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
         .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
         .order('snooze_count', { ascending: false })
         .order('created_at', { ascending: true })

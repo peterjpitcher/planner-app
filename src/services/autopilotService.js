@@ -9,6 +9,7 @@ import {
   STATE,
   TODAY_SECTION,
   TASK_TYPE,
+  closedStatesFilter,
 } from '@/lib/constants';
 
 // A3 — Morning Autopilot rule engine.
@@ -187,7 +188,7 @@ export async function fetchAutopilotPool({ supabase, userId, windowDate }) {
       .select(POOL_SELECT)
       .eq('user_id', userId)
       .eq('inbox', true)
-      .not('state', 'in', '("today","done")')
+      .not('state', 'in', closedStatesFilter([STATE.TODAY]))
       .or(snoozeFilter),
 
     supabase
@@ -196,7 +197,7 @@ export async function fetchAutopilotPool({ supabase, userId, windowDate }) {
       .eq('user_id', userId)
       .eq('due_date', windowDate)
       .eq('inbox', false)
-      .not('state', 'in', '("today","done")')
+      .not('state', 'in', closedStatesFilter([STATE.TODAY]))
       .or(snoozeFilter),
 
     supabase
@@ -205,7 +206,7 @@ export async function fetchAutopilotPool({ supabase, userId, windowDate }) {
       .eq('user_id', userId)
       .lt('due_date', windowDate)
       .eq('inbox', false)
-      .not('state', 'in', '("today","done")')
+      .not('state', 'in', closedStatesFilter([STATE.TODAY]))
       .or(snoozeFilter),
 
     supabase

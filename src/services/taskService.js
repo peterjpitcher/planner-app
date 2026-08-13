@@ -1,4 +1,4 @@
-import { STATE, TODAY_SECTION, PROJECT_STATUS } from '@/lib/constants';
+import { STATE, TODAY_SECTION, PROJECT_STATUS, CLOSED_STATES } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { computeSortOrder } from '@/lib/sortOrder';
@@ -422,12 +422,13 @@ export async function updateTask({ supabase, userId, taskId, updates, options = 
   // the racy client-side max+1 read the planning modal used to do. Skipped when:
   //  - the caller supplied an explicit sort_order (drag reorders own the value),
   //  - the state is unchanged (section-only moves keep their drag-set order), or
-  //  - the target state is 'done' (not display-ordered by sort_order).
+  //  - the target state is closed, i.e. done or cancelled (not display-ordered
+  //    by sort_order).
   const stateChanging = 'state' in updatesToApply && updatesToApply.state !== existingTask.state;
   const finalState = 'state' in updatesToApply ? updatesToApply.state : existingTask.state;
   if (
     stateChanging &&
-    finalState !== STATE.DONE &&
+    !CLOSED_STATES.includes(finalState) &&
     !Object.prototype.hasOwnProperty.call(updatesToApply, 'sort_order')
   ) {
     const finalSection = finalState === STATE.TODAY
