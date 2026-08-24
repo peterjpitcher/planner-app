@@ -129,6 +129,8 @@ export default function IdeaVault() {
   // Card action handlers
   // -------------------------------------------------------------------------
 
+  // Returns whether the write landed, so the card can put its own field back
+  // rather than leaving the user looking at text that was never saved.
   const handleUpdate = useCallback(async (id, updates) => {
     try {
       const updated = await apiClient.updateIdea(id, updates);
@@ -138,8 +140,10 @@ export default function IdeaVault() {
       // F4: a change to review_date or idea_state can add or remove the idea
       // from the due-for-review section — resync it from the server.
       refreshDueForReview();
+      return true;
     } catch (err) {
       setError(err.message || 'Failed to update idea.');
+      return false;
     }
   }, [refreshDueForReview]);
 

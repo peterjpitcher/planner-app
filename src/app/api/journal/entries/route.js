@@ -76,6 +76,37 @@ export async function POST(request) {
         }
 
         if (existing) {
+          // The client retries with the same id for idempotence, so an
+          // identical resubmission is a no-op. But it can also be a genuine
+          // edit after a save that failed at the network layer while landing in
+          // the database, and returning the stored row then silently threw the
+          // user's newer text away while telling them it had saved.
+          if (existing.content !== rawContent) {
+            const { data: updated, error: updateError } = await supabase
+              .from('journal_entries')
+              .update({
+                content: rawContent,
+                // The text changed, so any earlier cleanup is stale.
+                cleaned_content: null,
+                ai_status: initialAiStatus,
+                ai_error: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', normalizedEntryId)
+              .eq('user_id', session.user.id)
+              .select()
+              .single();
+
+            if (!updateError && updated) {
+              return NextResponse.json({
+                data: updated,
+                cleaned: Boolean(updated.cleaned_content),
+                aiStatus: updated.ai_status,
+              });
+            }
+            console.error('Journal entry update after duplicate insert failed:', updateError);
+          }
+
           return NextResponse.json({
             data: existing,
             cleaned: Boolean(existing.cleaned_content),

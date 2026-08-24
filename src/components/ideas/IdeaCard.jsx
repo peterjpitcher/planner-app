@@ -73,36 +73,46 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
   // Blur save handlers (for Exploring state inline edits)
   // -------------------------------------------------------------------------
 
+  // These fields are held locally and only initialised from the prop, so a
+  // failed write used to leave the edited text sitting on the card as though it
+  // had saved. onUpdate reports whether it landed; if it did not, put the stored
+  // value back so the card always shows what is actually in the database.
+  async function saveField(updates, revert) {
+    const saved = await onUpdate(idea.id, updates);
+    if (saved === false) revert();
+  }
+
   function handleTitleBlur() {
     setIsEditingTitle(false);
     const trimmed = title.trim();
     if (trimmed && trimmed !== idea.title) {
-      onUpdate(idea.id, { title: trimmed });
+      saveField({ title: trimmed }, () => setTitle(idea.title ?? ''));
     } else {
       setTitle(idea.title ?? '');
     }
   }
 
   function handleReviewDateChange(value) {
+    const previous = reviewDate;
     setReviewDate(value);
-    onUpdate(idea.id, { review_date: value || null });
+    saveField({ review_date: value || null }, () => setReviewDate(previous));
   }
 
   function handleWhyItMattersBlur() {
     if (whyItMatters !== (idea.why_it_matters ?? '')) {
-      onUpdate(idea.id, { why_it_matters: whyItMatters });
+      saveField({ why_it_matters: whyItMatters }, () => setWhyItMatters(idea.why_it_matters ?? ''));
     }
   }
 
   function handleSmallestStepBlur() {
     if (smallestStep !== (idea.smallest_step ?? '')) {
-      onUpdate(idea.id, { smallest_step: smallestStep });
+      saveField({ smallest_step: smallestStep }, () => setSmallestStep(idea.smallest_step ?? ''));
     }
   }
 
   function handleAreaBlur() {
     if (area !== (idea.area ?? '')) {
-      onUpdate(idea.id, { area });
+      saveField({ area }, () => setArea(idea.area ?? ''));
     }
   }
 

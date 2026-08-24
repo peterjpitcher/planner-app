@@ -5,6 +5,10 @@ import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { NextResponse } from 'next/server';
 
+// How long a 'processing' claim stays valid. An OpenAI cleanup call takes
+// seconds; anything still marked in-flight after this was abandoned.
+const STALE_CLAIM_MS = 5 * 60 * 1000;
+
 const CLEANUP_MODEL = process.env.JOURNAL_CLEANUP_MODEL || 'gpt-4o-mini';
 const AI_TIMEOUT_MS = 20000;
 const AI_MAX_RETRIES = 2;
@@ -185,7 +189,14 @@ export async function POST(request) {
     // This replaces a prior read-then-write ("check cleaned_content, then
     // unconditionally set pending") that let two concurrent requests both
     // pass the guard and both pay for an OpenAI call.
-    const { data: claimed, error: claimError } = await supabase
+    // A claim goes stale. If a run dies after flipping the entry to 'processing'
+    // (a crashed function, a timeout, a deploy mid-request) nothing ever clears
+    // it, and the guard below then rejected every later attempt, so the entry
+    // could never be cleaned again by any code path. Allow a claim that is older
+    // than the stale window to be taken over.
+    const staleClaimCutoff = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
+
+    const claimQuery = supabase
       .from('journal_entries')
       .update({
         ai_status: 'processing',
@@ -195,9 +206,9 @@ export async function POST(request) {
       .eq('id', normalizedEntryId)
       .eq('user_id', session.user.id)
       .is('cleaned_content', null)
-      .neq('ai_status', 'processing')
-      .select()
-      .maybeSingle();
+      .or(`ai_status.neq.processing,updated_at.lt.${staleClaimCutoff}`);
+
+    const { data: claimed, error: claimError } = await claimQuery.select().maybeSingle();
 
     if (claimError) {
       const errorMessage = handleSupabaseError(claimError, 'update');
