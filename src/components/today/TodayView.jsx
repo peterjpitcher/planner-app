@@ -539,7 +539,7 @@ export default function TodayView() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6 max-w-2xl mx-auto">
+      <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6">
         {TODAY_SECTION_ORDER.map((key) => (
           <div key={key} className="flex flex-col gap-2">
             <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
@@ -552,7 +552,7 @@ export default function TodayView() {
 
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto rounded-lg border border-red-200 bg-red-50 p-4 flex items-start gap-3">
+      <div className="mx-auto flex w-full max-w-3xl items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
         <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-red-500 mt-0.5" />
         <div className="flex-1">
           <p className="text-sm font-medium text-red-700">{error}</p>
@@ -570,143 +570,163 @@ export default function TodayView() {
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto">
+    // Two columns from xl up: the working list on the left, capture and notices
+    // in a rail on the right. Everything used to sit in a single 672px column,
+    // which left about two thirds of a desktop window empty. Below xl the rail
+    // comes first, so the narrow layout keeps the original reading order.
+    <div className="mx-auto w-full max-w-[1800px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
 
-      {/* Morning autopilot review / undo banner (A3 / F5-lite). Self-gating: it
-          renders nothing unless today's day was auto-built and not yet reviewed. */}
-      <AutopilotBanner />
+        {/* Capture and notices */}
+        <aside className="order-1 flex min-w-0 flex-col gap-4 xl:order-2">
 
-      <QuickTaskList />
+          {/* Morning autopilot review / undo banner (A3 / F5-lite). Self-gating: it
+              renders nothing unless today's day was auto-built and not yet reviewed. */}
+          <AutopilotBanner />
 
-      {/* First-run triage banner */}
-      {firstRunInfo && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
-          <div className="flex-1 text-sm text-amber-800">
-            You have{' '}
-            {firstRunInfo.overdue > 0 && (
-              <strong>{firstRunInfo.overdue} overdue</strong>
-            )}
-            {firstRunInfo.overdue > 0 && firstRunInfo.dueThisWeek > 0 && ' and '}
-            {firstRunInfo.dueThisWeek > 0 && (
-              <strong>{firstRunInfo.dueThisWeek} due this week</strong>
-            )}{' '}
-            in Backlog.{' '}
-            <Link href="/plan" className="underline font-medium hover:text-amber-900">
-              Review now?
-            </Link>
-          </div>
-          <button
-            type="button"
-            onClick={dismissFirstRun}
-            className="text-amber-500 hover:text-amber-700 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded px-1"
-            aria-label="Dismiss triage banner"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+          <QuickTaskList />
 
-      {/* Overdue follow-ups banner */}
-      {overdueFollowUps > 0 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-red-400" />
-          <p className="flex-1 text-sm text-red-700">
-            <strong>{overdueFollowUps}</strong> overdue follow-up{overdueFollowUps !== 1 ? 's' : ''} in Waiting.{' '}
-            <Link href="/plan" className="underline font-medium hover:text-red-900">
-              Review
-            </Link>
-          </p>
-        </div>
-      )}
-
-      {/* Carried-zombie nudge (A1): tasks that have been carried for several days */}
-      {carriedZombies > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-400" />
-          <p className="flex-1 text-sm text-amber-800">
-            <strong>{carriedZombies}</strong> task{carriedZombies !== 1 ? 's' : ''} carried {CARRY_NUDGE_THRESHOLD}+ days. Still for today, or move on?
-          </p>
-        </div>
-      )}
-
-      {/* Empty state nudge */}
-      {isTodayEmpty && (
-        <div className="rounded-lg border border-dashed border-gray-300 px-6 py-10 text-center">
-          <p className="text-sm text-gray-500">No tasks for today yet.</p>
-          <p className="mt-1 text-sm text-gray-400">
-            Pull from{' '}
-            <Link href="/plan" className="text-indigo-600 underline hover:text-indigo-800">
-              This Week
-            </Link>
-            ?
-          </p>
-        </div>
-      )}
-
-      {/* Three today sections wrapped in DndContext */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex flex-col gap-8">
-          {TODAY_SECTION_ORDER.map((key) => (
-            <TodaySection
-              key={key}
-              title={SECTION_LABELS[key]}
-              sectionKey={key}
-              tasks={sections[key]}
-              softCap={SECTION_SOFT_CAPS[key]}
-              onComplete={handleComplete}
-              onMove={handleMove}
-              onUpdate={handleUpdate}
-              onClick={handleTaskClick}
-              onDelete={handleDeleteTask}
-            />
-          ))}
-        </div>
-      </DndContext>
-
-      {/* Completed today — collapsible */}
-      {completedToday.length > 0 && (
-        <div className="border-t border-gray-200 pt-4">
-          <button
-            type="button"
-            onClick={() => setCompletedOpen((o) => !o)}
-            className="flex w-full items-center justify-between gap-2 rounded px-1 py-1 text-sm font-medium text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            aria-expanded={completedOpen}
-          >
-            <span>
-              Completed today{' '}
-              <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                {completedToday.length}
-              </span>
-            </span>
-            {completedOpen ? (
-              <ChevronUpIcon className="h-4 w-4 shrink-0" />
-            ) : (
-              <ChevronDownIcon className="h-4 w-4 shrink-0" />
-            )}
-          </button>
-
-          {completedOpen && (
-            <div className="mt-3 flex flex-col gap-2">
-              {completedToday.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onComplete={handleComplete}
-                  onMove={handleMove}
-                  onUpdate={handleUpdate}
-                  onClick={handleTaskClick}
-                  onDelete={handleDeleteTask}
-                />
-              ))}
+          {/* First-run triage banner */}
+          {firstRunInfo && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
+              <div className="flex-1 text-sm text-amber-800">
+                You have{' '}
+                {firstRunInfo.overdue > 0 && (
+                  <strong>{firstRunInfo.overdue} overdue</strong>
+                )}
+                {firstRunInfo.overdue > 0 && firstRunInfo.dueThisWeek > 0 && ' and '}
+                {firstRunInfo.dueThisWeek > 0 && (
+                  <strong>{firstRunInfo.dueThisWeek} due this week</strong>
+                )}{' '}
+                in Backlog.{' '}
+                <Link href="/plan" className="underline font-medium hover:text-amber-900">
+                  Review now?
+                </Link>
+              </div>
+              <button
+                type="button"
+                onClick={dismissFirstRun}
+                className="text-amber-500 hover:text-amber-700 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded px-1"
+                aria-label="Dismiss triage banner"
+              >
+                Dismiss
+              </button>
             </div>
           )}
+
+          {/* Overdue follow-ups banner */}
+          {overdueFollowUps > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3">
+              <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-red-400" />
+              <p className="flex-1 text-sm text-red-700">
+                <strong>{overdueFollowUps}</strong> overdue follow-up{overdueFollowUps !== 1 ? 's' : ''} in Waiting.{' '}
+                <Link href="/plan" className="underline font-medium hover:text-red-900">
+                  Review
+                </Link>
+              </p>
+            </div>
+          )}
+
+          {/* Carried-zombie nudge (A1): tasks that have been carried for several days */}
+          {carriedZombies > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
+              <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-400" />
+              <p className="flex-1 text-sm text-amber-800">
+                <strong>{carriedZombies}</strong> task{carriedZombies !== 1 ? 's' : ''} carried {CARRY_NUDGE_THRESHOLD}+ days. Still for today, or move on?
+              </p>
+            </div>
+          )}
+
+        </aside>
+
+        {/* The working list */}
+        <div className="order-2 flex min-w-0 flex-col gap-6 xl:order-1">
+
+          {/* Empty state nudge */}
+          {isTodayEmpty && (
+            <div className="rounded-lg border border-dashed border-gray-300 px-6 py-10 text-center">
+              <p className="text-sm text-gray-500">No tasks for today yet.</p>
+              <p className="mt-1 text-sm text-gray-400">
+                Pull from{' '}
+                <Link href="/plan" className="text-indigo-600 underline hover:text-indigo-800">
+                  This Week
+                </Link>
+                ?
+              </p>
+            </div>
+          )}
+
+          {/* Three today sections wrapped in DndContext */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            {/* Must Do keeps the full width of the column so it still reads as the
+                priority; Good to Do and Quick Wins share the row beneath it, which
+                removes most of the vertical scroll on a wide screen. */}
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-2 xl:items-start">
+              {TODAY_SECTION_ORDER.map((key, index) => (
+                <div key={key} className={index === 0 ? 'min-w-0 xl:col-span-2' : 'min-w-0'}>
+                  <TodaySection
+                    title={SECTION_LABELS[key]}
+                    sectionKey={key}
+                    tasks={sections[key]}
+                    softCap={SECTION_SOFT_CAPS[key]}
+                    onComplete={handleComplete}
+                    onMove={handleMove}
+                    onUpdate={handleUpdate}
+                    onClick={handleTaskClick}
+                    onDelete={handleDeleteTask}
+                  />
+                </div>
+              ))}
+            </div>
+          </DndContext>
+
+          {/* Completed today — collapsible */}
+          {completedToday.length > 0 && (
+            <div className="border-t border-gray-200 pt-4">
+              <button
+                type="button"
+                onClick={() => setCompletedOpen((o) => !o)}
+                className="flex w-full items-center justify-between gap-2 rounded px-1 py-1 text-sm font-medium text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                aria-expanded={completedOpen}
+              >
+                <span>
+                  Completed today{' '}
+                  <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                    {completedToday.length}
+                  </span>
+                </span>
+                {completedOpen ? (
+                  <ChevronUpIcon className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronDownIcon className="h-4 w-4 shrink-0" />
+                )}
+              </button>
+
+              {completedOpen && (
+                <div className="mt-3 flex flex-col gap-2">
+                  {completedToday.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onComplete={handleComplete}
+                      onMove={handleMove}
+                      onUpdate={handleUpdate}
+                      onClick={handleTaskClick}
+                      onDelete={handleDeleteTask}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
-      )}
+      </div>
 
       {/* Task detail drawer */}
       <TaskDetailDrawer

@@ -194,7 +194,10 @@ export default function IdeaVault() {
   // -------------------------------------------------------------------------
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6">
+    // The vault is a card collection, so it lays out as a responsive grid rather
+    // than a single 672px column that left most of a desktop window empty. The
+    // heading, capture input and empty state stay at a readable measure.
+    <div className="mx-auto w-full max-w-[1800px] px-4 py-6">
       {/* Page heading */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Idea Vault</h1>
@@ -204,7 +207,7 @@ export default function IdeaVault() {
       </div>
 
       {/* Inline capture input */}
-      <form onSubmit={handleCaptureSubmit} className="mb-8">
+      <form onSubmit={handleCaptureSubmit} className="mb-8 max-w-3xl">
         <div className="flex gap-2">
           <input
             ref={captureRef}
@@ -228,7 +231,7 @@ export default function IdeaVault() {
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-4 max-w-3xl rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
           <button
             type="button"
@@ -246,8 +249,8 @@ export default function IdeaVault() {
           {IDEA_STATE_ORDER.map((state) => (
             <section key={state}>
               <div className="mb-2 h-4 w-32 animate-pulse rounded bg-gray-200" />
-              <div className="space-y-2">
-                {[1, 2].map((n) => (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 items-start">
+                {[1, 2, 3, 4].map((n) => (
                   <IdeaCardSkeleton key={n} />
                 ))}
               </div>
@@ -258,7 +261,7 @@ export default function IdeaVault() {
 
       {/* Empty state */}
       {!loading && totalIdeas === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-300 px-6 py-12 text-center">
+        <div className="mx-auto max-w-2xl rounded-xl border border-dashed border-gray-300 px-6 py-12 text-center">
           <p className="text-base font-medium text-gray-500">Got an idea? Capture it here.</p>
           <p className="mt-1 text-sm text-gray-400">
             Use the input above to save your first idea.
@@ -285,7 +288,7 @@ export default function IdeaVault() {
           <p className="mb-3 text-xs text-gray-400">
             These Ready Later ideas have reached their review date. Decide, reschedule, or clear the date.
           </p>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 items-start">
             {dueForReview.map((idea) => (
               <IdeaCard
                 key={idea.id}
@@ -318,7 +321,7 @@ export default function IdeaVault() {
                 </h2>
 
                 {/* Cards */}
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 items-start">
                   {sectionIdeas.map((idea) => (
                     <IdeaCard
                       key={idea.id}
