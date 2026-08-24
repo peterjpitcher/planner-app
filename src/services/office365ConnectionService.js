@@ -44,6 +44,42 @@ async function clearOffice365SyncError({ userId }) {
   }
 }
 
+/**
+ * Record an arbitrary sync failure so it is visible in the app.
+ *
+ * Only the two terminal OAuth codes ever wrote sync_error, so everything else
+ * (an expired Azure client secret, Graph throttling, one unreadable list
+ * aborting the run) left the connection looking healthy while nothing synced.
+ * The automations panel reads this column, so writing it here is what turns a
+ * silent failure into a visible one.
+ *
+ * Best-effort and never throws: it is called from a catch block that is already
+ * handling the real error.
+ */
+export async function recordOffice365SyncFailure({ userId, message }) {
+  try {
+    const supabase = getSupabaseServiceRole();
+    await supabase
+      .from('office365_connections')
+      .update({
+        sync_error: String(message || 'Sync failed').slice(0, 500),
+        sync_error_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+  } catch (persistError) {
+    console.warn('Failed to record Office365 sync failure:', persistError);
+  }
+}
+
+/**
+ * Clear a recorded sync failure after a run that completed. Exported so the
+ * sync path can clear a failure it has recovered from, not just the token
+ * refresh path.
+ */
+export async function clearOffice365SyncFailure({ userId }) {
+  await clearOffice365SyncError({ userId });
+}
+
 function parseScopes(scopeValue) {
   if (!scopeValue) return [];
   if (Array.isArray(scopeValue)) return scopeValue.map(String);

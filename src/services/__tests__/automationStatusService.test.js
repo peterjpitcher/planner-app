@@ -165,15 +165,35 @@ describe('normaliseAutomationHealth', () => {
     expect(staleDigest.digest.stale).toBe(true);
   });
 
-  it('never flags the weekly tidy or Outlook sync as stale even after 48h', () => {
+  it('never flags the weekly tidy as stale even after 48h', () => {
     const rows = byKey(
-      run({
-        cronRuns: { demote_week: { status: 'success', created_at: iso(200 * HOUR) } },
-        connection: { sync_enabled: true, last_synced_at: iso(200 * HOUR), sync_error: null },
-      })
+      run({ cronRuns: { demote_week: { status: 'success', created_at: iso(200 * HOUR) } } })
     );
     expect(rows.weekly_tidy.status).toBe('ok');
     expect(rows.weekly_tidy.stale).toBe(false);
-    expect(rows.outlook_sync.stale).toBe(false);
+  });
+
+  it('flags a continuous automation stale after four hours', () => {
+    // This previously asserted the Outlook sync could NEVER be stale, which is
+    // how a dead sync went on reporting "Syncing normally". It runs every couple
+    // of minutes, so four hours of silence means it has stopped.
+    const fresh = byKey(
+      run({ connection: { sync_enabled: true, last_synced_at: iso(1 * HOUR), sync_error: null } })
+    );
+    expect(fresh.outlook_sync.status).toBe('ok');
+    expect(fresh.outlook_sync.stale).toBe(false);
+
+    const stale = byKey(
+      run({ connection: { sync_enabled: true, last_synced_at: iso(200 * HOUR), sync_error: null } })
+    );
+    expect(stale.outlook_sync.stale).toBe(true);
+  });
+
+  it('does not flag a disconnected or never-synced Outlook row as stale', () => {
+    const off = byKey(run({ connection: { sync_enabled: false, last_synced_at: iso(200 * HOUR) } }));
+    expect(off.outlook_sync.stale).toBe(false);
+
+    const never = byKey(run({ connection: { sync_enabled: true, last_synced_at: null } }));
+    expect(never.outlook_sync.stale).toBe(false);
   });
 });

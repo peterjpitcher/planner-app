@@ -92,6 +92,14 @@ export default function ProjectStatusChangeModal({
                     <p className="mt-1 text-sm text-gray-500">
                       &ldquo;{projectName}&rdquo; will be marked {copy.verb}.
                     </p>
+                    {/* Office 365 sync only mirrors active projects, so closing
+                        one deletes its Microsoft To Do list. That is by design
+                        but was never said anywhere, and it is not reversible by
+                        reopening the project: the list comes back empty of any
+                        history the user had added on the Outlook side. */}
+                    <p className="mt-1 text-sm text-gray-500">
+                      Its Microsoft To Do list will be removed from Outlook. Your tasks stay here.
+                    </p>
                   </div>
                 </div>
 

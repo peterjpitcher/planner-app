@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { verifyCronAuth } from '@/lib/cronAuth';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { syncOffice365All } from '@/services/office365SyncService';
+import { clearOffice365SyncFailure, recordOffice365SyncFailure } from '@/services/office365ConnectionService';
 
 // Minimum minutes since a user's last completed sync before the cron will start
 // another one. Lightweight guard (FF-041) against the every-minute cron piling
@@ -57,23 +58,37 @@ export async function GET(request) {
 
     try {
       const result = await syncOffice365All({ userId });
+      // A run that completed clears any failure recorded by an earlier one, so
+      // a transient Graph blip does not leave a permanent warning on screen.
+      await clearOffice365SyncFailure({ userId });
       results.push({ userId, ok: true, ...result });
     } catch (err) {
+      // Record it on the connection, which is what the automations panel reads.
+      // Previously this only logged to the console and still returned ok: true,
+      // so a sync that had been dead for days reported "Syncing normally".
       console.error('Office365 cron: sync failed for user:', userId, err);
+      await recordOffice365SyncFailure({ userId, message: err?.message || err });
       results.push({ userId, ok: false, error: String(err?.message || err) });
     }
   }
 
   const okCount = results.filter((r) => r.ok && !r.skipped).length;
+  const failedCount = results.filter((r) => !r.ok).length;
 
   if (okCount > 0) {
     revalidatePath('/tasks');
   }
 
-  return NextResponse.json({
-    ok: true,
-    syncedUsers: okCount,
-    totalUsers: results.length,
-    results,
-  });
+  // Report the truth in the status field too. This returned ok: true whatever
+  // happened, so an external check on the endpoint could never see a failure.
+  return NextResponse.json(
+    {
+      ok: failedCount === 0,
+      syncedUsers: okCount,
+      failedUsers: failedCount,
+      totalUsers: results.length,
+      results,
+    },
+    { status: failedCount > 0 ? 500 : 200 }
+  );
 }

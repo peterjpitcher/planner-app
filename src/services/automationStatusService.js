@@ -12,6 +12,10 @@ import { AUTOPILOT_LEVEL } from '@/lib/constants';
 // it reads as a problem. Only daily jobs are checked — the weekly tidy and the
 // continuous Outlook sync run on their own cadence.
 const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000;
+// A continuous automation runs every couple of minutes, so it does not get the
+// generous daily allowance. Four hours without a successful run means it has
+// stopped, whatever it last said about itself.
+const CONTINUOUS_STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000;
 
 // cron_runs.status → health status. 'claimed' (started, not yet finished) and
 // any unexpected value fall through to 'partial' so an incomplete run reads as
@@ -72,16 +76,26 @@ const AUTOMATIONS = [
   },
 ];
 
-// A daily automation is stale when its last run is older than the threshold.
+// An automation is stale when its last run is older than its cadence allows.
 // 'off' and never-run rows are never stale (nothing is expected of them), and a
 // missing/unparseable timestamp is treated as not stale.
+//
+// 'continuous' used to return false here, which meant the Outlook sync could
+// never be flagged however long it had been dead. Its health is derived from
+// last_synced_at, and the only thing that ever wrote an error was one OAuth
+// failure mode, so an expired app secret, Graph throttling or one unreadable
+// list all left the panel reporting "Syncing normally" indefinitely.
 function computeStale(cadence, status, lastRunAt, nowMs) {
-  if (cadence !== 'daily') return false;
+  const threshold =
+    cadence === 'daily' ? STALE_THRESHOLD_MS
+      : cadence === 'continuous' ? CONTINUOUS_STALE_THRESHOLD_MS
+        : null;
+  if (threshold === null) return false;
   if (status === 'off' || status === 'never') return false;
   if (!lastRunAt) return false;
   const ranAtMs = Date.parse(lastRunAt);
   if (Number.isNaN(ranAtMs)) return false;
-  return nowMs - ranAtMs > STALE_THRESHOLD_MS;
+  return nowMs - ranAtMs > threshold;
 }
 
 function makeRow(auto, { status, lastRunAt, detail, nowMs }) {

@@ -116,14 +116,31 @@ export default function IntegrationsClient() {
             {status?.error && (
               <div className="mt-2 text-destructive">{status.error}</div>
             )}
+            {/* The status route has always returned syncError and
+                reconnectRequired, and this page threw them away, so a sync that
+                had been failing for days still read "Connected" with a Last sync
+                timestamp that had quietly stopped moving. */}
+            {status?.syncError && (
+              <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-destructive" role="alert">
+                <div className="font-medium">Sync is failing</div>
+                <div className="mt-0.5">{status.syncError}</div>
+                {status.reconnectRequired && (
+                  <div className="mt-1 text-xs">
+                    Reconnect below to resume syncing. Your tasks and lists are not affected.
+                  </div>
+                )}
+              </div>
+            )}
             {notice && (
               <div className="mt-2 text-muted-foreground">{notice}</div>
             )}
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {!status.connected && (
-              <Button href={connectHref}>Connect Office 365</Button>
+            {(!status.connected || status.reconnectRequired) && (
+              <Button href={connectHref}>
+                {status.reconnectRequired ? 'Reconnect Office 365' : 'Connect Office 365'}
+              </Button>
             )}
             {status.connected && (
               <>

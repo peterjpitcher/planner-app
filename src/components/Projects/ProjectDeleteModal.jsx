@@ -89,6 +89,9 @@ export default function ProjectDeleteModal({
                       {noteCount === 0 && !loading && (
                         <p className="text-xs text-gray-500">This project has no notes.</p>
                       )}
+                      <p className="text-xs text-gray-500">
+                        Its Microsoft To Do list will also be removed from Outlook.
+                      </p>
                     </>
                   )}
                 </div>
