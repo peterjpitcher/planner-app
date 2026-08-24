@@ -332,8 +332,6 @@ const PAGE_SIZE = 20;
  *   onSnooze?: (taskId: string, until: string | null) => void,
  *   children?: React.ReactNode,
  *   areas?: string[],
- *   onLoadMore?: () => void,
- *   hasMore?: boolean,
  * }} props
  */
 export default function BoardColumn({
@@ -350,8 +348,6 @@ export default function BoardColumn({
   onSnooze,
   children,
   areas = [],
-  onLoadMore,
-  hasMore = false,
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stateKey });
 
@@ -441,7 +437,7 @@ export default function BoardColumn({
                   </span>
                   <ChevronDownIcon className="h-3.5 w-3.5 shrink-0" />
                 </Menu.Button>
-                <Menu.Items className="absolute left-0 z-10 mt-1 w-44 origin-top-left rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
+                <Menu.Items anchor="bottom start" className="z-50 w-44 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
                   <Menu.Item>
                     {({ active }) => (
                       <button
@@ -482,7 +478,7 @@ export default function BoardColumn({
                   </span>
                   <ChevronDownIcon className="h-3.5 w-3.5 shrink-0" />
                 </Menu.Button>
-                <Menu.Items className="absolute left-0 z-10 mt-1 w-44 origin-top-left rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
+                <Menu.Items anchor="bottom start" className="z-50 w-44 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
                   <Menu.Item>
                     {({ active }) => (
                       <button
@@ -560,7 +556,7 @@ export default function BoardColumn({
           </SortableContext>
         )}
 
-        {/* Backlog: filtered list with load more */}
+        {/* Backlog: complete filtered list */}
         {isBacklogColumn && (
           <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5">
@@ -582,15 +578,6 @@ export default function BoardColumn({
                 ))
               )}
             </div>
-            {hasMore && !search && !filterArea && !filterType && (
-              <button
-                type="button"
-                onClick={onLoadMore}
-                className="mt-3 w-full rounded-md border border-gray-200 bg-white py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-              >
-                Load more
-              </button>
-            )}
           </SortableContext>
         )}
 

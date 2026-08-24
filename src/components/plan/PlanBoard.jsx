@@ -16,6 +16,7 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { format, addDays } from 'date-fns';
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
+import ErrorToast, { useErrorToast } from '@/components/ui/ErrorToast';
 import { STATE, TODAY_SECTION, SOFT_CAPS } from '@/lib/constants';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { compareBacklogTasks } from '@/lib/taskSort';
@@ -35,8 +36,6 @@ const COLUMNS = [
   { key: STATE.BACKLOG, title: 'Backlog' },
   { key: STATE.WAITING, title: 'Waiting' },
 ];
-
-const BACKLOG_PAGE_SIZE = 20;
 
 // Custom collision detection: try sortable items first (closestCenter for
 // reorder within columns), then fall back to droppable containers
@@ -196,18 +195,21 @@ export default function PlanBoard() {
     [STATE.WAITING]: true,
   });
   const [errors, setErrors] = useState({});
-
-  // Backlog pagination
-  const [backlogOffset, setBacklogOffset] = useState(0);
-  const [backlogHasMore, setBacklogHasMore] = useState(false);
-  // Mirror of backlogOffset so background refetches can preserve loaded depth
-  // without re-creating loadAllColumns on every page load
-  const backlogOffsetRef = useRef(backlogOffset);
-  backlogOffsetRef.current = backlogOffset;
+  // Non-blocking failure notice for optimistic mutations, the same surface the
+  // projects page uses. Every handler below used to swallow its rejection with a
+  // bare catch, so a failed write was indistinguishable from the app ignoring
+  // the click.
+  const { error: mutationError, reportError, dismiss: dismissMutationError } = useErrorToast();
 
   // Latest-wins guard + debounce timer for background refetches
   const loadGuardRef = useRef(createLatestGuard());
   const refetchTimerRef = useRef(null);
+  // Number of reorder writes that are queued or in flight. A background refetch
+  // started before them would return pre-reorder values, so it must not paint.
+  const pendingSortRef = useRef(0);
+  // Reorder rows waiting to be written, keyed by task id so a repeated move of
+  // the same card collapses to its final position.
+  const pendingSortPayloadRef = useRef(new Map());
   // Gate silent refetches until the first load has completed, so a background
   // refetch can never supersede the in-flight initial load (R2).
   const hasLoadedRef = useRef(false);
@@ -225,6 +227,10 @@ export default function PlanBoard() {
   const [selectedTask, setSelectedTask] = useState(null);
 
   // Debounce timer for sort-order writes
+  // Deliberately NOT cleared on unmount: a reorder the user has already made
+  // must still be written even if they navigate away mid-debounce. The failure
+  // notice is a toast bound to this component, so an unmounted board reports
+  // nothing rather than interrupting an unrelated page (it used to alert()).
   const sortDebounceRef = useRef(null);
 
   // Mobile tab state
@@ -254,7 +260,12 @@ export default function PlanBoard() {
     }
 
     try {
-      const tasks = await apiClient.getTasks(null, { state: stateKey, ...opts });
+      // Backlog is a working list, so always fetch every page. Hiding tasks
+      // behind a manual "Load more" button made recent work effectively vanish
+      // when older overdue tasks filled the first page.
+      const tasks = stateKey === STATE.BACKLOG
+        ? await apiClient.getAllTasks(null, { state: stateKey })
+        : await apiClient.getTasks(null, { state: stateKey, ...opts });
       // A silent refetch that succeeds should clear any stale error banner left
       // by an earlier failed load (mirrors CalendarView).
       if (silent) {
@@ -279,35 +290,41 @@ export default function PlanBoard() {
 
   const loadAllColumns = useCallback(async ({ silent = false } = {}) => {
     const token = loadGuardRef.current.begin();
-    // Preserve the backlog pagination depth the user has scrolled to, so a refetch
-    // after any mutation does not collapse the column back to the first page (FF-033).
-    const backlogLimit = backlogOffsetRef.current > 0 ? backlogOffsetRef.current : BACKLOG_PAGE_SIZE;
 
     const [today, thisWeek, backlog, waiting] = await Promise.all([
       loadColumn(STATE.TODAY, {}, { silent }),
       loadColumn(STATE.THIS_WEEK, {}, { silent }),
-      loadColumn(STATE.BACKLOG, { limit: backlogLimit, offset: 0 }, { silent }),
+      loadColumn(STATE.BACKLOG, {}, { silent }),
       loadColumn(STATE.WAITING, {}, { silent }),
     ]);
 
     // Ignore out-of-order responses — a newer refetch has superseded this one
     if (loadGuardRef.current.isStale(token)) return;
+    // A reorder is queued or in flight. This response predates it, so painting it
+    // would revert the cards the user just dragged while the write still lands.
+    if (pendingSortRef.current > 0) return;
 
-    setColumns({
-      [STATE.TODAY]: today ?? [],
-      [STATE.THIS_WEEK]: thisWeek ?? [],
-      [STATE.BACKLOG]: backlog ? [...backlog].sort(compareBacklogTasks) : [],
-      [STATE.WAITING]: waiting ?? [],
-    });
+    // loadColumn returns null for a column whose fetch failed. Keep whatever is
+    // already on screen for those instead of writing an empty array. Writing []
+    // meant a failed SILENT refetch (an offline blip after a laptop wake, a 429,
+    // a 401 once the session expired) emptied the board to zero with no error
+    // banner and no skeleton, because the silent path deliberately paints
+    // neither. The result was indistinguishable from genuinely having no tasks,
+    // and only a full page reload brought them back. Stale-but-present data is
+    // the right failure mode for a background refresh.
+    setColumns((prev) => ({
+      [STATE.TODAY]: today ?? prev[STATE.TODAY],
+      [STATE.THIS_WEEK]: thisWeek ?? prev[STATE.THIS_WEEK],
+      [STATE.BACKLOG]: backlog ? [...backlog].sort(compareBacklogTasks) : prev[STATE.BACKLOG],
+      [STATE.WAITING]: waiting ?? prev[STATE.WAITING],
+    }));
 
     if (backlog) {
-      setBacklogHasMore(backlog.length >= backlogLimit);
       const uniqueAreas = [
         ...new Set(backlog.filter((t) => t.area).map((t) => t.area)),
       ].sort();
       setAreas(uniqueAreas);
     }
-    setBacklogOffset(backlogLimit);
   }, [loadColumn]);
 
   // Capture inbox (F3): derive the untriaged-capture count from the daily planning
@@ -360,33 +377,6 @@ export default function PlanBoard() {
   }, [loadAllColumns, refreshInboxCount]);
 
   // ---------------------------------------------------------------------------
-  // Load more backlog
-  // ---------------------------------------------------------------------------
-
-  const handleLoadMoreBacklog = useCallback(async () => {
-    setLoadingStates((prev) => ({ ...prev, [STATE.BACKLOG]: true }));
-    try {
-      const more = await apiClient.getTasks(null, {
-        state: STATE.BACKLOG,
-        limit: BACKLOG_PAGE_SIZE,
-        offset: backlogOffset,
-      });
-      if (more) {
-        setColumns((prev) => ({
-          ...prev,
-          [STATE.BACKLOG]: [...prev[STATE.BACKLOG], ...more].sort(compareBacklogTasks),
-        }));
-        setBacklogHasMore(more.length >= BACKLOG_PAGE_SIZE);
-        setBacklogOffset((o) => o + BACKLOG_PAGE_SIZE);
-      }
-    } catch {
-      // Non-critical — silently ignore
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, [STATE.BACKLOG]: false }));
-    }
-  }, [backlogOffset]);
-
-  // ---------------------------------------------------------------------------
   // Task mutations
   // ---------------------------------------------------------------------------
 
@@ -419,14 +409,20 @@ export default function PlanBoard() {
       }));
     }
 
+    // Where the card was, so a failed revert puts it back where the user left it
+    // rather than appending it to the bottom of the column.
+    const originalIndex = columns[taskColumn].findIndex((t) => t.id === taskId);
+
     try {
       await apiClient.updateTask(taskId, updates);
-    } catch {
+    } catch (err) {
       // Revert on failure
-      setColumns((prev) => ({
-        ...prev,
-        [taskColumn]: [...prev[taskColumn], task],
-      }));
+      setColumns((prev) => {
+        const restored = [...prev[taskColumn]];
+        restored.splice(originalIndex < 0 ? restored.length : originalIndex, 0, task);
+        return { ...prev, [taskColumn]: restored };
+      });
+      reportError(err.message || 'Could not update the task. Your change was undone.');
     }
   }, [columns]);
 
@@ -463,17 +459,24 @@ export default function PlanBoard() {
       setWaitingPopover({ taskId, columnKey: STATE.WAITING });
     }
 
+    const originalIndex = columns[sourceColumn].findIndex((t) => t.id === taskId);
+
     try {
       await apiClient.updateTask(taskId, updates);
-    } catch {
+    } catch (err) {
       // Revert
-      setColumns((prev) => ({
-        ...prev,
-        [sourceColumn]: [task, ...prev[sourceColumn]],
-        [targetState]: prev[targetState].filter((t) => t.id !== taskId),
-      }));
+      setColumns((prev) => {
+        const restored = prev[sourceColumn].filter((t) => t.id !== taskId);
+        restored.splice(originalIndex < 0 ? restored.length : originalIndex, 0, task);
+        return {
+          ...prev,
+          [sourceColumn]: restored,
+          [targetState]: prev[targetState].filter((t) => t.id !== taskId),
+        };
+      });
+      reportError(err.message || 'Could not move the task. It has been put back.');
     }
-  }, [columns]);
+  }, [columns, reportError]);
 
   const handleUpdate = useCallback(async (taskId, updates) => {
     // Optimistic update in place
@@ -488,11 +491,12 @@ export default function PlanBoard() {
     setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
     try {
       await apiClient.updateTask(taskId, updates);
-    } catch {
+    } catch (err) {
       // On failure, refetch to restore server truth (quietly, no skeleton flash)
       loadAllColumns({ silent: true });
+      reportError(err.message || 'Could not save the task. Your change was undone.');
     }
-  }, [loadAllColumns]);
+  }, [loadAllColumns, reportError]);
 
   const handleSnooze = useCallback(async (taskId, until) => {
     // Snooze is orthogonal to state (F2): the task keeps its column and just gains
@@ -509,11 +513,12 @@ export default function PlanBoard() {
     setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, snoozed_until: until } : prev));
     try {
       await apiClient.snoozeTask(taskId, until);
-    } catch {
+    } catch (err) {
       // On failure, refetch to restore server truth (quietly, no skeleton flash)
       loadAllColumns({ silent: true });
+      reportError(err.message || 'Could not snooze the task. Your change was undone.');
     }
-  }, [loadAllColumns]);
+  }, [loadAllColumns, reportError]);
 
   const handleDeleteTask = useCallback(async (taskId) => {
     // Remove from all columns
@@ -527,10 +532,11 @@ export default function PlanBoard() {
     setSelectedTask((prev) => (prev && prev.id === taskId ? null : prev));
     try {
       await apiClient.deleteTask(taskId);
-    } catch {
+    } catch (err) {
       loadAllColumns({ silent: true });
+      reportError(err.message || 'Could not delete the task. It has been put back.');
     }
-  }, [loadAllColumns]);
+  }, [loadAllColumns, reportError]);
 
   const handleDrawerUpdate = useCallback(async (taskId, updates) => {
     await handleUpdate(taskId, updates);
@@ -648,22 +654,45 @@ export default function PlanBoard() {
         // Optimistic update with the corrected sort_order values
         setColumns((prev) => ({ ...prev, [sourceColumn]: updatedItems }));
 
-        // Debounced write, chunked to stay within updateSortOrder's 50-item cap
-        // (the reindex path can exceed it once the column is large).
-        if (sortDebounceRef.current) clearTimeout(sortDebounceRef.current);
+        // Debounced, and sent as ONE request. It used to be sliced into 50-row
+        // batches fired with Promise.all, so a reindex where one batch failed
+        // (a row deleted on another device fails its batch's ownership check)
+        // committed the rest and left the column interleaved between new and
+        // stale sort_order values.
+        //
+        // pendingSortRef makes the write visible to loadAllColumns. The write is
+        // deferred 300ms while an unrelated tasks-changed refetch may already be
+        // in flight, and that refetch's GET was issued before the POST, so it
+        // returns pre-reorder values and used to silently snap the cards back
+        // while the new order still landed in the database.
+        //
+        // The payload accumulates rather than replaces. One shared timer meant a
+        // second drag inside the debounce window cleared the first drag's timer
+        // and threw away its payload without ever sending it, so that reorder
+        // lived only on screen until the next reload. Later values for the same
+        // task win.
+        for (const row of sortPayload) pendingSortPayloadRef.current.set(row.id, row);
+
+        // Count units of outstanding work, not drags: replacing a timer that has
+        // not fired is the same unit, while a drag made while a request is in
+        // flight is a new one. Each fired timer decrements exactly once.
+        const hadPendingTimer = sortDebounceRef.current !== null;
+        if (hadPendingTimer) clearTimeout(sortDebounceRef.current);
+        else pendingSortRef.current += 1;
         sortDebounceRef.current = setTimeout(() => {
-          const SORT_BATCH_SIZE = 50;
-          const batches = [];
-          for (let i = 0; i < sortPayload.length; i += SORT_BATCH_SIZE) {
-            batches.push(sortPayload.slice(i, i + SORT_BATCH_SIZE));
-          }
-          Promise.all(batches.map((batch) => apiClient.updateSortOrder(batch)))
+          sortDebounceRef.current = null;
+          const batched = [...pendingSortPayloadRef.current.values()];
+          pendingSortPayloadRef.current.clear();
+          apiClient.updateSortOrder(batched)
             .catch((err) => {
               // Reconcile with server truth so a failed write does not leave the
               // board showing an order that was never persisted, and tell the
               // user the reorder did not save (FF-003).
               loadAllColumns({ silent: true });
-              alert(`Failed to save order: ${err.message}`);
+              reportError(`Could not save the new order: ${err.message}`);
+            })
+            .finally(() => {
+              pendingSortRef.current = Math.max(0, pendingSortRef.current - 1);
             });
         }, 300);
       }
@@ -739,8 +768,6 @@ export default function PlanBoard() {
           onDelete={handleDeleteTask}
           onSnooze={handleSnooze}
           areas={colKey === STATE.BACKLOG ? areas : []}
-          onLoadMore={colKey === STATE.BACKLOG ? handleLoadMoreBacklog : undefined}
-          hasMore={colKey === STATE.BACKLOG ? backlogHasMore : false}
         />
 
         {/* Waiting popover */}
@@ -766,6 +793,9 @@ export default function PlanBoard() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
+      {/* Non-blocking notice for a mutation that did not save */}
+      <ErrorToast message={mutationError} onDismiss={dismissMutationError} />
+
       {/* Error banner */}
       {hasAnyError && (
         <div className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
