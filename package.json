@@ -17,6 +17,7 @@
     "@headlessui/react": "^2.2.3",
     "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.49.4",
+    "chrono-node": "^2.10.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",

@@ -6,24 +6,27 @@ import {
   DndContext,
   closestCenter,
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import { arrayMove } from '@dnd-kit/sortable';
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';
 import { ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
-import { TODAY_SECTION_ORDER, SOFT_CAPS, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
-import { getStartOfTodayLondon } from '@/lib/dateUtils';
+import { STATE, TODAY_SECTION_ORDER, SOFT_CAPS, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
+import { addDaysToDateKey, getStartOfTodayLondon } from '@/lib/dateUtils';
 import { getLondonDateKey } from '@/lib/timezone';
+import { getRescheduledTodayState } from '@/lib/todayTaskReschedule';
 import { computeSortOrder, needsReindex, reindex } from '@/lib/sortOrder';
 import { TaskListSkeleton } from '@/components/ui/LoadingStates';
 import TaskCard from '@/components/shared/TaskCard';
 import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 import TodaySection from './TodaySection';
 import AutopilotBanner from './AutopilotBanner';
+import QuickTaskList from './QuickTaskList';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -113,7 +116,13 @@ export default function TodayView() {
   // ---------------------------------------------------------------------------
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // dnd-kit announces its keyboard drag instructions ("press the space bar to
+    // pick up") to screen readers whether or not a KeyboardSensor is registered.
+    // Passing a sensors array replaces the defaults, so without this the space
+    // bar and arrow keys did nothing and the announcement was a lie. Matches the
+    // Plan board.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   // ---------------------------------------------------------------------------
@@ -165,14 +174,15 @@ export default function TodayView() {
         try {
           const backlog = await apiClient.getTasks(null, { state: 'backlog' });
           if (loadGuardRef.current.isStale(token)) return;
-          const now = new Date();
-          const weekFromNow = new Date(now);
-          weekFromNow.setDate(weekFromNow.getDate() + 7);
-          const overdueBl = backlog.filter(
-            (t) => t.due_date && new Date(t.due_date) < now
-          ).length;
+          // Compare London date keys, not instants. due_date is a date-only
+          // column, so new Date(due_date) is UTC midnight and any task due TODAY
+          // read as already overdue from 00:01 London onwards.
+          const todayKey = getLondonDateKey();
+          const weekKey = addDaysToDateKey(todayKey, 7);
+          const dueKey = (t) => (t.due_date ? String(t.due_date).slice(0, 10) : null);
+          const overdueBl = backlog.filter((t) => dueKey(t) && dueKey(t) < todayKey).length;
           const dueThisWeek = backlog.filter(
-            (t) => t.due_date && new Date(t.due_date) >= now && new Date(t.due_date) <= weekFromNow
+            (t) => dueKey(t) && dueKey(t) >= todayKey && dueKey(t) <= weekKey
           ).length;
           if (overdueBl + dueThisWeek > 0) {
             setFirstRunInfo({ overdue: overdueBl, dueThisWeek });
@@ -333,26 +343,39 @@ export default function TodayView() {
   }, []);
 
   const handleUpdate = useCallback(async (taskId, updates) => {
+    const sourceSection = findSection(sections, taskId);
+    const currentTask = sourceSection
+      ? sections[sourceSection].find((task) => task.id === taskId)
+      : completedToday.find((task) => task.id === taskId);
+    const rescheduledState = currentTask?.state === STATE.TODAY
+      ? getRescheduledTodayState(updates.due_date, getLondonDateKey())
+      : null;
+    const effectiveUpdates = rescheduledState
+      ? { ...updates, state: rescheduledState }
+      : updates;
+
     // Optimistically update local state so changes are immediately visible
     setSections((prev) => {
       const next = { must_do: [...prev.must_do], good_to_do: [...prev.good_to_do], quick_wins: [...prev.quick_wins] };
       for (const key of TODAY_SECTION_ORDER) {
-        next[key] = next[key].map((t) => (t.id === taskId ? { ...t, ...updates } : t));
+        next[key] = rescheduledState
+          ? next[key].filter((t) => t.id !== taskId)
+          : next[key].map((t) => (t.id === taskId ? { ...t, ...effectiveUpdates } : t));
       }
       return next;
     });
-    setCompletedToday((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updates } : t)));
+    setCompletedToday((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...effectiveUpdates } : t)));
     // Keep selected task in sync
-    setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...updates } : prev));
+    setSelectedTask((prev) => (prev && prev.id === taskId ? { ...prev, ...effectiveUpdates } : prev));
     try {
-      await apiClient.updateTask(taskId, updates);
+      await apiClient.updateTask(taskId, effectiveUpdates);
     } catch (err) {
       // Reload to restore server truth so the UI does not keep showing an unsaved
       // value the server rejected (FF-032). Silent so the view does not blank out.
       alert(`Failed to update task: ${err.message}`);
       loadData({ silent: true });
     }
-  }, [loadData]);
+  }, [completedToday, loadData, sections]);
 
   const handleDeleteTask = useCallback(async (taskId) => {
     // Remove from sections
@@ -552,6 +575,8 @@ export default function TodayView() {
       {/* Morning autopilot review / undo banner (A3 / F5-lite). Self-gating: it
           renders nothing unless today's day was auto-built and not yet reviewed. */}
       <AutopilotBanner />
+
+      <QuickTaskList />
 
       {/* First-run triage banner */}
       {firstRunInfo && (
