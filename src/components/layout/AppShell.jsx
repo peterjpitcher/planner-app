@@ -68,14 +68,17 @@ export default function AppShell({ children }) {
         <button
           type="button"
           aria-label="Close navigation menu"
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] lg:hidden"
+          // Above the z-50 bottom TabBar (and below the z-[60] drawer) so a tap
+          // anywhere outside the open drawer closes it, rather than falling
+          // through to a tab and navigating away.
+          className="fixed inset-0 z-[55] bg-black/40 backdrop-blur-[1px] lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
       <Header
         isMobileMenuOpen={isMobileMenuOpen}
         onToggleMobileMenu={() => setIsMobileMenuOpen((open) => !open)}
-        onPlanTomorrow={() => planning.triggerManualPlanning('daily')}
+        onPlanDay={() => planning.triggerManualPlanning('daily')}
         onPlanWeek={() => planning.triggerManualPlanning('weekly')}
       />
       <main className="min-h-screen pl-0 pt-14 lg:pl-[240px]">
@@ -84,9 +87,13 @@ export default function AppShell({ children }) {
           <div className="mb-4 px-4 sm:px-6 pt-4">
             <PlanningBanner
               isPlanned={planning.isPlanned}
+              isDayPlanned={planning.isDayPlanned}
               hasNewTasks={planning.hasNewTasks}
+              newTaskCount={planning.newTaskCount}
               totalCandidates={planning.totalCandidates}
               windowType={planning.windowType}
+              windowDate={planning.windowDate}
+              windowLabel={planning.windowLabel}
               onPlanNow={planning.openModal}
             />
           </div>

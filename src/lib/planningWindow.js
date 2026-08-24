@@ -122,6 +122,60 @@ export function getActivePlanningWindow(settings = {}, now = new Date()) {
 }
 
 /**
+ * The Monday that weekly planning targets from a given day.
+ *
+ * getMondayOfWeek treats Sunday as the last day of a week, which is right for
+ * bucketing but wrong as a planning target: on a Sunday the week you are about
+ * to plan is the one starting tomorrow, which is exactly what the automatic
+ * Sunday weekly window aims at. Deriving the manual target from getMondayOfWeek
+ * instead pointed it at the week that was ending, so the session it recorded was
+ * for a week nothing ever reads and the Sunday prompt never cleared.
+ *
+ * @param {string} dateKey - today's date, "YYYY-MM-DD"
+ * @returns {string} the target Monday, "YYYY-MM-DD"
+ */
+export function getPlanningWeekStart(dateKey) {
+  const d = new Date(dateKey + 'T12:00:00Z');
+  if (d.getUTCDay() === 0) {
+    // Sunday: tomorrow is the Monday that starts the week being planned.
+    return getDatePlusDays(dateKey, 1);
+  }
+  return getMondayOfWeek(dateKey);
+}
+
+/**
+ * Name the day or week a planning window targets, relative to today in London.
+ *
+ * The daily window deliberately spans about 24 hours (20:05 through to 20:00 the
+ * next day) so the plan you made last night stays reachable all day. That means
+ * the same window is "tomorrow" while you are planning it in the evening and
+ * "today" for the rest of its life. Labelling it "tomorrow" throughout told the
+ * user their already-planned day still needed planning.
+ *
+ * @param {string} windowType - WINDOW_TYPE.DAILY or WINDOW_TYPE.WEEKLY
+ * @param {string} windowDate - the window's target date, "YYYY-MM-DD"
+ * @param {string} todayKey - today's London date, "YYYY-MM-DD"
+ * @returns {string|null} a relative label, or null when the window is far enough
+ *   away that the caller should show the date itself
+ */
+export function getWindowLabel(windowType, windowDate, todayKey) {
+  if (!windowDate || !todayKey) return null;
+
+  if (windowType === WINDOW_TYPE.WEEKLY) {
+    const currentMonday = getMondayOfWeek(todayKey);
+    if (windowDate === currentMonday) return 'this week';
+    if (windowDate === getDatePlusDays(currentMonday, 7)) return 'next week';
+    if (windowDate === getDatePlusDays(currentMonday, -7)) return 'last week';
+    return null;
+  }
+
+  if (windowDate === todayKey) return 'today';
+  if (windowDate === getDatePlusDays(todayKey, 1)) return 'tomorrow';
+  if (windowDate === getDatePlusDays(todayKey, -1)) return 'yesterday';
+  return null;
+}
+
+/**
  * Get the Monday date for a given week (used for weekly window_date).
  * @param {string} dateKey - any date in ISO format
  * @returns {string} Monday's date in "YYYY-MM-DD"

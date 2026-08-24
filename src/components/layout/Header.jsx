@@ -19,7 +19,7 @@ function getInitials(user) {
     return email ? email.slice(0, 2).toUpperCase() : '';
 }
 
-export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu, onPlanTomorrow, onPlanWeek }) {
+export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu, onPlanDay, onPlanWeek }) {
     const { data: session } = useSession();
     const [showPlanMenu, setShowPlanMenu] = useState(false);
     const planMenuRef = useRef(null);
@@ -62,23 +62,34 @@ export function Header({ className, isMobileMenuOpen = false, onToggleMobileMenu
                     <button
                         type="button"
                         onClick={() => setShowPlanMenu((v) => !v)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setShowPlanMenu(false); }}
                         className="flex h-10 items-center gap-1.5 rounded-md px-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                         aria-label="Plan"
+                        aria-haspopup="true"
+                        aria-expanded={showPlanMenu}
+                        aria-controls="plan-menu"
                     >
                         <CalendarCheck className="w-4 h-4" />
                         <span className="hidden text-sm font-medium sm:inline">Plan</span>
                     </button>
                     {showPlanMenu && (
-                        <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-lg">
+                        <div
+                            id="plan-menu"
+                            role="menu"
+                            onKeyDown={(e) => { if (e.key === 'Escape') setShowPlanMenu(false); }}
+                            className="absolute right-0 top-full mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-lg"
+                        >
                             <button
                                 type="button"
-                                onClick={() => { setShowPlanMenu(false); onPlanTomorrow?.(); }}
+                                role="menuitem"
+                                onClick={() => { setShowPlanMenu(false); onPlanDay?.(); }}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted"
                             >
                                 Plan Today
                             </button>
                             <button
                                 type="button"
+                                role="menuitem"
                                 onClick={() => { setShowPlanMenu(false); onPlanWeek?.(); }}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted"
                             >
