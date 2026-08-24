@@ -100,11 +100,35 @@ export async function GET(request) {
       console.error('Planning session guard check failed:', guardError);
     }
 
+    // Only sweep genuinely stale rows. Two problems came from having no age
+    // predicate at all:
+    //
+    //  - Anything the user placed in This Week over the weekend, in preparation
+    //    for the week ahead, was swept at 19:55 on Sunday, ten minutes before the
+    //    weekly planning window even opens. The planning-session guard above
+    //    cannot help, because that session cannot exist yet at 19:55.
+    //  - demote-today-tasks is scheduled on the same minute, so a Today task it
+    //    had just moved into This Week (carrying its carried_section markers)
+    //    could be swept onward to Backlog in the same evening.
+    //
+    // Both leave an undated task in Backlog with a freshly reset
+    // entered_state_at, which matches no planning-candidate or autopilot bucket
+    // until it ages past STALE_BACKLOG_DAYS, so the task disappears from the
+    // planning modal, the autopilot pool and the digest for a fortnight.
+    //
+    // The cutoff is the start of the current weekend, so anything that entered
+    // This Week on Saturday or Sunday survives. This is also what the automations
+    // panel has always claimed the job does ("stale This Week items to Backlog").
+    const weekendStart = new Date(runDate + 'T12:00:00Z');
+    weekendStart.setUTCDate(weekendStart.getUTCDate() - 1);
+    const weekendStartKey = weekendStart.toISOString().slice(0, 10);
+
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')
       .select('id, name, due_date, carried_section, projects(name)')
       .eq('state', 'this_week')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .lt('entered_state_at', weekendStartKey);
 
     if (fetchError) {
       try { await updateCronRun({ supabase, runId, patch: { status: 'failed', error: String(fetchError.message) } }); } catch {}

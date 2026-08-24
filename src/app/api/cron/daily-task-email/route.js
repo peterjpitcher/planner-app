@@ -26,7 +26,7 @@ function isTimeWindowInZone({ date = new Date(), hour, minute, windowMinutes = 0
   return parts.minute >= minute && parts.minute < (minute + windowMinutes);
 }
 
-async function claimDailyRun({ supabase, userId, runDateKey, toEmail, counts }) {
+async function claimDailyRun({ supabase, userId, runDateKey, toEmail, counts, allowSkippedReclaim = false }) {
   try {
     const { data, error } = await supabase
       .from('daily_task_email_runs')
@@ -43,6 +43,45 @@ async function claimDailyRun({ supabase, userId, runDateKey, toEmail, counts }) 
 
     if (error) {
       if (error.code === '23505') {
+        // A row already exists for this (user, run_date). Mirror claimCronRun
+        // (FF-022): if the previous attempt FAILED, reclaim it so one transient
+        // Graph error does not silently cost the whole day's digest. Only one
+        // invocation lands inside the 12 minute window, so without this the only
+        // recovery was deleting the row by hand.
+        //
+        // A forced run also reclaims a 'skipped' row, which is what the weekend
+        // branch writes. Forcing a weekend digest previously bypassed the weekend
+        // gate only to be turned away here as 'already_sent'.
+        const { data: existing, error: fetchError } = await supabase
+          .from('daily_task_email_runs')
+          .select('id, status')
+          .eq('user_id', userId)
+          .eq('run_date', runDateKey)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        const reclaimable =
+          existing?.status === 'failed' || (allowSkippedReclaim && existing?.status === 'skipped');
+
+        if (reclaimable) {
+          // Conditional update on the observed status keeps the reclaim atomic:
+          // if a concurrent retry got there first, no row matches and we fall
+          // through to already_sent.
+          const { data: reclaimed, error: reclaimError } = await supabase
+            .from('daily_task_email_runs')
+            .update({ status: 'claimed', error: null, to_email: toEmail })
+            .eq('id', existing.id)
+            .eq('status', existing.status)
+            .select('id')
+            .maybeSingle();
+
+          if (reclaimError) throw reclaimError;
+          if (reclaimed?.id) {
+            return { claimed: true, runId: reclaimed.id, reason: 'reclaimed' };
+          }
+        }
+
         return { claimed: false, reason: 'already_sent' };
       }
 
@@ -194,6 +233,10 @@ export async function GET(request) {
       runDateKey,
       toEmail,
       counts,
+      // A forced run has already bypassed the weekend gate above, so let it
+      // reclaim the 'skipped' row that gate wrote rather than being turned away
+      // as 'already_sent'.
+      allowSkippedReclaim: auth.force === true,
     });
 
     if (!claim.claimed) {
