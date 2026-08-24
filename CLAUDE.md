@@ -148,7 +148,12 @@ OFFICE365_*               # Graph integration (optional)
 - **Auth is NextAuth.js, NOT Supabase Auth.** Do not follow the workspace Supabase Auth patterns here.
 - **RLS is effectively bypassed.** Every route uses the service-role client, so security rests entirely
   on the session check plus an explicit `user_id` ownership check in the route or service. If you add a
-  route, you must add both. The RLS policies on `projects` and `tasks` are still `USING (true)`.
+  route, you must add both.
+  `projects` and `tasks` each still carry a permissive `ALL` policy for the `authenticated` role with
+  `USING (true) WITH CHECK (true)`, alongside correct per-user policies. Permissive policies OR together,
+  so any Supabase-authenticated JWT can read and write every row through PostgREST with the public anon
+  key, independently of these routes. `notes` does not have this and is correctly scoped to
+  `auth.uid() = user_id`. Verified against the live database on 2026-08-24.
 - **Never hardcode `'done'`** when excluding finished tasks. Use `CLOSED_STATES` / `closedStatesFilter()`.
 - **Never write `completed_at` or `cancelled_at`** from application code. The DB trigger owns them.
 - **Office 365 sync only mirrors active projects** (`isProjectActive`: Open, In Progress, On Hold).
