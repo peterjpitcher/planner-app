@@ -116,11 +116,21 @@ export const authOptions = {
         token.email = user.email;
       }
       
-      // Handle session updates
-      if (trigger === 'update' && session) {
-        token = { ...token, ...session };
-      }
-      
+      // Deliberately NOT handling `trigger === 'update'`.
+      //
+      // NextAuth v4 passes the raw POST body of /api/auth/session straight into
+      // this callback as `session`. Spreading it over the token let any signed-in
+      // caller reissue their own cookie with a different `id` and `email`: the
+      // session callback below prefers token.id over token.sub, every API route
+      // scopes its queries on session.user.id, and every route uses the
+      // service-role client, so a forged id reads and writes another user's rows
+      // outright. A forged email also satisfies isAdminSession().
+      //
+      // Nothing in this app calls useSession().update(), so the branch was pure
+      // attack surface. If a session update is ever needed, copy named,
+      // non-identity fields only. token.id, token.sub and token.email must only
+      // ever come from `user` on first sign-in.
+
       return token;
     },
     async session({ session, token }) {
