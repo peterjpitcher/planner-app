@@ -1,4 +1,4 @@
-import { STATE, TODAY_SECTION, PROJECT_STATUS, CLOSED_STATES } from '@/lib/constants';
+import { STATE, TODAY_SECTION, PROJECT_STATUS, CLOSED_STATES, closedStatesFilter } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { computeSortOrder } from '@/lib/sortOrder';
@@ -542,6 +542,33 @@ export async function spawnNextRecurrence({ supabase, userId, task }) {
       );
       return { spawned: false };
     }
+
+    // Idempotence. `settingDone` is derived purely from the state transition, so
+    // un-completing a recurring task and completing it again fires the spawn a
+    // second time, and nothing on the row records that an occurrence already
+    // exists. The series gained a duplicate on every undo and redo cycle. There
+    // is no column to stamp without a migration, so look for the occurrence
+    // instead: an open sibling with the same name, rule and due date IS the next
+    // occurrence, and a second copy of it is never wanted.
+    //
+    // A failed lookup deliberately falls through and spawns. A duplicate is
+    // visible in Backlog and can be deleted; a silently broken series is not.
+    const { data: existingOccurrence } = await supabase
+      .from('tasks')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('name', task.name)
+      .eq('recurrence', task.recurrence)
+      .eq('due_date', nextDue)
+      .not('state', 'in', closedStatesFilter())
+      .limit(1);
+    // No need to exclude the source row: nextDue is always strictly later than
+    // the task's own due date, because the base is the later of that date and
+    // today and every pattern advances from it.
+    if (existingOccurrence && existingOccurrence.length > 0) {
+      return { spawned: false, reason: 'already_exists' };
+    }
+
     const spawn = await createTask({
       supabase,
       userId,
@@ -571,9 +598,18 @@ export async function spawnNextRecurrence({ supabase, userId, task }) {
   }
 }
 
+// A whole-column reindex has to travel as ONE request. The RPC below is a
+// single atomic UPDATE, so splitting a reindex into 50-row chunks and firing
+// them with Promise.all meant a partial failure (one row deleted on another
+// device fails the ownership check for its chunk alone) committed some chunks
+// and not others, leaving the column interleaved between fresh and stale
+// sort_order values with no way for the user to undo it. The cap stays as a
+// mass-assignment guard, just above any realistic single column.
+export const SORT_ORDER_MAX_ITEMS = 500;
+
 export async function updateSortOrder({ supabase, userId, items }) {
-  if (!items || items.length === 0 || items.length > 50) {
-    return { error: 'Invalid batch size (1-50 items)' };
+  if (!items || items.length === 0 || items.length > SORT_ORDER_MAX_ITEMS) {
+    return { error: `Invalid batch size (1-${SORT_ORDER_MAX_ITEMS} items)` };
   }
   // Verify ownership
   const ids = items.map(i => i.id);

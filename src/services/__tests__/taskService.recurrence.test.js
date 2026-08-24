@@ -10,17 +10,24 @@ import { nextRecurrenceDate } from '@/lib/recurrence';
 // next-occurrence spawn then calls createTask, which inserts via
 // .from('tasks').insert(payload).select().single(). We capture both the update
 // and the insert payloads so we can assert the spawn behaviour precisely.
-function makeSupabase(existingTask, { insertFails = false, lostRace = false } = {}) {
+function makeSupabase(existingTask, { insertFails = false, lostRace = false, occurrenceExists = false } = {}) {
   let updatePayload = null;
   let insertPayload = null;
 
-  function makeSelectChain() {
+  // The spawn's idempotence check selects just 'id'; computeAppendSortOrder
+  // selects 'sort_order'. Keying off the column list lets one stub serve both.
+  function makeSelectChain(columns) {
+    const isOccurrenceProbe = columns === 'id';
     const chain = {
       eq() { return chain; },
+      neq() { return chain; },
       not() { return chain; },
       is() { return chain; },
       order() { return chain; },
-      limit: async () => ({ data: [], error: null }),
+      limit: async () => ({
+        data: isOccurrenceProbe && occurrenceExists ? [{ id: 'existing-occurrence' }] : [],
+        error: null,
+      }),
       single: async () => ({ data: existingTask, error: null }),
     };
     return chain;
@@ -29,7 +36,7 @@ function makeSupabase(existingTask, { insertFails = false, lostRace = false } = 
   const supabase = {
     from() {
       return {
-        select() { return makeSelectChain(); },
+        select(columns) { return makeSelectChain(columns); },
         update(payload) {
           updatePayload = payload;
           const chain = {
@@ -114,6 +121,22 @@ describe('updateTask — recurrence next-occurrence spawn (F6/P4)', () => {
     // base = later of (2030-03-10, today) = 2030-03-10; daily -> +1 day.
     expect(insert.due_date).toBe('2030-03-11');
     expect(insert.state).toBe('backlog');
+  });
+
+  it('does not spawn a second occurrence when one already exists', async () => {
+    // Un-completing and re-completing a recurring task hits the done transition
+    // twice, and nothing on the row records that the next occurrence was already
+    // created, so every undo and redo cycle used to add a duplicate.
+    const { result, insert } = await runUpdate({}, { state: 'done' }, { occurrenceExists: true });
+    expect(result.error).toBeUndefined();
+    expect(result.data.state).toBe('done');
+    expect(insert).toBeNull();
+  });
+
+  it('still completes the task when the spawn is skipped as a duplicate', async () => {
+    const { result, update } = await runUpdate({}, { state: 'done' }, { occurrenceExists: true });
+    expect(update.state).toBe('done');
+    expect(result.data).not.toBeNull();
   });
 
   it('carries the intended fields onto the spawned occurrence', async () => {
