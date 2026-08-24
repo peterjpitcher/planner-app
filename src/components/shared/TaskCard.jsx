@@ -235,7 +235,10 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
       {/* Drag handle */}
       <button
         type="button"
-        className="mt-0.5 shrink-0 cursor-grab touch-none text-gray-300 hover:text-gray-500 active:cursor-grabbing focus:outline-none"
+        // The handle is the first focusable child of every card, so it is where
+        // Tab lands. focus:outline-none with no replacement left the keyboard
+        // user with no indication of which card held focus at all.
+        className="mt-0.5 shrink-0 cursor-grab touch-none rounded text-gray-300 hover:text-gray-500 active:cursor-grabbing focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
         aria-label="Drag to reorder"
         {...attributes}
         {...listeners}

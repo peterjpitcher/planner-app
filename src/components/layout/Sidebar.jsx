@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -28,15 +29,48 @@ const navigation = [
     { name: 'Planning', href: '/settings/planning', icon: Clock },
 ];
 
+// Tailwind's lg breakpoint. The drawer is permanently visible above it and a
+// slide-away panel below it, and only the panel should leave the tab order.
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+function useIsDesktop() {
+    // Defaults to true so the nav is never inert during SSR or the first paint.
+    // Wrongly inerting a visible sidebar is far worse than a frame of the old
+    // behaviour on mobile.
+    const [isDesktop, setIsDesktop] = useState(true);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+        const query = window.matchMedia(DESKTOP_QUERY);
+        const sync = () => setIsDesktop(query.matches);
+        sync();
+        query.addEventListener('change', sync);
+        return () => query.removeEventListener('change', sync);
+    }, []);
+
+    return isDesktop;
+}
+
 export function Sidebar({ isMobileMenuOpen = false, onCloseMobileMenu }) {
     const pathname = usePathname();
+    const isDesktop = useIsDesktop();
 
     return (
         <aside
             id="app-navigation"
             aria-label="Main navigation"
+            // The closed drawer is hidden by transform alone, which does not
+            // remove it from the tab order or the accessibility tree: a keyboard
+            // user tabbed through ten invisible controls at the top of every
+            // mobile page, and a screen reader read the nav twice (once here,
+            // once in the bottom TabBar). inert is ignored at desktop widths,
+            // where the sidebar is genuinely visible.
+            inert={!isMobileMenuOpen && !isDesktop ? '' : undefined}
             className={cn(
-                "fixed left-0 top-0 z-50 flex min-h-screen w-[280px] max-w-[85vw] flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-background))] transition-transform duration-200 ease-out lg:z-40 lg:w-[240px] lg:max-w-none",
+                // z-[60] on mobile: the fixed bottom TabBar is z-50 and renders later in the
+                // tree, so at z-50 it painted over the drawer footer and swallowed taps on
+                // Sign out. Desktop drops back to z-40, below the header.
+                "fixed left-0 top-0 z-[60] flex min-h-screen w-[280px] max-w-[85vw] flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-background))] transition-transform duration-200 ease-out lg:z-40 lg:w-[240px] lg:max-w-none",
                 isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
             )}
         >
@@ -93,7 +127,10 @@ export function Sidebar({ isMobileMenuOpen = false, onCloseMobileMenu }) {
                         onCloseMobileMenu?.();
                         signOut();
                     }}
-                    className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-[hsl(var(--danger))] transition-all duration-150 hover:bg-[hsl(var(--sidebar-accent))]"
+                    // --danger is not defined anywhere, so this rendered in the inherited
+                    // foreground colour, which is exactly the sidebar background: an
+                    // invisible button, and the only sign-out control in the app.
+                    className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-[hsl(var(--sidebar-foreground))] transition-all duration-150 hover:bg-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive-foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--sidebar-ring))]"
                 >
                     <LogOut className="w-4 h-4" />
                     Sign out

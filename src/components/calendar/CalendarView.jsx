@@ -5,10 +5,12 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   pointerWithin,
 } from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { addMonths, format, startOfMonth, isBefore, isAfter, isSameMonth, parseISO } from 'date-fns';
 
@@ -63,7 +65,13 @@ export default function CalendarView() {
 
   // DnD sensor
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // dnd-kit announces its keyboard drag instructions ("press the space bar to
+    // pick up") to screen readers whether or not a KeyboardSensor is registered.
+    // Passing a sensors array replaces the defaults, so without this the space
+    // bar and arrow keys did nothing and the announcement was a lie. Matches the
+    // Plan board.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   // Fetch tasks. Silent refetches revalidate in the background without swapping
@@ -187,7 +195,10 @@ export default function CalendarView() {
 
   // Drawer: update task field(s)
   const handleDrawerUpdate = useCallback(async (taskId, updates) => {
-    const previousTasks = tasks;
+    // Only the one task, captured before the optimistic write. Snapshotting the
+    // whole array and restoring it on failure threw away every other change that
+    // had succeeded in the meantime, including a completed drag on another day.
+    const previousTask = tasks.find((t) => t.id === taskId);
     // Optimistic update
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, ...updates } : t))
@@ -200,19 +211,20 @@ export default function CalendarView() {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
       // Revert and surface the failure so the edit is not silently lost (FF-046)
-      setTasks(previousTasks);
-      setSelectedTask((prev) =>
-        prev && prev.id === taskId
-          ? previousTasks.find((t) => t.id === taskId) ?? prev
-          : prev
-      );
+      if (previousTask) {
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? previousTask : t)));
+        setSelectedTask((prev) => (prev && prev.id === taskId ? previousTask : prev));
+      }
       alert(`Failed to update task: ${err.message}`);
     }
   }, [tasks]);
 
   // Drawer: delete task
   const handleDeleteTask = useCallback(async (taskId) => {
-    const previousTasks = tasks;
+    // Capture just this task and where it sat, so a failed delete restores it
+    // without discarding whatever else succeeded while the request was in flight.
+    const previousIndex = tasks.findIndex((t) => t.id === taskId);
+    const previousTask = previousIndex >= 0 ? tasks[previousIndex] : null;
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     setSelectedTask(null);
 
@@ -220,7 +232,14 @@ export default function CalendarView() {
       await apiClient.deleteTask(taskId);
     } catch (err) {
       // Revert and surface the failure so the delete is not silently lost (FF-046)
-      setTasks(previousTasks);
+      if (previousTask) {
+        setTasks((prev) => {
+          if (prev.some((t) => t.id === taskId)) return prev;
+          const restored = [...prev];
+          restored.splice(Math.min(previousIndex, restored.length), 0, previousTask);
+          return restored;
+        });
+      }
       alert(`Failed to delete task: ${err.message}`);
     }
   }, [tasks]);
@@ -230,11 +249,13 @@ export default function CalendarView() {
     const updates = { state: targetState };
     if (targetSection) updates.today_section = targetSection;
 
-    const previousTasks = tasks;
+    const previousIndex = tasks.findIndex((t) => t.id === taskId);
+    const previousTask = previousIndex >= 0 ? tasks[previousIndex] : null;
     // Calendar shows today/this_week/backlog/waiting — update in place for those,
     // only remove if moving to a state not shown (e.g. done)
     const calendarStates = new Set(['today', 'this_week', 'backlog', 'waiting']);
-    if (calendarStates.has(targetState)) {
+    const staysOnCalendar = calendarStates.has(targetState);
+    if (staysOnCalendar) {
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, state: targetState, today_section: targetSection || null } : t))
       );
@@ -245,8 +266,17 @@ export default function CalendarView() {
     try {
       await apiClient.updateTask(taskId, updates);
     } catch (err) {
-      // Revert and surface the failure so the move is not silently lost (FF-046)
-      setTasks(previousTasks);
+      // Revert this task alone, so an unrelated change that landed meanwhile is
+      // not thrown away with it (FF-046).
+      if (previousTask) {
+        setTasks((prev) => {
+          if (staysOnCalendar) return prev.map((t) => (t.id === taskId ? previousTask : t));
+          if (prev.some((t) => t.id === taskId)) return prev;
+          const restored = [...prev];
+          restored.splice(Math.min(previousIndex, restored.length), 0, previousTask);
+          return restored;
+        });
+      }
       alert(`Failed to move task: ${err.message}`);
     }
   }, [tasks]);
@@ -254,14 +284,22 @@ export default function CalendarView() {
   // Context menu: mark task complete
   const handleCompleteTask = useCallback(async (taskId) => {
     // Optimistic: remove from calendar (done tasks aren't shown)
-    const previousTasks = tasks;
+    const previousIndex = tasks.findIndex((t) => t.id === taskId);
+    const previousTask = previousIndex >= 0 ? tasks[previousIndex] : null;
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
 
     try {
       await apiClient.updateTask(taskId, { state: 'done' });
     } catch (err) {
       // Revert and surface the failure so the completion is not silently lost (FF-046)
-      setTasks(previousTasks);
+      if (previousTask) {
+        setTasks((prev) => {
+          if (prev.some((t) => t.id === taskId)) return prev;
+          const restored = [...prev];
+          restored.splice(Math.min(previousIndex, restored.length), 0, previousTask);
+          return restored;
+        });
+      }
       alert(`Failed to complete task: ${err.message}`);
     }
   }, [tasks]);

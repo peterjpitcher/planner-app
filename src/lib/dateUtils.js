@@ -26,7 +26,14 @@ export const quickPickOptions = [
   },
   {
     label: 'This Friday',
-    getValue: () => format(nextFriday(new Date()), 'yyyy-MM-dd'),
+    // date-fns nextFriday advances a whole week when the base date is already a
+    // Friday, so on a Friday this preset used to mean next Friday. That also made
+    // it duplicate "End Next Week" and left no way to pick the current Friday.
+    getValue: () => {
+      const today = new Date();
+      const target = today.getDay() === 5 ? today : nextFriday(today);
+      return format(target, 'yyyy-MM-dd');
+    },
   },
   {
     label: 'Next Monday',
@@ -122,6 +129,21 @@ export function getDueDateStatus(dueDate) {
       styles: DUE_DATE_STYLES.FUTURE
     };
   }
+}
+
+/**
+ * Add whole days to a "YYYY-MM-DD" key, using UTC noon so a DST boundary can
+ * never shift the result by a day. Several components carry a private copy of
+ * this; new callers should use this one.
+ * @param {string} dateKey - "YYYY-MM-DD"
+ * @param {number} days
+ * @returns {string} "YYYY-MM-DD"
+ */
+export function addDaysToDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  if (Number.isNaN(date.getTime()) || !Number.isSafeInteger(days)) return dateKey;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 /**

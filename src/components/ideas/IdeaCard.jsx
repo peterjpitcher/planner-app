@@ -8,6 +8,8 @@ import {
   TrashIcon,
 } from '@heroicons/react/20/solid';
 import { IDEA_STATE } from '@/lib/constants';
+import { addDaysToDateKey } from '@/lib/dateUtils';
+import { getLondonDateKey } from '@/lib/timezone';
 import { format, parseISO } from 'date-fns';
 
 // ---------------------------------------------------------------------------
@@ -369,10 +371,10 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
                 key={label}
                 type="button"
                 onClick={() => {
-                  const d = new Date();
-                  d.setDate(d.getDate() + days);
-                  const val = d.toISOString().slice(0, 10);
-                  handleReviewDateChange(val);
+                  // London date key plus N days. A raw new Date().toISOString()
+                  // returns the UTC day, so between midnight and 01:00 BST every
+                  // preset landed a day early.
+                  handleReviewDateChange(addDaysToDateKey(getLondonDateKey(), days));
                 }}
                 className="flex-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
               >

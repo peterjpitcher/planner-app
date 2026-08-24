@@ -274,18 +274,30 @@ export default function ProjectsView() {
   // Load the impact preview whenever a confirmation opens. Fetched fresh rather
   // than read from local state so the list the user approves is the server's
   // current truth, not a stale render.
+  // Latest-wins guard. Without it, a slow impact response for a confirmation the
+  // user already dismissed landed in the shared `impact` state and repainted
+  // whichever confirmation was open by then, so a delete dialog headed with
+  // project B could list project A's tasks and note count. Worse on the error
+  // path: A's failure wrote { openTasks: [], noteCount: 0 }, so B's dialog
+  // rendered its reassuring "no notes" branch even when B had notes that
+  // ON DELETE CASCADE was about to destroy for good.
+  const impactGuardRef = useRef(createLatestGuard());
+
   const loadImpact = useCallback(async (projectId) => {
+    const token = impactGuardRef.current.begin();
     setImpactLoading(true);
     setImpact(null);
     setConfirmError(null);
     try {
       const result = await apiClient.getProjectImpact(projectId);
+      if (impactGuardRef.current.isStale(token)) return;
       setImpact({ openTasks: result.openTasks || [], noteCount: result.noteCount || 0 });
     } catch (err) {
+      if (impactGuardRef.current.isStale(token)) return;
       setConfirmError(err.message || 'Could not load what this would affect.');
       setImpact({ openTasks: [], noteCount: 0 });
     } finally {
-      setImpactLoading(false);
+      if (!impactGuardRef.current.isStale(token)) setImpactLoading(false);
     }
   }, []);
 
