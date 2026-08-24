@@ -12,7 +12,10 @@ const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_sectio
 export async function GET(request) {
   try {
     // Rate limiting
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`tasks-get-${clientId}`, 120, 60000); // 120 requests per minute (2/sec)
 
     if (!rateLimitResult.allowed) {
@@ -24,8 +27,6 @@ export async function GET(request) {
         }
       );
     }
-
-    const { session } = await getAuthContext(request);
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -144,7 +145,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     // Rate limiting
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`tasks-post-${clientId}`, 30, 60000); // 30 creates per minute
 
     if (!rateLimitResult.allowed) {
@@ -156,8 +160,6 @@ export async function POST(request) {
         }
       );
     }
-
-    const { session } = await getAuthContext(request);
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

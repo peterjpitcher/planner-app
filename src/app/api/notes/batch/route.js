@@ -8,7 +8,10 @@ import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 export async function POST(request) {
   try {
     // Rate limiting - higher limit for batch operations
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`notes-batch-${clientId}`, 60, 60000); // 60 batch requests per minute
     
     if (!rateLimitResult.allowed) {
@@ -21,7 +24,6 @@ export async function POST(request) {
       );
     }
 
-    const { session } = await getAuthContext(request);
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

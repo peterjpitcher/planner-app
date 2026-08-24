@@ -71,10 +71,12 @@ export async function GET(request) {
         .order('created_at', { ascending: true });
         
       if (tNotesError) {
+        // A monthly report that quietly omits notes reads as "there were none".
+        // Fail the request instead, matching the task and project queries above.
         console.error('Error fetching task notes:', tNotesError);
-      } else {
-        taskNotes = tNotes || [];
+        return NextResponse.json({ error: 'Failed to load task notes' }, { status: 500 });
       }
+      taskNotes = tNotes || [];
     }
     
     if (projectIds.length > 0) {
@@ -87,9 +89,9 @@ export async function GET(request) {
         
       if (pNotesError) {
         console.error('Error fetching project notes:', pNotesError);
-      } else {
-        projectNotes = pNotes || [];
+        return NextResponse.json({ error: 'Failed to load project notes' }, { status: 500 });
       }
+      projectNotes = pNotes || [];
     }
     
     // Attach notes to their respective tasks and projects

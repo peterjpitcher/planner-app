@@ -11,7 +11,10 @@ import { getOpenProjectTasks, getProjectDeletionImpact } from '@/services/projec
 // the note count that a delete would destroy. Read-only.
 export async function GET(request, { params }) {
   try {
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`projects-impact-${clientId}`, 60, 60000);
 
     if (!rateLimitResult.allowed) {
@@ -20,8 +23,6 @@ export async function GET(request, { params }) {
         { status: 429, headers: { 'Retry-After': rateLimitResult.retryAfter.toString() } }
       );
     }
-
-    const { session } = await getAuthContext(request);
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

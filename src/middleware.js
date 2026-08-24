@@ -35,12 +35,18 @@ export const config = {
      * Match all request paths except:
      * - /login (authentication page)
      * - /api/auth/* (NextAuth.js routes)
+     * - /api/actions/* (signed one-click links from the daily digest email.
+     *   They carry their own HMAC, expiry, action allow-list and single-use jti,
+     *   and are opened from an email client's browser that usually holds no
+     *   session cookie. Gating them here redirected the tap to /login and left
+     *   the single-use token sitting in the login URL, so in browser history)
+     * - /api/cron/* (shared-secret guarded)
      * - /api/debug-env (debug endpoint)
      * - /_next/static (static files)
      * - /_next/image (image optimization files)
      * - /favicon.ico (favicon file)
      * - /public/* (public files)
      */
-    "/((?!login|api/auth|api/cron|api/debug-env|api/health|api/integrations/office365/callback|_next/static|_next/image|favicon.ico|public).*)",
+    "/((?!login|api/auth|api/actions|api/cron|api/debug-env|api/health|api/integrations/office365/callback|_next/static|_next/image|favicon.ico|public).*)",
   ],
 };

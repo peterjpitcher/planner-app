@@ -36,7 +36,10 @@ function stripUndefined(payload) {
 export async function PATCH(request, { params }) {
   try {
     // Rate limiting
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`projects-patch-${clientId}`, 20, 60000);
     
     if (!rateLimitResult.allowed) {
@@ -49,7 +52,6 @@ export async function PATCH(request, { params }) {
       );
     }
 
-    const { session } = await getAuthContext(request);
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -144,7 +146,10 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     // Rate limiting
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`projects-delete-${clientId}`, 10, 60000);
     
     if (!rateLimitResult.allowed) {
@@ -157,7 +162,6 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const { session } = await getAuthContext(request);
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

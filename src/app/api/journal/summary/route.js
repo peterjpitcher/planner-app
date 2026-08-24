@@ -1,11 +1,41 @@
 import { OpenAI } from 'openai';
 import { NextResponse } from 'next/server';
+import { fromZonedTime } from 'date-fns-tz';
 import { getAuthContext } from '@/lib/authServer';
+import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
+import { LONDON_TIME_ZONE } from '@/lib/timezone';
 
 let openaiClient;
 const MAX_ENTRIES = 120;
 const MAX_TOTAL_CHARS = 60000;
+const RANGE_DAYS = { weekly: 7, monthly: 30, annual: 365 };
+
+function isDateKey(value) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/**
+ * The instant range a summary covers, in London terms.
+ *
+ * A custom range runs from the start of its first day to the end of its last,
+ * both in London. Doing this server-side also fixes the client's asymmetry,
+ * where the start was parsed as UTC midnight but the end as local end of day.
+ */
+function resolveRange(type, dates) {
+    if (type === 'custom') {
+        if (!isDateKey(dates?.start) || !isDateKey(dates?.end)) return null;
+        if (dates.end < dates.start) return null;
+        return {
+            from: fromZonedTime(`${dates.start} 00:00:00`, LONDON_TIME_ZONE).toISOString(),
+            to: fromZonedTime(`${dates.end} 23:59:59.999`, LONDON_TIME_ZONE).toISOString(),
+        };
+    }
+    const days = RANGE_DAYS[type] ?? RANGE_DAYS.weekly;
+    const now = new Date();
+    const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    return { from: from.toISOString(), to: now.toISOString() };
+}
 
 function getOpenAIClient() {
     if (!process.env.OPENAI_API_KEY) {
@@ -49,7 +79,11 @@ function extractBulletPoints(text) {
 
 export async function POST(req) {
     try {
-        const clientId = getClientIdentifier(req);
+        // Resolve the session before rate limiting so the limit is keyed on the
+        // authenticated user id rather than a client-supplied IP header, matching
+        // /api/journal/entries.
+        const { session } = await getAuthContext(req, { requireAccessToken: false });
+        const clientId = getClientIdentifier(req, session?.user?.id);
         const rateLimitResult = checkRateLimit(`journal-summary-${clientId}`, 10, 60000);
         if (!rateLimitResult.allowed) {
             return NextResponse.json(
@@ -61,7 +95,6 @@ export async function POST(req) {
             );
         }
 
-        const { session } = await getAuthContext(req, { requireAccessToken: false });
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -72,16 +105,38 @@ export async function POST(req) {
             return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
         }
 
-        const body = await req.json();
-        const { type } = body;
+        const body = await req.json().catch(() => ({}));
+        const { type, dates } = body || {};
 
-        const { entries } = body; // Expecting entries to be passed in strictly for this implementation to avoid Auth issues.
-
-        if (!entries || !Array.isArray(entries)) {
-            return NextResponse.json({ error: 'No entries provided' }, { status: 400 });
+        const range = resolveRange(type, dates);
+        if (!range) {
+            return NextResponse.json({ error: 'Invalid date range' }, { status: 400 });
         }
 
-        const limitedEntries = entries.slice(0, MAX_ENTRIES);
+        // The entries are read here, by user_id, rather than accepted from the
+        // request body. Trusting the body meant this route had no ownership tie
+        // between the caller and the content it forwarded to OpenAI: it would
+        // summarise, and bill for, up to 60,000 characters of anything at all.
+        // It was also the only route in the app taking row data from the client,
+        // against the architecture contract in CLAUDE.md.
+        const supabase = getSupabaseServiceRole();
+        const { data: limitedEntries, error: entriesError } = await supabase
+            .from('journal_entries')
+            .select('content, cleaned_content, created_at')
+            .eq('user_id', session.user.id)
+            .gte('created_at', range.from)
+            .lte('created_at', range.to)
+            .order('created_at', { ascending: true })
+            .limit(MAX_ENTRIES);
+
+        if (entriesError) {
+            console.error('Journal summary entry fetch failed:', entriesError);
+            return NextResponse.json({ error: 'Failed to load journal entries' }, { status: 500 });
+        }
+
+        if (!limitedEntries || limitedEntries.length === 0) {
+            return NextResponse.json({ summary: [], message: 'No journal entries found for this period.' });
+        }
         let totalChars = 0;
         const compiledChunks = [];
         for (const entry of limitedEntries) {

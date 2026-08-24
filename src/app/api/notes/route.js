@@ -9,7 +9,10 @@ import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
 export async function GET(request) {
   try {
     // Rate limiting - increased limit for notes since they're fetched per task
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`notes-get-${clientId}`, 100, 60000);
     
     if (!rateLimitResult.allowed) {
@@ -22,7 +25,6 @@ export async function GET(request) {
       );
     }
 
-    const { session } = await getAuthContext(request);
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -65,7 +67,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     // Rate limiting
-    const clientId = getClientIdentifier(request);
+    // Auth first, so the limit is keyed on the user id rather than a
+    // client-supplied IP header (see rateLimiter.js).
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
     const rateLimitResult = checkRateLimit(`notes-post-${clientId}`, 20, 60000);
     
     if (!rateLimitResult.allowed) {
@@ -78,7 +83,6 @@ export async function POST(request) {
       );
     }
 
-    const { session } = await getAuthContext(request);
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

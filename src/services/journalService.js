@@ -37,44 +37,19 @@ export const journalService = {
     },
 
     async getSummary(type = 'weekly', dates = null) {
-        // Fetch entries first to pass to API
-        const entries = await this.getEntries();
-
-        // Filter entries based on type
-        const now = new Date();
-        const filteredEntries = entries.filter(entry => {
-            const entryDate = new Date(entry.created_at);
-
-            if (type === 'custom' && dates?.start && dates?.end) {
-                const start = new Date(dates.start);
-                const end = new Date(dates.end);
-                // Set end date to end of day to include entries on that day
-                end.setHours(23, 59, 59, 999);
-                return entryDate >= start && entryDate <= end;
-            }
-
-            const daysDiff = (now - entryDate) / (1000 * 60 * 60 * 24);
-            switch (type) {
-                case 'weekly': return daysDiff <= 7;
-                case 'monthly': return daysDiff <= 30;
-                case 'annual': return daysDiff <= 365;
-                default: return daysDiff <= 7;
-            }
-        });
-
-        if (filteredEntries.length === 0) {
-            return { summary: [], message: 'No journal entries found for this period.' };
-        }
-
+        // The route reads the entries itself, scoped to the signed-in user. This
+        // used to fetch every entry, filter them in the browser and POST the full
+        // bodies back, which meant the server had no way to tell whose journal it
+        // was summarising and sent whatever it was handed to OpenAI.
         const response = await fetch('/api/journal/summary', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ type, entries: filteredEntries }),
+            body: JSON.stringify({ type, dates }),
         });
 
         if (!response.ok) {
-            const error = await response.json();
+            const error = await response.json().catch(() => ({}));
             throw new Error(error.error || 'Failed to generate summary');
         }
 
