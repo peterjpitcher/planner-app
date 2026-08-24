@@ -2,6 +2,7 @@ import { fromZonedTime } from 'date-fns-tz';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { office365GraphRequest } from '@/lib/office365/graph';
 import { getLondonDateKey } from '@/lib/timezone';
+import { CLOSED_STATES, STATE } from '@/lib/constants';
 import { getOffice365Connection, getValidOffice365AccessToken } from '@/services/office365ConnectionService';
 
 const TODO_TASK_SELECT_FULL = [
@@ -95,8 +96,20 @@ function normalizeLocalTask(task) {
     dueDate: task?.due_date ? String(task.due_date).slice(0, 10) : null,
     // importance is always 'normal' — we no longer map local priority to Graph importance.
     importance: 'normal',
-    status: task?.state === 'done' ? 'completed' : 'notStarted',
+    // Finished means done OR cancelled. Graph has no "cancelled", and leaving a
+    // cancelled task as notStarted left it sitting in Outlook as outstanding
+    // work. This comparison predates the cancelled state being added.
+    status: isTaskFinished(task) ? 'completed' : 'notStarted',
   };
+}
+
+/**
+ * Whether a task counts as finished. CLOSED_STATES is the single source of truth
+ * for that (see src/lib/constants.js); this file used to compare against 'done'
+ * alone, which was written before the cancelled state existed.
+ */
+export function isTaskFinished(task) {
+  return CLOSED_STATES.includes(task?.state);
 }
 
 function normalizeRemoteTask(todoTask) {
@@ -214,13 +227,13 @@ async function dedupeTaskMappings({ supabase, userId, taskMaps }) {
   };
 }
 
-function buildTodoTaskPayload(task) {
+export function buildTodoTaskPayload(task) {
   const dueDateTime = toGraphDueDateTime(task.due_date);
   const payload = {
     title: task.name,
     // importance is always 'normal' — we no longer map local data to Graph importance.
     importance: 'normal',
-    status: task.state === 'done' ? 'completed' : 'notStarted',
+    status: isTaskFinished(task) ? 'completed' : 'notStarted',
     dueDateTime,
     body: { contentType: 'text', content: task.description ? String(task.description) : '' },
   };
@@ -1100,24 +1113,54 @@ async function performFullSync({ supabase, userId }) {
       });
       if (existsRemotely) continue;
 
-      const { error: deleteError } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', localTask.id)
-        .eq('user_id', userId);
+      // Deleting the item in Outlook CANCELS the local task; it does not destroy
+      // it. This used to be a hard DELETE, and notes.task_id is ON DELETE
+      // CASCADE, so a tap in Outlook silently and permanently destroyed the task
+      // and every note attached to it, from a background cron, with no message
+      // and no undo. Cancelling keeps the record and its notes while hiding it
+      // from every view, because cancelled is in CLOSED_STATES. cancelled_at and
+      // entered_state_at are stamped by the fn_task_state_cleanup trigger.
+      if (isTaskFinished(localTask)) {
+        // Already done or cancelled locally: nothing to change, just unlink below.
+        localTasksById.delete(localTask.id);
+      } else {
+        const { data: cancelledTask, error: cancelError } = await supabase
+          .from('tasks')
+          .update({ state: STATE.CANCELLED })
+          .eq('id', localTask.id)
+          .eq('user_id', userId)
+          .select('*')
+          .single();
 
-      if (deleteError) {
-        console.warn('Office365 pull: failed to delete local task:', deleteError);
-        continue;
+        if (cancelError) {
+          console.warn('Office365 pull: failed to cancel local task:', cancelError);
+          continue;
+        }
+
+        pulledDeletedTasks += 1;
+        localTasksById.set(localTask.id, cancelledTask);
+
+        await supabase
+          .from('projects')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', localTask.project_id);
       }
 
-      pulledDeletedTasks += 1;
-      localTasksById.delete(localTask.id);
-
-      await supabase
-        .from('projects')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', localTask.project_id);
+      // Unlink the pair. The remote item is gone, so the mapping points at
+      // nothing; leaving it would make every later run re-examine a dead id.
+      // With the mapping removed and the task in a closed state, the push pass
+      // below leaves it alone rather than recreating it in Outlook.
+      const { error: unlinkError } = await supabase
+        .from('office365_task_items')
+        .delete()
+        .eq('id', mapping.id)
+        .eq('user_id', userId);
+      if (unlinkError) {
+        console.warn('Office365 pull: failed to unlink deleted remote task:', unlinkError);
+      } else {
+        taskMapByTaskId.delete(mapping.task_id);
+        if (mappingRemoteKey) taskMapByTodoTaskKey.delete(mappingRemoteKey);
+      }
     }
   }
 
@@ -1177,6 +1220,15 @@ async function performFullSync({ supabase, userId }) {
     }
 
     if (!mapping) {
+      // Never create a NEW remote item for finished work. Outlook is a list of
+      // things still to do, and pushing a done or cancelled task into it as a
+      // pre-completed item is noise. This also closes the loop on the two-way
+      // delete: deleting an item in Outlook cancels the local task and unlinks
+      // the pair, and without this guard the very next pass would recreate it.
+      // An EXISTING mapping is still updated to 'completed' below, so finishing
+      // a task in the app still ticks it off in Outlook.
+      if (isTaskFinished(task)) continue;
+
       const payload = buildTodoTaskPayload(task);
       const created = await createTodoTask({ accessToken, listId, payload });
       const todoTaskId = created?.id;

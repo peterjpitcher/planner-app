@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { fromGraphDueDateTime } from '../office365SyncService';
+import {
+  buildTodoTaskPayload,
+  fromGraphDueDateTime,
+  isTaskFinished,
+} from '../office365SyncService';
+
 
 describe('fromGraphDueDateTime', () => {
   it('returns null when the remote task has no dueDateTime (FF-040)', () => {
@@ -34,5 +39,49 @@ describe('fromGraphDueDateTime', () => {
     expect(
       fromGraphDueDateTime({ dateTime: '2026-07-09T00:00:00.0000000', timeZone: 'Pacific Standard Time' }),
     ).toBe('2026-07-09');
+  });
+});
+
+describe('isTaskFinished', () => {
+  it('counts both done and cancelled as finished', () => {
+    // CLOSED_STATES is the single source of truth. This file compared against
+    // 'done' alone, which predates the cancelled state.
+    expect(isTaskFinished({ state: 'done' })).toBe(true);
+    expect(isTaskFinished({ state: 'cancelled' })).toBe(true);
+  });
+
+  it.each(['today', 'this_week', 'backlog', 'waiting'])('treats %s as live work', (state) => {
+    expect(isTaskFinished({ state })).toBe(false);
+  });
+
+  it('handles a missing task or state', () => {
+    expect(isTaskFinished(null)).toBe(false);
+    expect(isTaskFinished({})).toBe(false);
+  });
+});
+
+describe('buildTodoTaskPayload', () => {
+  const base = { name: 'Ring the supplier', description: 'about the invoice', due_date: '2026-08-28' };
+
+  it('marks a done task complete in Outlook', () => {
+    expect(buildTodoTaskPayload({ ...base, state: 'done' }).status).toBe('completed');
+  });
+
+  it('marks a cancelled task complete rather than leaving it outstanding', () => {
+    // Graph has no "cancelled". Leaving it notStarted left tasks the user had
+    // cancelled sitting in Outlook as work still to do.
+    expect(buildTodoTaskPayload({ ...base, state: 'cancelled' }).status).toBe('completed');
+  });
+
+  it('leaves live work outstanding', () => {
+    expect(buildTodoTaskPayload({ ...base, state: 'today' }).status).toBe('notStarted');
+    expect(buildTodoTaskPayload({ ...base, state: 'backlog' }).status).toBe('notStarted');
+  });
+
+  it('carries the title, description and due date', () => {
+    const payload = buildTodoTaskPayload({ ...base, state: 'backlog' });
+    expect(payload.title).toBe('Ring the supplier');
+    expect(payload.body.content).toBe('about the invoice');
+    expect(payload.dueDateTime).toBeTruthy();
   });
 });
