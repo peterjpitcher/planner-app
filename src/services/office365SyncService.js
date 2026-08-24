@@ -241,6 +241,53 @@ export function buildTodoTaskPayload(task) {
   return payload;
 }
 
+/**
+ * Every To Do list the user has, paginated.
+ *
+ * Nothing in this file used to read the lists collection: the only call to it
+ * was the POST that creates one. That is why a mapping table with no row for a
+ * project always meant "create a new list", even when an identically named list
+ * was already sitting in Outlook from a previous connection.
+ */
+async function listTodoLists({ accessToken }) {
+  const items = [];
+  let nextUrl = null;
+  for (let i = 0; i < 50; i += 1) {
+    const page = await office365GraphRequest({
+      accessToken,
+      method: 'GET',
+      ...(nextUrl ? { url: nextUrl } : { path: '/me/todo/lists?$top=100' }),
+    });
+    if (Array.isArray(page?.value)) items.push(...page.value);
+    nextUrl = page?.['@odata.nextLink'] || null;
+    if (!nextUrl) break;
+  }
+  return items;
+}
+
+/**
+ * Index the user's remote lists by display name, so a project can adopt the
+ * list it used to own instead of creating a second one beside it. Best-effort:
+ * a failed read just means we fall back to creating, which is the old
+ * behaviour, so a Graph blip cannot block a sync.
+ */
+async function buildRemoteListIndex({ accessToken }) {
+  try {
+    const lists = await listTodoLists({ accessToken });
+    const byName = new Map();
+    for (const list of lists) {
+      const name = typeof list?.displayName === 'string' ? list.displayName.trim().toLowerCase() : null;
+      if (!name || !list?.id) continue;
+      // First match wins, so a duplicate pair adopts the older list.
+      if (!byName.has(name)) byName.set(name, list.id);
+    }
+    return byName;
+  } catch (err) {
+    console.warn('Office365: could not read remote lists, falling back to create:', err);
+    return new Map();
+  }
+}
+
 async function createTodoList({ accessToken, displayName }) {
   return office365GraphRequest({
     accessToken,
@@ -423,12 +470,47 @@ async function todoTaskExists({ accessToken, listId, todoTaskId }) {
   throw lastError || new Error('Office365 todoTaskExists failed');
 }
 
-async function ensureProjectList({ supabase, accessToken, userId, project, existingMap, recreatedListIds }) {
+/**
+ * Run a Graph delete and report whether the remote object is now gone.
+ *
+ * True means deleted, or already absent (404), which is the same outcome. False
+ * means the delete genuinely failed, typically throttling or a transient 5xx.
+ *
+ * The teardown paths used to swallow every error and drop the local mapping
+ * regardless, so a transient failure orphaned the remote list or task
+ * permanently: nothing enumerates remote objects, so no later run would ever
+ * see it again. Keeping the mapping on a real failure lets the next run retry.
+ */
+async function removeRemote(deleteFn) {
+  try {
+    await deleteFn();
+    return true;
+  } catch (err) {
+    const message = String(err?.message || '');
+    if (message.includes('(404)')) return true; // already gone
+    console.warn('Office365: remote delete failed, keeping the mapping to retry:', message);
+    return false;
+  }
+}
+
+async function ensureProjectList({ supabase, accessToken, userId, project, existingMap, recreatedListIds, remoteListsByName }) {
   const current = existingMap?.get(project.id) || null;
   if (!current) {
-    const created = await createTodoList({ accessToken, displayName: project.name });
-    const listId = created?.id;
+    // Adopt an existing remote list with this name before creating a new one.
+    // Disconnecting deletes the local mappings without touching Outlook, so
+    // reconnecting used to recreate every list beside the originals: 34 lists
+    // became 68 and 229 tasks became 458, with the originals orphaned forever
+    // because nothing ever reads the lists collection again.
+    const adoptedListId = project.name
+      ? remoteListsByName?.get(String(project.name).trim().toLowerCase()) || null
+      : null;
+
+    const listId = adoptedListId || (await createTodoList({ accessToken, displayName: project.name }))?.id;
     if (!listId) throw new Error('Office365 list creation did not return an id');
+    // Claimed, so two projects sharing a name cannot adopt the same list.
+    if (adoptedListId && project.name) {
+      remoteListsByName.delete(String(project.name).trim().toLowerCase());
+    }
 
     const { data, error } = await supabase
       .from('office365_project_lists')
@@ -754,6 +836,14 @@ async function performFullSync({ supabase, userId }) {
   const desiredProjectIds = new Set(activeProjects.map((p) => p.id));
   const desiredTaskIds = new Set(desiredTasks.map((t) => t.id));
 
+  // Read once per run. Only needed when some project has no list mapping, which
+  // is the reconnect case; skipping it otherwise keeps the common run at the
+  // same number of Graph calls as before.
+  const needsListAdoption = activeProjects.some((project) => !projectMapByProjectId.has(project.id));
+  const remoteListsByName = needsListAdoption
+    ? await buildRemoteListIndex({ accessToken })
+    : new Map();
+
   let createdLists = 0;
   let pushedCreatedTasks = 0;
   let pushedUpdatedTasks = 0;
@@ -771,6 +861,7 @@ async function performFullSync({ supabase, userId }) {
   for (const project of activeProjects) {
     const before = projectMapByProjectId.get(project.id);
     const ensured = await ensureProjectList({
+      remoteListsByName,
       supabase,
       accessToken,
       userId,
@@ -801,6 +892,18 @@ async function performFullSync({ supabase, userId }) {
   const remoteTodoTaskKeys = new Set();
   const localTasksById = new Map((tasks || []).map((task) => [task.id, task]));
 
+  // Local tasks that hold no mapping, indexed by project and lowercased name,
+  // so the pull can re-link a task to the remote item it used to own rather
+  // than importing a duplicate. Only live work is adoptable: a finished task
+  // should not be pulled back into a mapping.
+  const unmappedLocalByProjectAndName = new Map();
+  for (const task of tasks || []) {
+    if (!task?.project_id || taskMapByTaskId.has(task.id)) continue;
+    if (isTaskFinished(task)) continue;
+    const key = `${task.project_id}::${String(task.name || '').trim().toLowerCase()}`;
+    if (!unmappedLocalByProjectAndName.has(key)) unmappedLocalByProjectAndName.set(key, task);
+  }
+
   const activeProjectMappings = activeProjects
     .map((project) => projectMapByProjectId.get(project.id))
     .filter(Boolean);
@@ -826,6 +929,37 @@ async function performFullSync({ supabase, userId }) {
       if (!existingMapping) {
         const projectId = projectMapping.project_id;
         if (!projectId) continue;
+
+        // Adopt a matching local task before importing a new one. Without this,
+        // a reconnect (which wipes the mappings but leaves Outlook untouched)
+        // re-imported every remote task as a fresh local duplicate, while the
+        // push pass simultaneously recreated every local task remotely. Match
+        // on project plus title among tasks that hold no mapping, so a task can
+        // only ever be adopted once.
+        const adoptKey = `${projectId}::${String(remoteTask.title || '').trim().toLowerCase()}`;
+        const adoptedLocal = adoptKey ? unmappedLocalByProjectAndName.get(adoptKey) : null;
+        if (adoptedLocal) {
+          unmappedLocalByProjectAndName.delete(adoptKey);
+          const { data: adoptedMapping, error: adoptError } = await supabase
+            .from('office365_task_items')
+            .insert({
+              user_id: userId,
+              task_id: adoptedLocal.id,
+              project_id: projectId,
+              list_id: listId,
+              todo_task_id: remoteTodoId,
+              etag: remoteTask?.['@odata.etag'] || null,
+            })
+            .select('*')
+            .single();
+          if (adoptError) {
+            console.warn('Office365 pull: failed to adopt existing local task:', adoptError);
+          } else {
+            taskMapByTaskId.set(adoptedLocal.id, adoptedMapping);
+            taskMapByTodoTaskKey.set(remoteTodoKey, adoptedMapping);
+            continue;
+          }
+        }
 
         const remoteIsCompleted = remoteTask?.status === 'completed';
         const payload = {
@@ -998,14 +1132,51 @@ async function performFullSync({ supabase, userId }) {
             // inbound importance is intentionally ignored — we do not write priority from Graph.
             if (Object.prototype.hasOwnProperty.call(remoteDetails || {}, 'status')) {
               const remoteCompleted = remoteDetails?.status === 'completed';
-              if (remoteCompleted) {
-                // Only mark done when Graph says completed; preserve existing local state otherwise.
-                updates.state = 'done';
+              // Act only on the TRANSITION into finished. This used to fire on
+              // every pull where Graph said "completed", including for a task
+              // that was already done locally, and Microsoft To Do stores
+              // completion as a date with no time, so completedDateTime is
+              // midnight. Each pull therefore overwrote a real completion time
+              // with 00:00. 54 rows in production carry that signature, 50 of
+              // them attributed to a different day than the one the state
+              // actually changed on, and the true times are not recoverable.
+              //
+              // The isTaskFinished guard also stops a cancelled task being
+              // flipped to done by an unrelated edit in Outlook, which would
+              // have walked it into the monthly completed report.
+              if (remoteCompleted && !isTaskFinished(localTask)) {
+                updates.state = STATE.DONE;
+                // Only ever supply completed_at when there is none to lose. The
+                // fn_task_state_cleanup trigger owns this column and COALESCEs a
+                // supplied value, so passing Graph's date keeps the right DAY on
+                // a genuine inbound completion; the app must never overwrite one.
                 const completedAt = toIsoTimestamp(remoteDetails?.completedDateTime?.dateTime);
-                updates.completed_at = completedAt || localTask.completed_at || new Date().toISOString();
+                if (completedAt && !localTask.completed_at) {
+                  updates.completed_at = completedAt;
+                }
               }
-              // If Graph status is not 'completed', do NOT overwrite local state — the user may have
-              // set it to 'in-progress' or similar, which Graph has no equivalent for.
+              // Un-ticking in Outlook reopens the task here, but only on
+              // evidence that the remote item actually changed (its etag moved),
+              // so an ordinary sync pass can never resurrect a task finished in
+              // the app. Without this the pull declined to reopen and the push
+              // in the SAME run then ticked it straight back to completed, so
+              // un-ticking in Outlook was silently undone within two minutes.
+              //
+              // Only 'done' reopens. Cancelled is a deliberate decision made
+              // here, and Graph has no way to express it, so Outlook must not be
+              // able to undo it by accident.
+              if (
+                !remoteCompleted &&
+                localTask.state === STATE.DONE &&
+                remoteEtag &&
+                remoteEtag !== existingMapping.etag
+              ) {
+                // Backlog matches where a not-completed remote task lands when
+                // it is imported for the first time.
+                updates.state = STATE.BACKLOG;
+              }
+              // Otherwise, if Graph status is not 'completed', do NOT overwrite local state — the
+              // user may have set it to 'in-progress' or similar, which Graph has no equivalent for.
             }
 
             const { data: updatedLocalTask, error: updateError } = await supabase
@@ -1365,22 +1536,18 @@ async function performFullSync({ supabase, userId }) {
   // Remove stale task mappings (and delete remote tasks) for local deletions or inactive projects.
   for (const mapping of taskMaps || []) {
     if (desiredTaskIds.has(mapping.task_id)) continue;
-    try {
-      await deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id });
-    } catch (err) {
-      // Ignore.
-    }
+    const removed = await removeRemote(() =>
+      deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id })
+    );
+    if (!removed) continue;
     await supabase.from('office365_task_items').delete().eq('id', mapping.id);
   }
 
   // Remove stale project mappings (and delete remote lists) for local deletions or inactive projects.
   for (const mapping of projectMaps || []) {
     if (desiredProjectIds.has(mapping.project_id)) continue;
-    try {
-      await deleteTodoList({ accessToken, listId: mapping.list_id });
-    } catch (err) {
-      // Ignore.
-    }
+    const removed = await removeRemote(() => deleteTodoList({ accessToken, listId: mapping.list_id }));
+    if (!removed) continue;
     await supabase.from('office365_project_lists').delete().eq('id', mapping.id);
     await supabase.from('office365_task_items').delete().eq('user_id', userId).eq('project_id', mapping.project_id);
   }
@@ -1455,12 +1622,58 @@ export async function syncOffice365Project({ userId, projectId }) {
   if (mapError) throw mapError;
 
   const mapByProjectId = new Map((mapRows || []).map((row) => [row.project_id, row]));
-  await ensureProjectList({ supabase, accessToken, userId, project, existingMap: mapByProjectId });
+  await ensureProjectList({
+    supabase,
+    accessToken,
+    userId,
+    project,
+    existingMap: mapByProjectId,
+    remoteListsByName: await buildRemoteListIndex({ accessToken }),
+  });
 
   await supabase
     .from('office365_connections')
     .update({ last_synced_at: new Date().toISOString() })
     .eq('user_id', userId);
+}
+
+/**
+ * Look up the To Do list id for a project WITHOUT deleting anything.
+ *
+ * office365_project_lists.project_id is ON DELETE CASCADE, so deleting a
+ * project destroys its mapping row first and deleteOffice365Project then finds
+ * nothing to clean up. Callers must read the id before the delete and pass it
+ * to deleteOffice365ListById afterwards. Returns null when there is no mapping.
+ */
+export async function getOffice365ListIdForProject({ userId, projectId }) {
+  try {
+    const supabase = getSupabaseServiceRole();
+    const { data } = await supabase
+      .from('office365_project_lists')
+      .select('list_id')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .maybeSingle();
+    return data?.list_id || null;
+  } catch (err) {
+    console.warn('Office365: could not read list id for project:', err);
+    return null;
+  }
+}
+
+/**
+ * Delete a To Do list by id, for the case where the mapping row has already
+ * been cascaded away. Best-effort and never throws: the local delete has
+ * already happened by the time this runs.
+ */
+export async function deleteOffice365ListById({ userId, listId }) {
+  if (!listId) return;
+  try {
+    const accessToken = await getValidOffice365AccessToken({ userId });
+    await deleteTodoList({ accessToken, listId });
+  } catch (err) {
+    console.warn('Office365: failed to delete remote list for a deleted project:', err);
+  }
 }
 
 export async function deleteOffice365Project({ userId, projectId }) {
@@ -1477,10 +1690,11 @@ export async function deleteOffice365Project({ userId, projectId }) {
   if (error) throw error;
   if (!mapping) return;
 
-  try {
-    await deleteTodoList({ accessToken, listId: mapping.list_id });
-  } catch (err) {
-    // Ignore.
+  const removed = await removeRemote(() => deleteTodoList({ accessToken, listId: mapping.list_id }));
+  if (!removed) {
+    // Leave the mapping in place so the stale-mapping pass in the next full
+    // sync retries the remote delete rather than orphaning the list.
+    return;
   }
 
   await supabase.from('office365_project_lists').delete().eq('id', mapping.id);
@@ -1551,7 +1765,14 @@ export async function syncOffice365Task({ userId, taskId }) {
   let listId = projectMapping?.list_id;
   if (!listId) {
     // Ensure list exists first.
-    const ensured = await ensureProjectList({ supabase, accessToken, userId, project, existingMap: null });
+    const ensured = await ensureProjectList({
+      supabase,
+      accessToken,
+      userId,
+      project,
+      existingMap: null,
+      remoteListsByName: await buildRemoteListIndex({ accessToken }),
+    });
     listId = ensured.list_id;
   }
 

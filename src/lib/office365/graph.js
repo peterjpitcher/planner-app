@@ -1,6 +1,17 @@
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+// A 5xx on a POST is ambiguous: Graph may well have created the object before
+// the error surfaced, so retrying can create a second one. That duplicate then
+// gets pulled back as a duplicate local task on the next sync. POSTs are only
+// retried on 429, where Graph is explicitly saying it did NOT process the
+// request. Every other method here is idempotent (GET, PATCH to a known id,
+// DELETE), so those keep the full retry set.
+const POST_RETRYABLE_STATUS = new Set([429]);
 const MAX_RETRIES = 3;
+
+function retryableStatusesFor(method) {
+  return String(method || 'GET').toUpperCase() === 'POST' ? POST_RETRYABLE_STATUS : RETRYABLE_STATUS;
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -61,7 +72,7 @@ export async function office365GraphRequest({ accessToken, method, path, url, bo
       `Office365 Graph ${method || 'GET'} ${label} failed (${response.status}): ${errorBody || response.statusText}`
     );
 
-    if (!RETRYABLE_STATUS.has(response.status) || attempt === MAX_RETRIES) {
+    if (!retryableStatusesFor(method).has(response.status) || attempt === MAX_RETRIES) {
       throw lastError;
     }
 

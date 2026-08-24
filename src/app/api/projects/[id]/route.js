@@ -4,7 +4,11 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-import { deleteOffice365Project, syncOffice365Project } from '@/services/office365SyncService';
+import {
+  deleteOffice365ListById,
+  getOffice365ListIdForProject,
+  syncOffice365Project,
+} from '@/services/office365SyncService';
 import { cascadeProjectStatusToTasks } from '@/services/projectLifecycleService';
 
 const PROJECT_UPDATE_FIELDS = [
@@ -185,6 +189,16 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Capture the Outlook list id BEFORE the delete. office365_project_lists
+    // has ON DELETE CASCADE on project_id, so the cascade destroys the mapping
+    // row and the cleanup below would find nothing, leaving the To Do list
+    // orphaned in Outlook forever. Nothing enumerates remote lists, so "cleaned
+    // up on the next sync" was never true.
+    const office365ListId = await getOffice365ListIdForProject({
+      userId: session.user.id,
+      projectId: id,
+    });
+
     // Delete project from DB first (cascade will handle related tasks and notes)
     const { error } = await supabase
       .from('projects')
@@ -196,12 +210,9 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
 
-    // Clean up Office365 after successful DB delete (best-effort; orphaned lists cleaned on next sync)
-    try {
-      await deleteOffice365Project({ userId: session.user.id, projectId: id });
-    } catch (err) {
-      console.warn('Office365 cleanup failed for deleted project (will resolve on next sync):', err);
-    }
+    // Clean up Office365 after a successful DB delete, using the id captured
+    // above. Best-effort: the project is already gone locally.
+    await deleteOffice365ListById({ userId: session.user.id, listId: office365ListId });
 
     return NextResponse.json({ success: true });
   } catch (error) {
