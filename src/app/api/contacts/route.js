@@ -1,7 +1,7 @@
 import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
-import { createContact, listContacts } from '@/services/contactService';
+import { createContact, getContactLinks, listContacts } from '@/services/contactService';
 
 export async function GET(request) {
   try {
@@ -18,6 +18,25 @@ export async function GET(request) {
     });
 
     if (error) return NextResponse.json({ error: error.message }, { status: error.status });
+
+    // What each person is actually on. Asked for explicitly, because a contact
+    // with no visible link to any work is just a name in a list.
+    if (searchParams.get('withLinks') === 'true' && data.length > 0) {
+      const { data: links } = await getContactLinks({
+        supabase: getSupabaseServiceRole(),
+        userId: session.user.id,
+        contactIds: data.map((c) => c.id),
+      });
+
+      return NextResponse.json({
+        data: data.map((contact) => ({
+          ...contact,
+          projects: links?.get(contact.id)?.projects || [],
+          open_task_count: links?.get(contact.id)?.openTaskCount || 0,
+        })),
+      });
+    }
+
     return NextResponse.json({ data });
   } catch (error) {
     console.error('GET /api/contacts error:', error);

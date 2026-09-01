@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   findProbableDuplicates,
+  getContactLinks,
   setPrimaryContact,
   updateContact,
   validateContact,
@@ -179,5 +180,84 @@ describe('validateFact', () => {
   it('enforces the same limits as the database check constraints', () => {
     expect(validateFact({ label: 'x'.repeat(81), value: 'v' }).errors.label).toBeTruthy();
     expect(validateFact({ label: 'l', value: 'x'.repeat(2001) }).errors.value).toBeTruthy();
+  });
+});
+
+describe('getContactLinks', () => {
+  function makeSupabase({ links = [], projects = [], tasks = [] } = {}) {
+    return {
+      from: (table) => {
+        const rows = table === 'project_contacts' ? links : table === 'projects' ? projects : tasks;
+        const api = {
+          select: () => api,
+          eq: () => api,
+          in: () => api,
+          then: (resolve, reject) =>
+            Promise.resolve({ data: rows, error: null }).then(resolve, reject),
+        };
+        return api;
+      },
+    };
+  }
+
+  it('returns nothing without doing a query when there are no contacts', async () => {
+    const supabase = { from: () => { throw new Error('should not query'); } };
+    const { data } = await getContactLinks({ supabase, userId: 'u1', contactIds: [] });
+    expect(data.size).toBe(0);
+  });
+
+  it('gives each person the projects they are tagged on', async () => {
+    // project_contacts carries the person-level link the old stakeholders
+    // column held. Without surfacing it a contact is just a name.
+    const supabase = makeSupabase({
+      links: [
+        { contact_id: 'c1', project_id: 'p1' },
+        { contact_id: 'c1', project_id: 'p2' },
+        { contact_id: 'c2', project_id: 'p1' },
+      ],
+      projects: [
+        { id: 'p1', name: 'Rebuild', status: 'Open' },
+        { id: 'p2', name: 'Migration', status: 'Completed' },
+      ],
+      tasks: [{ id: 't1', project_id: 'p1' }, { id: 't2', project_id: 'p1' }],
+    });
+
+    const { data } = await getContactLinks({ supabase, userId: 'u1', contactIds: ['c1', 'c2'] });
+
+    expect(data.get('c1').projects.map((p) => p.name).sort()).toEqual(['Migration', 'Rebuild']);
+    expect(data.get('c2').projects).toHaveLength(1);
+  });
+
+  it('counts the open tasks on those projects', async () => {
+    const supabase = makeSupabase({
+      links: [{ contact_id: 'c1', project_id: 'p1' }],
+      projects: [{ id: 'p1', name: 'Rebuild', status: 'Open' }],
+      tasks: [{ id: 't1', project_id: 'p1' }, { id: 't2', project_id: 'p1' }],
+    });
+
+    const { data } = await getContactLinks({ supabase, userId: 'u1', contactIds: ['c1'] });
+    expect(data.get('c1').openTaskCount).toBe(2);
+  });
+
+  it('keeps closed projects, so a person’s history is not hidden', async () => {
+    const supabase = makeSupabase({
+      links: [{ contact_id: 'c1', project_id: 'p2' }],
+      projects: [{ id: 'p2', name: 'Migration', status: 'Cancelled' }],
+      tasks: [],
+    });
+
+    const { data } = await getContactLinks({ supabase, userId: 'u1', contactIds: ['c1'] });
+    expect(data.get('c1').projects[0].status).toBe('Cancelled');
+  });
+
+  it('omits a person with no links rather than inventing an empty entry', async () => {
+    const supabase = makeSupabase({
+      links: [{ contact_id: 'c1', project_id: 'p1' }],
+      projects: [{ id: 'p1', name: 'Rebuild', status: 'Open' }],
+      tasks: [],
+    });
+
+    const { data } = await getContactLinks({ supabase, userId: 'u1', contactIds: ['c1', 'c2'] });
+    expect(data.has('c2')).toBe(false);
   });
 });

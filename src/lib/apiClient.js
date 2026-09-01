@@ -604,10 +604,15 @@ class APIClient {
 
   // Contacts
 
-  async getContacts({ customerId = null, includeArchived = false } = {}) {
+  /**
+   * @param {boolean} [withLinks] also return the projects and open task count
+   *   each person is tagged on, via project_contacts.
+   */
+  async getContacts({ customerId = null, includeArchived = false, withLinks = false } = {}) {
     const params = new URLSearchParams();
     if (customerId) params.append('customerId', customerId);
     if (includeArchived) params.append('includeArchived', 'true');
+    if (withLinks) params.append('withLinks', 'true');
     const query = params.toString();
     const response = await this.fetchWithAuth(`/api/contacts${query ? `?${query}` : ''}`);
     return response.data || [];

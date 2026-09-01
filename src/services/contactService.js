@@ -82,6 +82,75 @@ export function findProbableDuplicates(candidate, existing = []) {
   });
 }
 
+/**
+ * The projects and open tasks each of these people is tagged on.
+ *
+ * project_contacts carries the person-level link that the old free-text
+ * stakeholders column used to hold. Without surfacing it, a contact is just a
+ * name and a phone number, and you cannot answer "what is Clive actually on?"
+ * from their record.
+ *
+ * Tasks come via those projects. A task has no direct contact link, and adding
+ * one would be a second way to say the same thing.
+ *
+ * @returns {Promise<{data: Map<string, {projects: Array, openTaskCount: number}>|null, error: Object|null}>}
+ */
+export async function getContactLinks({ supabase, userId, contactIds = [] }) {
+  if (contactIds.length === 0) return { data: new Map(), error: null };
+
+  const { data: links, error } = await supabase
+    .from('project_contacts')
+    .select('contact_id, project_id')
+    .eq('user_id', userId)
+    .in('contact_id', contactIds);
+
+  if (error) return { data: null, error: { status: 500, message: error.message } };
+
+  const projectIds = [...new Set((links || []).map((l) => l.project_id))];
+  if (projectIds.length === 0) return { data: new Map(), error: null };
+
+  const [projectResult, taskResult] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('id, name, status')
+      .eq('user_id', userId)
+      .in('id', projectIds),
+    supabase
+      .from('tasks')
+      .select('id, project_id')
+      .eq('user_id', userId)
+      .in('project_id', projectIds)
+      .in('state', ['today', 'this_week', 'backlog', 'waiting']),
+  ]);
+
+  if (projectResult.error) {
+    return { data: null, error: { status: 500, message: projectResult.error.message } };
+  }
+  if (taskResult.error) {
+    return { data: null, error: { status: 500, message: taskResult.error.message } };
+  }
+
+  const projectById = new Map((projectResult.data || []).map((p) => [p.id, p]));
+  const openTasksByProject = new Map();
+  (taskResult.data || []).forEach((task) => {
+    openTasksByProject.set(task.project_id, (openTasksByProject.get(task.project_id) || 0) + 1);
+  });
+
+  const byContact = new Map();
+  (links || []).forEach((link) => {
+    const project = projectById.get(link.project_id);
+    if (!project) return;
+    if (!byContact.has(link.contact_id)) {
+      byContact.set(link.contact_id, { projects: [], openTaskCount: 0 });
+    }
+    const entry = byContact.get(link.contact_id);
+    entry.projects.push(project);
+    entry.openTaskCount += openTasksByProject.get(project.id) || 0;
+  });
+
+  return { data: byContact, error: null };
+}
+
 export async function listContacts({ supabase, userId, customerId = null, includeArchived = false }) {
   let query = supabase.from('contacts').select(CONTACT_COLUMNS).eq('user_id', userId);
 
