@@ -447,6 +447,38 @@ describe('getCustomerOverview', () => {
     expect(data.tasks).toHaveLength(1);
   });
 
+  it('tells you which project each task came from', async () => {
+    // A customer's tasks can span several projects, so a flat list of names
+    // has no context. TaskCard renders project_name as a link back, but only
+    // if the query actually fetches it.
+    const supabase = makeSupabase({
+      customers: [CUSTOMER],
+      projects: [],
+      tasks: [
+        { id: 't1', name: 'Chase invoice', state: STATE.TODAY, project_id: 'p1', project: { name: 'Website Rebuild' } },
+        { id: 't2', name: 'Direct task', state: STATE.BACKLOG, project_id: null, project: null },
+      ],
+    });
+
+    const { data } = await getCustomerOverview({ supabase, userId: USER, customerId: 'cust-1' });
+
+    expect(data.tasks[0].project_name).toBe('Website Rebuild');
+    expect(data.tasks[0].project_id).toBe('p1');
+    // A task filed straight against the customer has no project and no badge.
+    expect(data.tasks[1].project_name).toBeNull();
+  });
+
+  it('does not leak the raw nested join object to the client', async () => {
+    const supabase = makeSupabase({
+      customers: [CUSTOMER],
+      projects: [],
+      tasks: [{ id: 't1', name: 'Task', state: STATE.TODAY, project: { name: 'Rebuild' } }],
+    });
+
+    const { data } = await getCustomerOverview({ supabase, userId: USER, customerId: 'cust-1' });
+    expect(data.tasks[0].project).toBeUndefined();
+  });
+
   it('refuses another user', async () => {
     const supabase = makeSupabase({ customers: [CUSTOMER] });
     const { error } = await getCustomerOverview({
