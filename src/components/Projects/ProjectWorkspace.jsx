@@ -17,7 +17,7 @@ import { getStatusClasses, cn } from '@/lib/styleUtils';
 import { getDueDateStatus, formatDate } from '@/lib/dateUtils';
 import { PROJECT_STATUS, STATE } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
-import AddTaskInput from '@/components/shared/AddTaskInput';
+import QuickTaskInput from '@/components/shared/QuickTaskInput';
 import ProjectNotes from './ProjectNotes';
 
 const STATE_GROUPS = [
@@ -291,7 +291,11 @@ export default function ProjectWorkspace({
 
           {!isReadOnly && (
             <div className="mb-3">
-              <AddTaskInput projectId={isUnassigned ? null : project.id} onTaskAdded={onTaskAdded} />
+              <QuickTaskInput
+                mode="single"
+                projectId={isUnassigned ? null : project.id}
+                onTaskAdded={onTaskAdded}
+              />
             </div>
           )}
 
