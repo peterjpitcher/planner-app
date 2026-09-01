@@ -20,6 +20,7 @@ import { CUSTOMER_STATUS, STATE } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
 import QuickTaskInput from '@/components/shared/QuickTaskInput';
 import NotesPanel from '@/components/shared/NotesPanel';
+import AttachmentsPanel from '@/components/shared/AttachmentsPanel';
 import CustomerFacts from './CustomerFacts';
 import CustomerContacts from './CustomerContacts';
 
@@ -392,6 +393,11 @@ export default function CustomerWorkspace({
             })}
           </div>
         )}
+      </section>
+
+      {/* Files */}
+      <section className="mt-6">
+        <AttachmentsPanel parentType="customer" parentId={customer.id} disabled={isArchived} />
       </section>
 
       {/* The timeline: every note that reaches this customer, whether it is

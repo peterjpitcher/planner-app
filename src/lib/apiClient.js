@@ -661,6 +661,66 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  // Attachments
+  //
+  // The upload is three steps because the file cannot go through a Vercel
+  // function: they cap request bodies at 4.5 MB. The browser sends it straight
+  // to Supabase Storage with a URL the server signs.
+
+  async getAttachments(parentType, parentId) {
+    const params = new URLSearchParams({ parent_type: parentType, parent_id: parentId });
+    const response = await this.fetchWithAuth(`/api/attachments?${params}`);
+    return response.data || [];
+  }
+
+  /**
+   * Upload one file.
+   *
+   * @param {Function} [onProgress] called with 'signing' | 'uploading' | 'finalising'
+   */
+  async uploadAttachment({ parentType, parentId, file }, onProgress) {
+    onProgress?.('signing');
+    const signed = await this.fetchWithAuth('/api/attachments/upload-url', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent_type: parentType,
+        parent_id: parentId,
+        file_name: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+      }),
+    });
+
+    const { attachmentId, path, token } = signed?.data ?? signed;
+
+    onProgress?.('uploading');
+    const { getSupabaseBrowserClient } = await import('./supabaseBrowser');
+    const { error } = await getSupabaseBrowserClient()
+      .storage.from('attachments')
+      .uploadToSignedUrl(path, token, file);
+
+    if (error) throw new Error(error.message || 'Upload failed');
+
+    // The server measures the real object here. Skipping this leaves a pending
+    // row that reconciliation removes within the hour, so a half-finished
+    // upload never shows as a file.
+    onProgress?.('finalising');
+    const finalised = await this.fetchWithAuth(`/api/attachments/${attachmentId}/finalise`, {
+      method: 'POST',
+    });
+
+    return finalised?.data ?? finalised;
+  }
+
+  async getAttachmentDownloadUrl(attachmentId) {
+    const response = await this.fetchWithAuth(`/api/attachments/${attachmentId}/url`);
+    return response?.data ?? response;
+  }
+
+  async deleteAttachment(attachmentId) {
+    return this.fetchWithAuth(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
+  }
+
   async createCustomer(payload) {
     const result = await this.fetchWithAuth('/api/customers', {
       method: 'POST',

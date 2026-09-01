@@ -943,7 +943,28 @@ Only the third pass touches storage broadly, and it is a bounded sample rather t
 | Max per parent | 50 | A guard rail, raise if it bites |
 | Filename | Sanitised in the path, original preserved in `file_name` | The path is a UUID prefixed slug, so a hostile filename cannot traverse |
 
-### 8.5 Unverified assumption
+### 8.5 Resolved: the service-role upload path
+
+Earlier revisions flagged this as unverified, on the strength of a reported
+Supabase issue where `createSignedUploadUrl` called with the service role
+produces a token with a null owner.
+
+Reading the installed `@supabase/storage-js` 2.91.1 settles it. `createSignedUploadUrl`
+POSTs to `/object/upload/sign/{path}` with the client's own headers and gets back
+a token. `uploadToSignedUrl` then sends the file to that same URL with
+`?token=...`, and **the token is what authorises the transfer**. RLS is not
+consulted on the second call at all, which is exactly why this design works
+without storage policies. The null owner lands on a column nothing here reads.
+
+`info()` (`GET /object/info/{path}`) and `exists()` are both present, so
+finalisation can measure the real object rather than trusting the client.
+
+What still needs one live round trip after deploy, because reading the client
+cannot prove server configuration: that the bucket exists with the right
+size and MIME limits, and that a signed download URL with a forced filename
+comes back correctly.
+
+### 8.6 Previously flagged
 
 There is a known Supabase issue where `createSignedUploadUrl` called with the **service role** key produces a token with a null owner, and reports have linked that to RLS violations on the subsequent upload. Because this design has no storage policies at all (service role only), it should not be affected, but this has not been proven against the live project.
 

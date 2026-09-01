@@ -20,6 +20,7 @@ import TaskCard from '@/components/shared/TaskCard';
 import QuickTaskInput from '@/components/shared/QuickTaskInput';
 import CustomerPicker from '@/components/shared/CustomerPicker';
 import ProjectNotes from './ProjectNotes';
+import AttachmentsPanel from '@/components/shared/AttachmentsPanel';
 
 const STATE_GROUPS = [
   { key: 'today', label: 'Today', labelClass: 'text-red-600' },
@@ -354,10 +355,16 @@ export default function ProjectWorkspace({
           )}
         </div>
 
-        {/* Right: Notes — unassigned tasks have no project to attach notes to */}
+        {/* Right: notes and files. Unassigned tasks have no project to hang
+            either off, so the whole column is skipped there. */}
         {!isUnassigned && (
-          <div className="min-w-0 overflow-y-auto md:flex-[2]">
+          <div className="min-w-0 space-y-6 overflow-y-auto md:flex-[2]">
             <ProjectNotes projectId={project.id} disabled={isReadOnly} />
+            <AttachmentsPanel
+              parentType="project"
+              parentId={project.id}
+              disabled={isReadOnly}
+            />
           </div>
         )}
       </div>
