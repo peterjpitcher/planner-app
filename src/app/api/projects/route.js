@@ -4,7 +4,7 @@ import { handleSupabaseError } from '@/lib/errorHandler';
 import { validateProject } from '@/lib/validators';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-import { deleteOffice365Project, syncOffice365Project } from '@/services/office365SyncService';
+import { syncOffice365Project } from '@/services/office365SyncService';
 
 const PROJECT_UPDATE_FIELDS = [
   'name',
@@ -162,128 +162,15 @@ export async function POST(request) {
   }
 }
 
-// PATCH /api/projects - Update a project
-export async function PATCH(request) {
-  try {
-    const { session } = await getAuthContext(request);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const body = await request.json();
-    const { id } = body;
-    
-    if (!id) {
-      return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
-    }
-
-    const updates = stripUndefined(pickProjectUpdates(body));
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
-    }
-    
-    const supabase = getSupabaseServiceRole();
-    
-    // Verify ownership
-    const { data: existingProject, error: fetchError } = await supabase
-      .from('projects')
-      .select('id, user_id, name, description, status, due_date, stakeholders, area')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError || !existingProject) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-    }
-    
-    if (existingProject.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    
-    const candidate = { ...existingProject, ...updates };
-    const validation = validateProject(candidate);
-    if (!validation.isValid) {
-      return NextResponse.json({ error: 'Validation failed', details: validation.errors }, { status: 400 });
-    }
-
-    // Update project
-    const { data, error } = await supabase
-      .from('projects')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) {
-      const errorMessage = handleSupabaseError(error, 'update');
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
-    }
-
-    try {
-      await syncOffice365Project({ userId: session.user.id, projectId: id });
-    } catch (err) {
-      console.warn('Office365 sync failed for updated project:', err);
-    }
-    
-    return NextResponse.json({ data });
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-// DELETE /api/projects - Delete a project
-export async function DELETE(request) {
-  try {
-    const { session } = await getAuthContext(request);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    
-    if (!id) {
-      return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
-    }
-    
-    const supabase = getSupabaseServiceRole();
-    
-    // Verify ownership
-    const { data: existingProject, error: fetchError } = await supabase
-      .from('projects')
-      .select('user_id')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError || !existingProject) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-    }
-    
-    if (existingProject.user_id !== session.user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    // Delete project from DB first (cascade will handle related tasks and notes)
-    const { error } = await supabase
-      .from('projects')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      const errorMessage = handleSupabaseError(error, 'delete');
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
-    }
-
-    // Clean up Office365 after successful DB delete (best-effort; orphaned lists cleaned on next sync)
-    try {
-      await deleteOffice365Project({ userId: session.user.id, projectId: id });
-    } catch (err) {
-      console.warn('Office365 cleanup failed for deleted project (will resolve on next sync):', err);
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
+/*
+ * Collection-level PATCH and DELETE used to live here. They wrote directly to
+ * `projects` and never called projectLifecycleService, so they skipped the task
+ * cascade entirely, and would have skipped close-out capture, note movement and
+ * the delete safeguards added with customers. Two URLs for one operation meant
+ * the result depended on which one the caller used.
+ *
+ * `/api/projects/[id]` is now the only mutation path for an existing project.
+ * apiClient already used it for both (updateProject, deleteProject), so nothing
+ * in the app called these. See the Phase 0 note in
+ * docs/superpowers/specs/2026-09-01-customers-crm-design.md section 12.
+ */

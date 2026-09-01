@@ -8,7 +8,7 @@ This file provides project-specific guidance. See the workspace-level `CLAUDE.md
 framework: Next.js 15.5 App Router
 auth: NextAuth.js v4 (NOT Supabase Auth)
 database: Supabase via server-side API routes (service-role client)
-test_runner: Vitest (21 files, 289 tests)
+test_runner: Vitest (run `npm test`; no typecheck script, this is plain JavaScript)
 styling: Tailwind CSS v4
 ui_library: Headless UI + Heroicons + lucide-react
 hosting: Vercel
@@ -149,13 +149,21 @@ OFFICE365_*               # Graph integration (optional)
 - **RLS is effectively bypassed.** Every route uses the service-role client, so security rests entirely
   on the session check plus an explicit `user_id` ownership check in the route or service. If you add a
   route, you must add both.
-  `projects` and `tasks` each still carry a permissive `ALL` policy for the `authenticated` role with
-  `USING (true) WITH CHECK (true)`, alongside correct per-user policies. Permissive policies OR together,
-  so any Supabase-authenticated JWT can read and write every row through PostgREST with the public anon
-  key, independently of these routes. `notes` does not have this and is correctly scoped to
-  `auth.uid() = user_id`. Verified against the live database on 2026-08-24.
+  `projects` and `tasks` carried a permissive `ALL` policy for the `authenticated` role with
+  `USING (true) WITH CHECK (true)` alongside their correct per-user policies. Permissive policies OR
+  together, so any Supabase-authenticated JWT could read and write every row through PostgREST with the
+  public anon key, independently of these routes. `notes` never had this and is correctly scoped to
+  `auth.uid() = user_id`.
+  **`20260901000001_phase0_foundations.sql` drops both permissive policies.** Until that migration is
+  pushed, the hole is still open in the live database. Verified against the live database on 2026-08-24.
 - **Never hardcode `'done'`** when excluding finished tasks. Use `CLOSED_STATES` / `closedStatesFilter()`.
 - **Never write `completed_at` or `cancelled_at`** from application code. The DB trigger owns them.
+- **Anything that changes more than one row is one database transaction, which means one RPC.**
+  Separate `.update()` / `.insert()` calls through the Supabase client are separate PostgREST requests
+  and therefore separate transactions. A service function is not a transaction boundary. Lifecycle
+  operations (project close, reopen, delete, customer delete) live in `SECURITY DEFINER` Postgres
+  functions, are called through `src/lib/rpc.js`, verify `p_user_id` internally, and have `EXECUTE`
+  revoked from `public`, `anon` and `authenticated`. See `fn_assert_project_owner` for the pattern.
 - **Office 365 sync only mirrors active projects** (`isProjectActive`: Open, In Progress, On Hold).
   Closing a project deletes its remote list.
 - **Plain JavaScript, not TypeScript.** There are no `.ts`/`.tsx` files.
