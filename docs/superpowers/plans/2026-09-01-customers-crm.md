@@ -49,8 +49,8 @@ No user-visible change. Everything after this assumes a real transaction boundar
 
 ## Phase 2: The record, and nothing lost
 
-- [ ] **2.1** Migration: notes columns with the `occurred_at` backfill, `customer_facts`, `contacts`, `project_contacts`, task lifecycle provenance and its backfill, `notes.project_id` to `SET NULL`
-- [ ] **2.2** Migration: the lifecycle RPCs
+- [x] **2.1** Migration: notes columns with the `occurred_at` backfill, `customer_facts`, `contacts`, `project_contacts`, task lifecycle provenance and its backfill, `notes.project_id` to `SET NULL`
+- [x] **2.2** Migration: the lifecycle RPCs
 - [ ] **2.3** `projectLifecycleService` rewritten to call the RPCs
 - [ ] **2.4** Notes API: `PATCH`/`DELETE`, new fields, unfiled
 - [ ] **2.5** Facts and contacts APIs
@@ -125,6 +125,28 @@ were unchanged and nothing was left behind.
 
 **Live data sizing:** 209 stakeholder entries, 74 distinct names, 0 blanks, 0
 entries with embedded commas, 0 email-like entries, 22 open projects.
+
+**Phase 2 in progress.** The database layer is written and verified; the
+service, API and UI layers are not yet built.
+
+Verified against the live database inside a rolled-back transaction:
+
+- The `occurred_at` backfill leaves all **273 notes** with `occurred_at =
+  created_at`, and **no** historical note stamped with today's date. Without the
+  backfill every one of them would have claimed to happen at deploy time,
+  because the timeline sorts on that column.
+- A note with two parents is rejected; a note with none is legal (unfiled).
+- Deleting a project no longer destroys its notes: the note survives with
+  `project_id` nulled.
+- The reopen backfill stamps **28** already-cancelled tasks, so existing closed
+  projects keep behaving exactly as they do now.
+- `close_project` cascades only live tasks (1 of 2, correctly leaving a
+  hand-cancelled one alone), moves both project notes onto the customer, writes
+  the pinned close-out note, and is idempotent on a second call.
+- `reopen_project` restores the cascaded task and **not** the hand-cancelled
+  one. That is the pre-existing bug fixed and proven.
+- A note deliberately re-filed while the project was closed is not yanked back,
+  and the close-out note stays with the customer.
 
 ### Not yet applied
 
