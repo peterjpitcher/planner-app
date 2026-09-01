@@ -245,15 +245,6 @@ export default function CustomerWorkspace({
         <StatCard label="Status" value={customer.status} />
       </div>
 
-      {/* Key facts and people: the standing record, above the stream. */}
-      <div className="mt-6">
-        <CustomerFacts customerId={customer.id} disabled={isArchived} />
-      </div>
-
-      <div className="mt-6">
-        <CustomerContacts customerId={customer.id} disabled={isArchived} />
-      </div>
-
       {/* Summary */}
       <section className="mt-6">
         <h2 className="mb-2 text-sm font-semibold text-gray-700">Summary</h2>
@@ -342,6 +333,7 @@ export default function CustomerWorkspace({
         </section>
       )}
 
+
       {/* Tasks: the union of tasks pointing straight at the customer and those
           reaching it through a project. Both carry customer_id thanks to
           fn_task_customer_sync, so this is one read and a project's task cannot
@@ -394,6 +386,17 @@ export default function CustomerWorkspace({
           </div>
         )}
       </section>
+
+      {/* Key facts and people: the standing reference, below the live work.
+          Facts and contacts change rarely and are looked up on demand, so they
+          sit under the projects and tasks you actually open the page for. */}
+      <div className="mt-6">
+        <CustomerFacts customerId={customer.id} disabled={isArchived} />
+      </div>
+
+      <div className="mt-6">
+        <CustomerContacts customerId={customer.id} disabled={isArchived} />
+      </div>
 
       {/* Files */}
       <section className="mt-6">
