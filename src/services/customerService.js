@@ -662,3 +662,131 @@ export async function applyTriage({ supabase, userId, customerNames = [], assign
     error: null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Key facts
+// ---------------------------------------------------------------------------
+//
+// The standing things about a customer that are not stream entries: a VAT
+// number, a portal URL, an invoicing email, parking instructions. A label and
+// value list rather than a custom field engine, which is most of the value for
+// a fraction of the cost.
+//
+// Note what must NOT go here: passwords, API keys, recovery codes. Facts are
+// plain text and searchable. The UI says so on the editor.
+
+const FACT_COLUMNS = 'id, user_id, customer_id, label, value, sort_order, created_at, updated_at';
+
+export function validateFact(fact) {
+  const errors = {};
+  const label = String(fact?.label ?? '').trim();
+  const value = String(fact?.value ?? '').trim();
+
+  if (label.length === 0) errors.label = 'Label is required';
+  else if (label.length > 80) errors.label = 'Label must be 80 characters or fewer';
+
+  // Non-blank, so a fact cannot be a label with nothing behind it.
+  if (value.length === 0) errors.value = 'Value is required';
+  else if (value.length > 2000) errors.value = 'Value must be 2000 characters or fewer';
+
+  return { isValid: Object.keys(errors).length === 0, errors };
+}
+
+export async function listFacts({ supabase, userId, customerId }) {
+  const { data, error } = await supabase
+    .from('customer_facts')
+    .select(FACT_COLUMNS)
+    .eq('user_id', userId)
+    .eq('customer_id', customerId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) return { data: null, error: { status: 500, message: error.message } };
+  return { data: data || [], error: null };
+}
+
+export async function createFact({ supabase, userId, customerId, payload }) {
+  const validation = validateFact(payload);
+  if (!validation.isValid) {
+    return { data: null, error: { status: 400, message: 'Validation failed', details: validation.errors } };
+  }
+
+  const { error: ownerError } = await getCustomer({ supabase, userId, customerId });
+  if (ownerError) return { data: null, error: ownerError };
+
+  const { data: existing } = await listFacts({ supabase, userId, customerId });
+  const nextOrder = (existing || []).reduce((max, row) => Math.max(max, row.sort_order), -1) + 1;
+
+  const { data, error } = await supabase
+    .from('customer_facts')
+    .insert({
+      user_id: userId,
+      customer_id: customerId,
+      label: String(payload.label).trim(),
+      value: String(payload.value).trim(),
+      sort_order: nextOrder,
+    })
+    .select(FACT_COLUMNS)
+    .single();
+
+  if (error) return { data: null, error: { status: 400, message: error.message } };
+  return { data, error: null };
+}
+
+export async function updateFact({ supabase, userId, factId, payload }) {
+  const { data: existing, error: loadError } = await supabase
+    .from('customer_facts')
+    .select(FACT_COLUMNS)
+    .eq('id', factId)
+    .maybeSingle();
+
+  if (loadError) return { data: null, error: { status: 500, message: loadError.message } };
+  if (!existing) return { data: null, error: { status: 404, message: 'Fact not found' } };
+  if (existing.user_id !== userId) return { data: null, error: { status: 403, message: 'Forbidden' } };
+
+  const merged = {
+    label: payload?.label ?? existing.label,
+    value: payload?.value ?? existing.value,
+  };
+
+  const validation = validateFact(merged);
+  if (!validation.isValid) {
+    return { data: null, error: { status: 400, message: 'Validation failed', details: validation.errors } };
+  }
+
+  const { data, error } = await supabase
+    .from('customer_facts')
+    .update({
+      label: String(merged.label).trim(),
+      value: String(merged.value).trim(),
+      ...(payload?.sort_order !== undefined ? { sort_order: payload.sort_order } : {}),
+    })
+    .eq('id', factId)
+    .eq('user_id', userId)
+    .select(FACT_COLUMNS)
+    .single();
+
+  if (error) return { data: null, error: { status: 400, message: error.message } };
+  return { data, error: null };
+}
+
+export async function deleteFact({ supabase, userId, factId }) {
+  const { data: existing, error: loadError } = await supabase
+    .from('customer_facts')
+    .select('id, user_id')
+    .eq('id', factId)
+    .maybeSingle();
+
+  if (loadError) return { data: null, error: { status: 500, message: loadError.message } };
+  if (!existing) return { data: null, error: { status: 404, message: 'Fact not found' } };
+  if (existing.user_id !== userId) return { data: null, error: { status: 403, message: 'Forbidden' } };
+
+  const { error } = await supabase
+    .from('customer_facts')
+    .delete()
+    .eq('id', factId)
+    .eq('user_id', userId);
+
+  if (error) return { data: null, error: { status: 500, message: error.message } };
+  return { data: { deleted: true }, error: null };
+}

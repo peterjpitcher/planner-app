@@ -216,7 +216,10 @@ export const VALIDATION = {
   PROJECT_NAME_MAX: 255,
   TASK_NAME_MIN: 1,
   TASK_NAME_MAX: 255,
-  NOTE_MAX: 1000,
+  // Raised from 1000 in Phase 2, alongside the textarea. 1000 characters could
+  // not hold a pasted email thread, which is exactly what customer notes are
+  // for. The API cap and the input now agree.
+  NOTE_MAX: 20000,
   DESCRIPTION_MAX: 1000,
   STAKEHOLDER_MAX: 50,
   MAX_STAKEHOLDERS: 10,

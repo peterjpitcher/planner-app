@@ -315,15 +315,23 @@ export default function ProjectsView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, loadImpact]);
 
-  const confirmStatusChange = useCallback(async () => {
+  const confirmStatusChange = useCallback(async ({ closeoutNote = null, facts = [] } = {}) => {
     if (!pendingStatus) return;
     setConfirmSubmitting(true);
     setConfirmError(null);
     try {
-      await apiClient.updateProject(pendingStatus.projectId, { status: pendingStatus.status });
+      // The close-out note and facts travel with the status, so the whole thing
+      // is one transaction server-side. Sending them separately would risk the
+      // project closing and the note never being written.
+      await apiClient.updateProject(pendingStatus.projectId, {
+        status: pendingStatus.status,
+        closeout_note: closeoutNote,
+        closeout_facts: facts,
+      });
       setPendingStatus(null);
-      // Full reload: the cascade changed task states server-side, so local task
-      // lists are stale in a way an optimistic patch cannot express.
+      // Full reload: the cascade changed task states and moved notes
+      // server-side, so local lists are stale in a way an optimistic patch
+      // cannot express.
       loadData({ silent: true });
     } catch (err) {
       setConfirmError(err.message || 'Could not update the project. Nothing was changed.');
@@ -339,12 +347,12 @@ export default function ProjectsView() {
     loadImpact(projectId);
   }, [projects, loadImpact]);
 
-  const confirmDeleteProject = useCallback(async () => {
+  const confirmDeleteProject = useCallback(async ({ destroyContent = false } = {}) => {
     if (!pendingDelete) return;
     setConfirmSubmitting(true);
     setConfirmError(null);
     try {
-      await apiClient.deleteProject(pendingDelete.projectId);
+      await apiClient.deleteProject(pendingDelete.projectId, { destroyContent });
       if (selectedProjectId === pendingDelete.projectId) selectProject(null);
       setPendingDelete(null);
       loadData({ silent: true });
@@ -639,6 +647,7 @@ export default function ProjectsView() {
         projectName={pendingStatus?.name}
         targetStatus={pendingStatus?.status}
         openTasks={impact?.openTasks}
+        customerName={impact?.customerName || null}
         loading={impactLoading}
         submitting={confirmSubmitting}
         error={confirmError}
@@ -655,6 +664,7 @@ export default function ProjectsView() {
         projectName={pendingDelete?.name}
         taskCount={impact?.openTasks?.length || 0}
         noteCount={impact?.noteCount || 0}
+        customerName={impact?.customerName || null}
         loading={impactLoading}
         submitting={confirmSubmitting}
         error={confirmError}

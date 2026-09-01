@@ -1,7 +1,8 @@
 import { PROJECT_STATUS, STATE, CLOSED_STATES, ACTIVE_STATES } from '@/lib/constants';
+import { callRpc } from '@/lib/rpc';
 
 /**
- * Project lifecycle cascade.
+ * Project lifecycle.
  *
  * A project status change is not just a label: closing a project has to do
  * something about the work still sitting under it. Before this existed, the
@@ -11,9 +12,14 @@ import { PROJECT_STATUS, STATE, CLOSED_STATES, ACTIVE_STATES } from '@/lib/const
  * the project list. Office365 sync already deleted those tasks remotely, so the
  * two systems actively disagreed.
  *
- * The cascade lives in the service layer (called by the API route) rather than
- * in a component, so the rule holds for every caller: the projects page, a
- * direct API call, or anything added later.
+ * Closing now also moves the project's notes onto the customer's record, writes
+ * an optional close-out note, and can add key facts. That is five tables in one
+ * operation, and separate Supabase client calls are separate PostgREST requests
+ * and therefore separate transactions. A JavaScript function is not a
+ * transaction boundary, so the work happens in Postgres functions and this
+ * module is the typed way in.
+ *
+ * See docs/superpowers/specs/2026-09-01-customers-crm-design.md section 7.
  */
 
 // Statuses that close a project, mapped to the terminal state their open tasks
@@ -32,10 +38,20 @@ export function isClosingStatus(status) {
 }
 
 /**
+ * The terminal state a closing status sends its open tasks to.
+ *
+ * @param {string} status
+ * @returns {string|null}
+ */
+export function taskStateForClosingStatus(status) {
+  return CLOSING_STATUS_TO_TASK_STATE[status] ?? null;
+}
+
+/**
  * Fetch the open (non-closed) tasks for a project.
  *
- * Used both to preview the cascade in the confirmation dialog and to perform
- * it, so the list the user approves is the list that gets changed.
+ * Used to preview the cascade in the confirmation dialog, so the list the user
+ * approves is the list that gets changed.
  *
  * @returns {Promise<{data?: Array<object>, error?: object}>}
  */
@@ -56,105 +72,170 @@ export async function getOpenProjectTasks({ supabase, userId, projectId }) {
 }
 
 /**
- * Apply the task cascade for a project status change.
+ * Apply a project status change and everything that follows from it.
  *
- * - Closing (Completed / Cancelled): open tasks move to the matching terminal
- *   state. completed_at / cancelled_at are stamped by fn_task_state_cleanup, so
- *   they are deliberately not written here.
- * - Reopening: tasks previously cancelled by the cascade return to backlog.
- *   Without this, reopening a project would leave its work invisible with no
- *   way to get it back. Tasks that were completed stay completed, since those
- *   were genuinely finished.
+ * Closing runs `close_project`: the status, the task cascade, the note handover
+ * to the customer, the close-out note and any key facts, in one transaction.
+ * Reopening runs `reopen_project`, which restores only the tasks and notes that
+ * close moved.
+ *
+ * Neither is done with client-side updates any more. The previous version wrote
+ * the project first and cascaded second, and carried an explicit partial-failure
+ * response (`projectUpdated: true`) because there was no way to make the two
+ * atomic. Adding notes and facts to that pattern would have multiplied the
+ * number of half-done states.
  *
  * @param {object} params
  * @param {string} params.previousStatus status before the change.
  * @param {string} params.nextStatus status after the change.
- * @returns {Promise<{data?: {tasksChanged: number, taskState: string|null}, error?: object}>}
+ * @param {string} [params.closeoutNote] optional note to pin against the customer.
+ * @param {Array<{label: string, value: string}>} [params.facts] optional key facts.
+ * @returns {Promise<{data?: object, error?: object}>}
  */
-export async function cascadeProjectStatusToTasks({
+export async function changeProjectStatus({
   supabase,
   userId,
   projectId,
   previousStatus,
   nextStatus,
+  closeoutNote = null,
+  facts = null,
 }) {
   if (previousStatus === nextStatus) {
-    return { data: { tasksChanged: 0, taskState: null } };
+    return { data: { tasksChanged: 0, taskState: null, notesMoved: 0 } };
   }
 
-  // Closing the project: carry its open work into the matching terminal state.
   if (isClosingStatus(nextStatus)) {
-    const taskState = CLOSING_STATUS_TO_TASK_STATE[nextStatus];
-    const { data, error } = await supabase
-      .from('tasks')
-      .update({ state: taskState, updated_at: new Date().toISOString() })
-      .eq('project_id', projectId)
-      .eq('user_id', userId)
-      .in('state', ACTIVE_STATES)
-      .select('id');
+    const { data, error } = await callRpc(supabase, 'close_project', {
+      p_project_id: projectId,
+      p_user_id: userId,
+      p_status: nextStatus,
+      p_closeout_note: closeoutNote,
+      p_facts: facts && facts.length > 0 ? facts : null,
+    });
 
-    if (error) {
-      return { error: { status: 500, message: error.message || 'Unable to update project tasks' } };
-    }
-    return { data: { tasksChanged: (data || []).length, taskState } };
+    if (error) return { error };
+
+    return {
+      data: {
+        tasksChanged: data?.tasksChanged ?? 0,
+        taskState: data?.taskState ?? taskStateForClosingStatus(nextStatus),
+        notesMoved: data?.notesMoved ?? 0,
+        factsAdded: data?.factsAdded ?? 0,
+        closeoutNoteId: data?.closeoutNoteId ?? null,
+        customerId: data?.customerId ?? null,
+      },
+    };
   }
 
-  // Reopening a previously cancelled project: bring its cancelled tasks back.
-  // Backlog rather than their original state, because the original is not
-  // recorded and backlog is the safe landing spot that needs an explicit
-  // decision before the task can reach Today.
-  if (isClosingStatus(previousStatus) && previousStatus === PROJECT_STATUS.CANCELLED) {
-    const { data, error } = await supabase
-      .from('tasks')
-      .update({ state: STATE.BACKLOG, updated_at: new Date().toISOString() })
-      .eq('project_id', projectId)
-      .eq('user_id', userId)
-      .eq('state', STATE.CANCELLED)
-      .select('id');
+  // Reopening. Only meaningful when the project was closed; moving between two
+  // live statuses (Open to On Hold, say) changes nothing about its work.
+  if (isClosingStatus(previousStatus)) {
+    const { data, error } = await callRpc(supabase, 'reopen_project', {
+      p_project_id: projectId,
+      p_user_id: userId,
+      p_status: nextStatus,
+    });
 
-    if (error) {
-      return { error: { status: 500, message: error.message || 'Unable to restore project tasks' } };
-    }
-    return { data: { tasksChanged: (data || []).length, taskState: STATE.BACKLOG } };
+    if (error) return { error };
+
+    return {
+      data: {
+        tasksChanged: data?.tasksRestored ?? 0,
+        taskState: (data?.tasksRestored ?? 0) > 0 ? STATE.BACKLOG : null,
+        notesReturned: data?.notesReturned ?? 0,
+      },
+    };
   }
 
-  return { data: { tasksChanged: 0, taskState: null } };
+  return { data: { tasksChanged: 0, taskState: null, notesMoved: 0 } };
 }
 
 /**
- * Count what deleting a project would destroy.
+ * What deleting a project would affect.
  *
- * tasks.project_id is ON DELETE SET NULL (20260404000001), so tasks survive as
- * unassigned. notes.project_id is still ON DELETE CASCADE from the initial
- * schema, so project notes are destroyed permanently. The delete confirmation
- * has to say so, which means counting both.
+ * Reports what is **kept and where it goes**, not only what is destroyed.
+ * notes.project_id used to be ON DELETE CASCADE, so a delete permanently
+ * destroyed every note on the project and the dialog could only warn about it.
+ * Now the notes move to the customer, or become unfiled when there is none, so
+ * the dialog can say where they land.
  *
- * @returns {Promise<{data?: {taskCount: number, noteCount: number}, error?: object}>}
+ * @returns {Promise<{data?: object, error?: object}>}
  */
 export async function getProjectDeletionImpact({ supabase, userId, projectId }) {
-  const [taskResult, noteResult] = await Promise.all([
+  const closedFilter = `(${CLOSED_STATES.map((s) => `"${s}"`).join(',')})`;
+
+  const [taskResult, noteResult, projectResult] = await Promise.all([
     supabase
       .from('tasks')
       .select('id', { count: 'exact', head: true })
       .eq('project_id', projectId)
       .eq('user_id', userId)
-      .not('state', 'in', `(${CLOSED_STATES.map((s) => `"${s}"`).join(',')})`),
+      .not('state', 'in', closedFilter),
+    // Both the notes still on the project and the ones a previous close moved
+    // onto the customer, because deleting the project rewrites the tombstone on
+    // all of them.
     supabase
       .from('notes')
-      .select('id', { count: 'exact', head: true })
-      .eq('project_id', projectId)
-      .eq('user_id', userId),
+      .select('id, project_id, origin_project_id')
+      .eq('user_id', userId)
+      .or(`project_id.eq.${projectId},origin_project_id.eq.${projectId}`),
+    supabase
+      .from('projects')
+      .select('id, name, customer_id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .maybeSingle(),
   ]);
 
-  if (taskResult.error || noteResult.error) {
-    const err = taskResult.error || noteResult.error;
+  if (taskResult.error || noteResult.error || projectResult.error) {
+    const err = taskResult.error || noteResult.error || projectResult.error;
     return { error: { status: 500, message: err.message || 'Unable to load project impact' } };
+  }
+
+  let customerName = null;
+  if (projectResult.data?.customer_id) {
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('name')
+      .eq('id', projectResult.data.customer_id)
+      .maybeSingle();
+    customerName = customer?.name || null;
   }
 
   return {
     data: {
       taskCount: taskResult.count || 0,
-      noteCount: noteResult.count || 0,
+      noteCount: (noteResult.data || []).length,
+      customerId: projectResult.data?.customer_id || null,
+      customerName,
     },
   };
+}
+
+/**
+ * Delete a project without losing its notes.
+ *
+ * Runs `delete_project_preserving_content`, which stamps the tombstone on every
+ * note the project owns or previously handed to a customer, re-parents them,
+ * and only then deletes the project. Doing that as separate calls would leave a
+ * window where the project is gone and the notes are not yet re-parented.
+ *
+ * @param {boolean} [params.destroyContent] explicit opt-in to delete the notes too.
+ * @returns {Promise<{data?: object, error?: object}>}
+ */
+export async function deleteProjectPreservingContent({
+  supabase,
+  userId,
+  projectId,
+  destroyContent = false,
+}) {
+  const { data, error } = await callRpc(supabase, 'delete_project_preserving_content', {
+    p_project_id: projectId,
+    p_user_id: userId,
+    p_destroy_content: Boolean(destroyContent),
+  });
+
+  if (error) return { error };
+  return { data };
 }

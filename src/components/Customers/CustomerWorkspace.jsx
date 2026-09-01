@@ -19,6 +19,9 @@ import { formatDate } from '@/lib/dateUtils';
 import { CUSTOMER_STATUS, STATE } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
 import QuickTaskInput from '@/components/shared/QuickTaskInput';
+import NotesPanel from '@/components/shared/NotesPanel';
+import CustomerFacts from './CustomerFacts';
+import CustomerContacts from './CustomerContacts';
 
 // Same grouping as ProjectWorkspace, so a task looks and behaves the same
 // wherever you meet it.
@@ -241,6 +244,15 @@ export default function CustomerWorkspace({
         <StatCard label="Status" value={customer.status} />
       </div>
 
+      {/* Key facts and people: the standing record, above the stream. */}
+      <div className="mt-6">
+        <CustomerFacts customerId={customer.id} disabled={isArchived} />
+      </div>
+
+      <div className="mt-6">
+        <CustomerContacts customerId={customer.id} disabled={isArchived} />
+      </div>
+
       {/* Summary */}
       <section className="mt-6">
         <h2 className="mb-2 text-sm font-semibold text-gray-700">Summary</h2>
@@ -380,6 +392,19 @@ export default function CustomerWorkspace({
             })}
           </div>
         )}
+      </section>
+
+      {/* The timeline: every note that reaches this customer, whether it is
+          filed on them, on one of their projects (open or closed), or on one of
+          their tasks. Closing a project must not make its notes disappear from
+          the record, which is the whole reason this rolls up. */}
+      <section className="mt-6">
+        <NotesPanel
+          customerId={customer.id}
+          timeline
+          title="Timeline"
+          disabled={isArchived}
+        />
       </section>
     </div>
   );

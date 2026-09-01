@@ -1,48 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
-  cascadeProjectStatusToTasks,
-  isClosingStatus,
+  changeProjectStatus,
+  deleteProjectPreservingContent,
   getOpenProjectTasks,
+  getProjectDeletionImpact,
+  isClosingStatus,
+  taskStateForClosingStatus,
 } from '../projectLifecycleService';
 import { PROJECT_STATUS, STATE, ACTIVE_STATES } from '@/lib/constants';
 
-// Supabase query-builder stub. The cascade writes via
-// .from('tasks').update(payload).eq().eq().in()/.eq().select(), and reads via
-// .from('tasks').select().eq().eq().in().order().order(). We capture the update
-// payload and the state filter so we can assert which rows would be touched.
-function makeSupabase({ rows = [], error = null } = {}) {
-  const calls = { updatePayload: null, stateFilterIn: null, stateFilterEq: null, selected: false };
-  const supabase = {
-    from() {
-      return {
-        select() {
-          calls.selected = true;
-          const chain = {
-            eq(col, val) { if (col === 'state') calls.stateFilterEq = val; return chain; },
-            in(col, val) { if (col === 'state') calls.stateFilterIn = val; return chain; },
-            order() { return chain; },
-            then: undefined,
-          };
-          // Terminal await on the read path resolves to the row set.
-          chain.order = () => ({
-            order: async () => ({ data: rows, error }),
-          });
-          return chain;
-        },
-        update(payload) {
-          calls.updatePayload = payload;
-          const chain = {
-            eq(col, val) { if (col === 'state') calls.stateFilterEq = val; return chain; },
-            in(col, val) { if (col === 'state') calls.stateFilterIn = val; return chain; },
-            select: async () => ({ data: rows, error }),
-          };
-          return chain;
-        },
-      };
-    },
-    calls,
-  };
-  return supabase;
+/**
+ * The cascade itself now lives in Postgres functions, because closing a project
+ * touches the project, its tasks, its notes, a close-out note and possibly some
+ * facts, and separate Supabase client calls are separate PostgREST requests and
+ * therefore separate transactions.
+ *
+ * So these tests cover what this module is still responsible for: deciding
+ * which RPC to call, passing the right arguments, and shaping the result. The
+ * SQL behaviour is verified against the real database instead, where a mocked
+ * client could not tell you anything true about a trigger or a transaction.
+ */
+
+function makeRpcSupabase(result = {}, { error = null } = {}) {
+  const rpc = vi.fn().mockResolvedValue({ data: result, error });
+  return { rpc, from: () => { throw new Error('should go through the RPC'); } };
 }
 
 const base = { userId: 'user-1', projectId: 'project-1' };
@@ -60,129 +41,248 @@ describe('isClosingStatus', () => {
   });
 });
 
-describe('cascadeProjectStatusToTasks', () => {
-  it('cancels open tasks when the project is cancelled', async () => {
-    const supabase = makeSupabase({ rows: [{ id: 't1' }, { id: 't2' }] });
-    const { data } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
-      previousStatus: PROJECT_STATUS.OPEN,
-      nextStatus: PROJECT_STATUS.CANCELLED,
-    });
-
-    expect(supabase.calls.updatePayload.state).toBe(STATE.CANCELLED);
-    expect(data.tasksChanged).toBe(2);
-    expect(data.taskState).toBe(STATE.CANCELLED);
+describe('taskStateForClosingStatus', () => {
+  it('completes the work of a completed project and abandons a cancelled one', () => {
+    expect(taskStateForClosingStatus(PROJECT_STATUS.COMPLETED)).toBe(STATE.DONE);
+    expect(taskStateForClosingStatus(PROJECT_STATUS.CANCELLED)).toBe(STATE.CANCELLED);
   });
 
-  it('completes open tasks when the project is completed', async () => {
-    const supabase = makeSupabase({ rows: [{ id: 't1' }] });
-    const { data } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
-      previousStatus: PROJECT_STATUS.IN_PROGRESS,
+  it('returns null for a status that does not close', () => {
+    expect(taskStateForClosingStatus(PROJECT_STATUS.OPEN)).toBeNull();
+  });
+});
+
+describe('changeProjectStatus', () => {
+  it('does nothing when the status has not actually changed', async () => {
+    const supabase = makeRpcSupabase();
+    const { data } = await changeProjectStatus({
+      supabase,
+      ...base,
+      previousStatus: PROJECT_STATUS.OPEN,
+      nextStatus: PROJECT_STATUS.OPEN,
+    });
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(data.tasksChanged).toBe(0);
+  });
+
+  it('closes through close_project, in one transaction', async () => {
+    const supabase = makeRpcSupabase({ tasksChanged: 3, notesMoved: 2, taskState: 'done' });
+    await changeProjectStatus({
+      supabase,
+      ...base,
+      previousStatus: PROJECT_STATUS.OPEN,
       nextStatus: PROJECT_STATUS.COMPLETED,
     });
 
-    expect(supabase.calls.updatePayload.state).toBe(STATE.DONE);
+    expect(supabase.rpc).toHaveBeenCalledWith('close_project', {
+      p_project_id: 'project-1',
+      p_user_id: 'user-1',
+      p_status: PROJECT_STATUS.COMPLETED,
+      p_closeout_note: null,
+      p_facts: null,
+    });
+  });
+
+  it('passes the close-out note and facts through', async () => {
+    const supabase = makeRpcSupabase({ tasksChanged: 0, notesMoved: 0, factsAdded: 1 });
+    await changeProjectStatus({
+      supabase,
+      ...base,
+      previousStatus: PROJECT_STATUS.OPEN,
+      nextStatus: PROJECT_STATUS.CANCELLED,
+      closeoutNote: 'Remember the invoicing quirk',
+      facts: [{ label: 'PO portal', value: 'https://example.test' }],
+    });
+
+    const args = supabase.rpc.mock.calls[0][1];
+    expect(args.p_closeout_note).toBe('Remember the invoicing quirk');
+    expect(args.p_facts).toHaveLength(1);
+  });
+
+  it('sends null rather than an empty array when there are no facts', async () => {
+    // An empty array would make the function iterate nothing and still look
+    // like an intent to add facts.
+    const supabase = makeRpcSupabase({});
+    await changeProjectStatus({
+      supabase,
+      ...base,
+      previousStatus: PROJECT_STATUS.OPEN,
+      nextStatus: PROJECT_STATUS.COMPLETED,
+      facts: [],
+    });
+
+    expect(supabase.rpc.mock.calls[0][1].p_facts).toBeNull();
+  });
+
+  it('reports how many notes moved to the customer', async () => {
+    const supabase = makeRpcSupabase({ tasksChanged: 1, notesMoved: 7, taskState: 'done' });
+    const { data } = await changeProjectStatus({
+      supabase,
+      ...base,
+      previousStatus: PROJECT_STATUS.OPEN,
+      nextStatus: PROJECT_STATUS.COMPLETED,
+    });
+
+    expect(data.notesMoved).toBe(7);
     expect(data.tasksChanged).toBe(1);
   });
 
-  it('only touches active tasks, never already-closed ones', async () => {
-    // Re-cancelling must not resurrect a done task into the cancelled bucket,
-    // which would wrongly remove it from the completed report.
-    const supabase = makeSupabase({ rows: [] });
-    await cascadeProjectStatusToTasks({
-      supabase, ...base,
-      previousStatus: PROJECT_STATUS.OPEN,
-      nextStatus: PROJECT_STATUS.CANCELLED,
-    });
-
-    expect(supabase.calls.stateFilterIn).toEqual(ACTIVE_STATES);
-    expect(supabase.calls.stateFilterIn).not.toContain(STATE.DONE);
-  });
-
-  it('never writes completed_at or cancelled_at (owned by the DB trigger)', async () => {
-    const supabase = makeSupabase({ rows: [{ id: 't1' }] });
-    await cascadeProjectStatusToTasks({
-      supabase, ...base,
-      previousStatus: PROJECT_STATUS.OPEN,
-      nextStatus: PROJECT_STATUS.COMPLETED,
-    });
-
-    expect(supabase.calls.updatePayload).not.toHaveProperty('completed_at');
-    expect(supabase.calls.updatePayload).not.toHaveProperty('cancelled_at');
-  });
-
-  it('restores cancelled tasks to backlog when a cancelled project reopens', async () => {
-    const supabase = makeSupabase({ rows: [{ id: 't1' }, { id: 't2' }, { id: 't3' }] });
-    const { data } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
+  it('reopens through reopen_project', async () => {
+    const supabase = makeRpcSupabase({ tasksRestored: 4, notesReturned: 2 });
+    const { data } = await changeProjectStatus({
+      supabase,
+      ...base,
       previousStatus: PROJECT_STATUS.CANCELLED,
       nextStatus: PROJECT_STATUS.OPEN,
     });
 
-    expect(supabase.calls.updatePayload.state).toBe(STATE.BACKLOG);
-    expect(supabase.calls.stateFilterEq).toBe(STATE.CANCELLED);
-    expect(data.tasksChanged).toBe(3);
+    expect(supabase.rpc).toHaveBeenCalledWith('reopen_project', {
+      p_project_id: 'project-1',
+      p_user_id: 'user-1',
+      p_status: PROJECT_STATUS.OPEN,
+    });
+    expect(data.tasksChanged).toBe(4);
+    expect(data.notesReturned).toBe(2);
+    expect(data.taskState).toBe(STATE.BACKLOG);
   });
 
-  it('leaves completed tasks completed when a completed project reopens', async () => {
-    // Those tasks were genuinely finished, so reopening the project must not
-    // drag them back into the backlog.
-    const supabase = makeSupabase({ rows: [] });
-    const { data } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
+  it('reports no landing state when a reopen restored nothing', async () => {
+    const supabase = makeRpcSupabase({ tasksRestored: 0, notesReturned: 0 });
+    const { data } = await changeProjectStatus({
+      supabase,
+      ...base,
       previousStatus: PROJECT_STATUS.COMPLETED,
       nextStatus: PROJECT_STATUS.OPEN,
     });
 
-    expect(supabase.calls.updatePayload).toBeNull();
-    expect(data.tasksChanged).toBe(0);
+    expect(data.taskState).toBeNull();
   });
 
-  it('does nothing when the status is unchanged', async () => {
-    const supabase = makeSupabase({ rows: [] });
-    const { data } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
-      previousStatus: PROJECT_STATUS.OPEN,
-      nextStatus: PROJECT_STATUS.OPEN,
-    });
-
-    expect(supabase.calls.updatePayload).toBeNull();
-    expect(data.tasksChanged).toBe(0);
-  });
-
-  it('does nothing when moving between two live statuses', async () => {
-    const supabase = makeSupabase({ rows: [] });
-    const { data } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
+  it('leaves tasks alone when moving between two live statuses', async () => {
+    const supabase = makeRpcSupabase();
+    const { data } = await changeProjectStatus({
+      supabase,
+      ...base,
       previousStatus: PROJECT_STATUS.OPEN,
       nextStatus: PROJECT_STATUS.ON_HOLD,
     });
 
-    expect(supabase.calls.updatePayload).toBeNull();
+    expect(supabase.rpc).not.toHaveBeenCalled();
     expect(data.tasksChanged).toBe(0);
   });
 
-  it('surfaces a database error rather than reporting success', async () => {
-    const supabase = makeSupabase({ rows: null, error: { message: 'boom' } });
-    const { data, error } = await cascadeProjectStatusToTasks({
-      supabase, ...base,
-      previousStatus: PROJECT_STATUS.OPEN,
-      nextStatus: PROJECT_STATUS.CANCELLED,
+  it('surfaces an ownership failure as a 403 rather than a 500', async () => {
+    const supabase = makeRpcSupabase(null, {
+      error: { code: '42501', message: 'project is not owned by user' },
     });
 
-    expect(data).toBeUndefined();
-    expect(error.message).toBe('boom');
+    const { error } = await changeProjectStatus({
+      supabase,
+      ...base,
+      previousStatus: PROJECT_STATUS.OPEN,
+      nextStatus: PROJECT_STATUS.COMPLETED,
+    });
+
+    expect(error.status).toBe(403);
+  });
+});
+
+describe('deleteProjectPreservingContent', () => {
+  it('preserves content by default', async () => {
+    const supabase = makeRpcSupabase({ notesKept: 12, tasksUnassigned: 8 });
+    const { data } = await deleteProjectPreservingContent({ supabase, ...base });
+
+    expect(supabase.rpc).toHaveBeenCalledWith('delete_project_preserving_content', {
+      p_project_id: 'project-1',
+      p_user_id: 'user-1',
+      p_destroy_content: false,
+    });
+    expect(data.notesKept).toBe(12);
+  });
+
+  it('destroys content only on an explicit opt-in', async () => {
+    const supabase = makeRpcSupabase({ notesDestroyed: 12 });
+    await deleteProjectPreservingContent({ supabase, ...base, destroyContent: true });
+
+    expect(supabase.rpc.mock.calls[0][1].p_destroy_content).toBe(true);
+  });
+
+  it('coerces a truthy value rather than passing it through', async () => {
+    const supabase = makeRpcSupabase({});
+    await deleteProjectPreservingContent({ supabase, ...base, destroyContent: 'yes' });
+
+    expect(supabase.rpc.mock.calls[0][1].p_destroy_content).toBe(true);
   });
 });
 
 describe('getOpenProjectTasks', () => {
-  it('returns only active-state tasks, so the confirmation lists what will change', async () => {
-    const rows = [{ id: 't1', name: 'Draft the brief', state: 'today', due_date: '2026-08-14' }];
-    const supabase = makeSupabase({ rows });
+  it('asks only for the states that count as live work', async () => {
+    const captured = {};
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      in: (column, values) => {
+        captured[column] = values;
+        return chain;
+      },
+      order: () => chain,
+      then: (resolve) => Promise.resolve({ data: [{ id: 't1' }], error: null }).then(resolve),
+    };
+    // Two .order() calls end the chain, so the last one has to resolve.
+    chain.order = () => ({ order: async () => ({ data: [{ id: 't1' }], error: null }), ...chain });
+
+    const supabase = { from: () => chain };
     const { data } = await getOpenProjectTasks({ supabase, ...base });
 
-    expect(supabase.calls.stateFilterIn).toEqual(ACTIVE_STATES);
-    expect(data).toEqual(rows);
+    expect(captured.state).toEqual(ACTIVE_STATES);
+    expect(data).toHaveLength(1);
+  });
+});
+
+describe('getProjectDeletionImpact', () => {
+  it('names the customer the notes will move to', async () => {
+    // The dialog has to say where things go, not only what is destroyed.
+    const supabase = {
+      from: (table) => {
+        if (table === 'tasks') {
+          return {
+            select: () => ({
+              eq: () => ({ eq: () => ({ not: async () => ({ count: 5, error: null }) }) }),
+            }),
+          };
+        }
+        if (table === 'notes') {
+          return {
+            select: () => ({
+              eq: () => ({ or: async () => ({ data: [{ id: 'n1' }, { id: 'n2' }], error: null }) }),
+            }),
+          };
+        }
+        if (table === 'projects') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({
+                    data: { id: 'project-1', name: 'Rebuild', customer_id: 'cust-1' },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { name: 'Acme Ltd' }, error: null }) }) }),
+        };
+      },
+    };
+
+    const { data } = await getProjectDeletionImpact({ supabase, ...base });
+
+    expect(data.taskCount).toBe(5);
+    expect(data.noteCount).toBe(2);
+    expect(data.customerName).toBe('Acme Ltd');
   });
 });

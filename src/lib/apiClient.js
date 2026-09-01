@@ -78,6 +78,13 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  /**
+   * Update a project.
+   *
+   * `closeout_note` and `closeout_facts` are not project columns: the route
+   * hands them to close_project so the status change, the task cascade, the
+   * note handover and the close-out note all happen in one transaction.
+   */
   async updateProject(projectId, updates) {
     const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
       method: 'PATCH',
@@ -99,8 +106,15 @@ class APIClient {
     return this.fetchWithAuth(`/api/projects/${projectId}/impact`);
   }
 
-  async deleteProject(projectId) {
-    const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
+  /**
+   * Delete a project.
+   *
+   * Its notes are kept and moved to the customer by default. destroyContent is
+   * the explicit opt-in to delete them instead, and is never the default.
+   */
+  async deleteProject(projectId, { destroyContent = false } = {}) {
+    const query = destroyContent ? '?destroyContent=true' : '';
+    const result = await this.fetchWithAuth(`/api/projects/${projectId}${query}`, {
       method: 'DELETE',
     });
     // Clear project cache after deletion (mirrors create/update)
@@ -295,10 +309,11 @@ class APIClient {
   }
 
   // Notes
-  async getNotes(projectId = null, taskId = null) {
+  async getNotes(projectId = null, taskId = null, customerId = null) {
     const params = new URLSearchParams();
     if (projectId) params.append('projectId', projectId);
     if (taskId) params.append('taskId', taskId);
+    if (customerId) params.append('customerId', customerId);
 
     return this.fetchWithAuth(`/api/notes?${params}`);
   }
@@ -551,6 +566,98 @@ class APIClient {
     clearCustomerCaches();
     clearCache('projects-true');
     clearCache('projects-false');
+    return result?.data ?? result;
+  }
+
+  /** Every note reaching a customer: theirs, their projects', their tasks'. */
+  async getCustomerTimeline(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/timeline`);
+    return response.data || [];
+  }
+
+  async getCustomerFacts(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/facts`);
+    return response.data || [];
+  }
+
+  async createCustomerFact(customerId, payload) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}/facts`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async updateCustomerFact(customerId, factId, payload) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}/facts/${factId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async deleteCustomerFact(customerId, factId) {
+    return this.fetchWithAuth(`/api/customers/${customerId}/facts/${factId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Contacts
+
+  async getContacts({ customerId = null, includeArchived = false } = {}) {
+    const params = new URLSearchParams();
+    if (customerId) params.append('customerId', customerId);
+    if (includeArchived) params.append('includeArchived', 'true');
+    const query = params.toString();
+    const response = await this.fetchWithAuth(`/api/contacts${query ? `?${query}` : ''}`);
+    return response.data || [];
+  }
+
+  async createContact(payload) {
+    const result = await this.fetchWithAuth('/api/contacts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async updateContact(contactId, payload) {
+    const result = await this.fetchWithAuth(`/api/contacts/${contactId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async deleteContact(contactId) {
+    return this.fetchWithAuth(`/api/contacts/${contactId}`, { method: 'DELETE' });
+  }
+
+  // Notes: editing and deletion, which did not exist before Phase 2
+
+  async updateNote(noteId, updates) {
+    const result = await this.fetchWithAuth(`/api/notes/${noteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    return result?.data ?? result;
+  }
+
+  async deleteNote(noteId) {
+    return this.fetchWithAuth(`/api/notes/${noteId}`, { method: 'DELETE' });
+  }
+
+  /** Notes with no parent at all, left by deleting a customerless project. */
+  async getUnfiledNotes() {
+    const response = await this.fetchWithAuth('/api/unfiled');
+    return response.data || [];
+  }
+
+  async refileNote(noteId, customerId) {
+    const result = await this.fetchWithAuth('/api/unfiled', {
+      method: 'POST',
+      body: JSON.stringify({ noteId, customerId }),
+    });
     return result?.data ?? result;
   }
 

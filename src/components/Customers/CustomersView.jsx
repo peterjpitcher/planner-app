@@ -12,8 +12,9 @@ import CustomerSidebar from './CustomerSidebar';
 import CustomerWorkspace from './CustomerWorkspace';
 import CreateCustomerModal from './CreateCustomerModal';
 import CustomerDeleteModal from './CustomerDeleteModal';
+import UnfiledPanel from './UnfiledPanel';
 
-function EmptyState({ customers, onSelect }) {
+function EmptyState({ customers, onSelect, onRefiled }) {
   const needsWork = customers.filter((c) => c.open_project_count === 0 && !c.archived_at);
 
   return (
@@ -73,6 +74,10 @@ function EmptyState({ customers, onSelect }) {
             )}
           </>
         )}
+
+        {/* Notes kept from a deleted customerless project. Renders nothing when
+            there are none, so it never adds noise on a tidy account. */}
+        <UnfiledPanel customers={customers} onChanged={onRefiled} />
       </div>
     </div>
   );
@@ -385,7 +390,11 @@ export default function CustomersView() {
         </div>
       ) : (
         <div className={selectedCustomerId ? 'flex flex-1' : 'hidden md:flex md:flex-1'}>
-          <EmptyState customers={customers} onSelect={handleSelect} />
+          <EmptyState
+            customers={customers}
+            onSelect={handleSelect}
+            onRefiled={loadCustomers}
+          />
         </div>
       )}
 
