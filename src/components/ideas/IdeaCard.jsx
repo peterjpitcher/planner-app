@@ -51,7 +51,6 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
   // Local editable field state — only used in Exploring mode
   const [whyItMatters, setWhyItMatters] = useState(idea.why_it_matters ?? '');
   const [smallestStep, setSmallestStep] = useState(idea.smallest_step ?? '');
-  const [area, setArea] = useState(idea.area ?? '');
 
   // Review date for Ready Later state
   const [reviewDate, setReviewDate] = useState(idea.review_date ?? '');
@@ -111,9 +110,6 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
   }
 
   function handleAreaBlur() {
-    if (area !== (idea.area ?? '')) {
-      saveField({ area }, () => setArea(idea.area ?? ''));
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -316,14 +312,6 @@ export default function IdeaCard({ idea, onUpdate, onPromote, onDelete }) {
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">
               Area
             </label>
-            <input
-              type="text"
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              onBlur={handleAreaBlur}
-              placeholder="e.g. Marketing, Product…"
-              className="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-sm text-gray-800 placeholder-gray-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
-            />
           </div>
 
           {/* Why it matters */}

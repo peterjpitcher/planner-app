@@ -11,7 +11,7 @@ import {
 import { maybeAutoSyncOffice365 } from '@/services/office365SyncService';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, plan_reason, recurrence, recurrence_interval, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, customer_id, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, plan_reason, recurrence, recurrence_interval, created_at, updated_at';
 
 // GET /api/tasks - Fetch tasks with support for state-based filtering
 export async function GET(request) {
@@ -69,7 +69,7 @@ export async function GET(request) {
     // Build base query
     let query = supabase
       .from('tasks')
-      .select(`${TASK_SELECT_FIELDS}, projects(id, name, area)`, { count: 'exact' })
+      .select(`${TASK_SELECT_FIELDS}, projects(id, name, area), customers(id, name)`, { count: 'exact' })
       .eq('user_id', session.user.id);
 
     // Apply project filter if specified
@@ -122,7 +122,10 @@ export async function GET(request) {
     const transformedData = (data || []).map(task => ({
       ...task,
       project_name: task.projects?.name || null,
-      project_area: task.projects?.area || null
+      project_area: task.projects?.area || null,
+      // Flattened so the Plan board's customer filter and the task cards read
+      // one field rather than a nested object.
+      customer_name: task.customers?.name || null
     }));
 
     // Build response with pagination info if count is available

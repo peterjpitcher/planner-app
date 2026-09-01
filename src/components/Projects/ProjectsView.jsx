@@ -9,7 +9,7 @@ import { cn } from '@/lib/styleUtils';
 import { STATE, PROJECT_STATUS } from '@/lib/constants';
 import {
   computeAttentionCounts,
-  deriveAreas,
+  deriveProjectCustomers,
   getVisibleProjects,
   matchesFilter,
 } from '@/lib/projectFilters';
@@ -60,7 +60,7 @@ export default function ProjectsView() {
   // open when a deep link already points at a project so it renders directly.
   const [mobileDetailOpen, setMobileDetailOpen] = useState(() => !!searchParams.get('id'));
   const [activeFilter, setActiveFilter] = useState('all');
-  const [selectedArea, setSelectedArea] = useState('all');
+  const [selectedCustomer, setSelectedCustomer] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -162,7 +162,7 @@ export default function ProjectsView() {
   }, [loadData]);
 
   // ---- Derived state (memoised) ----
-  const areas = useMemo(() => deriveAreas(projects), [projects]);
+  const customers = useMemo(() => deriveProjectCustomers(projects), [projects]);
 
   const attentionCounts = useMemo(
     () => computeAttentionCounts(projects, tasksByProject),
@@ -170,16 +170,16 @@ export default function ProjectsView() {
   );
 
   const visibleProjects = useMemo(() => {
-    const filtered = getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter, selectedArea });
+    const filtered = getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter, selectedCustomer });
     if (!searchQuery.trim()) return filtered;
     const q = searchQuery.trim().toLowerCase();
     return filtered.filter((p) => p.name.toLowerCase().includes(q));
-  }, [projects, tasksByProject, showCompleted, activeFilter, selectedArea, searchQuery]);
+  }, [projects, tasksByProject, showCompleted, activeFilter, selectedCustomer, searchQuery]);
 
   // For dashboard table: respects area and showCompleted but NOT active filter pill
   const dashboardProjects = useMemo(
-    () => getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter: 'all', selectedArea }),
-    [projects, tasksByProject, showCompleted, selectedArea]
+    () => getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter: 'all', selectedCustomer }),
+    [projects, tasksByProject, showCompleted, selectedCustomer]
   );
 
   const completedCount = useMemo(
@@ -557,9 +557,9 @@ export default function ProjectsView() {
         onCreateProject={openCreateModal}
         activeFilter={activeFilter}
         onFilterChange={handleFilterChange}
-        selectedArea={selectedArea}
-        onAreaChange={setSelectedArea}
-        areas={areas}
+        selectedCustomer={selectedCustomer}
+        onCustomerChange={setSelectedCustomer}
+        customers={customers}
         attentionCounts={attentionCounts}
         showCompleted={showCompleted}
         onToggleCompleted={setShowCompleted}

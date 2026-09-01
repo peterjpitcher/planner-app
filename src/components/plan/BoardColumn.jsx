@@ -331,7 +331,7 @@ const PAGE_SIZE = 20;
  *   onDelete: (taskId: string) => void,
  *   onSnooze?: (taskId: string, until: string | null) => void,
  *   children?: React.ReactNode,
- *   areas?: string[],
+ *   customers?: Array<{id: string, name: string}>,
  * }} props
  */
 export default function BoardColumn({
@@ -347,13 +347,13 @@ export default function BoardColumn({
   onDelete,
   onSnooze,
   children,
-  areas = [],
+  customers = [],
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stateKey });
 
   // Backlog-specific state
   const [search, setSearch] = useState('');
-  const [filterArea, setFilterArea] = useState('');
+  const [filterCustomer, setFilterCustomer] = useState('');
   const [filterType, setFilterType] = useState('');
 
   // Today — split tasks by sub-section
@@ -366,7 +366,7 @@ export default function BoardColumn({
     ? tasks.filter((t) => {
         const matchesSearch =
           !search || t.name?.toLowerCase().includes(search.toLowerCase());
-        const matchesArea = !filterArea || t.area === filterArea;
+        const matchesArea = !filterCustomer || t.customer_id === filterCustomer;
         const matchesType = !filterType || t.task_type === filterType;
         return matchesSearch && matchesArea && matchesType;
       })
@@ -428,12 +428,14 @@ export default function BoardColumn({
 
             {/* Filter row */}
             <div className="flex gap-2">
-              {/* Area filter */}
+              {/* Customer filter. Replaces the area filter: areas were a
+                  free-text stand-in for who the work was for, and that is now a
+                  real record. */}
               <Menu as="div" className="relative flex-1">
                 <Menu.Button className="flex w-full items-center justify-between gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-600 hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
                   <span className="flex items-center gap-1">
                     <FunnelIcon className="h-3.5 w-3.5" />
-                    {filterArea || 'Area'}
+                    {customers.find((c) => c.id === filterCustomer)?.name || 'Customer'}
                   </span>
                   <ChevronDownIcon className="h-3.5 w-3.5 shrink-0" />
                 </Menu.Button>
@@ -442,26 +444,26 @@ export default function BoardColumn({
                     {({ active }) => (
                       <button
                         type="button"
-                        onClick={() => setFilterArea('')}
+                        onClick={() => setFilterCustomer('')}
                         className={`w-full px-3 py-1.5 text-left text-xs ${
                           active ? 'bg-gray-50' : ''
-                        } ${!filterArea ? 'font-semibold text-indigo-600' : 'text-gray-700'}`}
+                        } ${!filterCustomer ? 'font-semibold text-indigo-600' : 'text-gray-700'}`}
                       >
-                        All areas
+                        All customers
                       </button>
                     )}
                   </Menu.Item>
-                  {areas.map((area) => (
-                    <Menu.Item key={area}>
+                  {customers.map((customer) => (
+                    <Menu.Item key={customer.id}>
                       {({ active }) => (
                         <button
                           type="button"
-                          onClick={() => setFilterArea(area)}
+                          onClick={() => setFilterCustomer(customer.id)}
                           className={`w-full px-3 py-1.5 text-left text-xs ${
                             active ? 'bg-gray-50' : ''
-                          } ${filterArea === area ? 'font-semibold text-indigo-600' : 'text-gray-700'}`}
+                          } ${filterCustomer === customer.id ? 'font-semibold text-indigo-600' : 'text-gray-700'}`}
                         >
-                          {area}
+                          {customer.name}
                         </button>
                       )}
                     </Menu.Item>

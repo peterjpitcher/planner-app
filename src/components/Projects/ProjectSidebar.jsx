@@ -56,18 +56,19 @@ function FilterPills({ activeFilter, onFilterChange, attentionCounts }) {
   );
 }
 
-function AreaDropdown({ areas, selectedArea, onAreaChange }) {
+function CustomerDropdown({ customers, selectedCustomer, onCustomerChange }) {
   return (
     <div className="px-3 pb-2">
       <select
-        value={selectedArea}
-        onChange={(e) => onAreaChange(e.target.value)}
+        value={selectedCustomer}
+        onChange={(e) => onCustomerChange(e.target.value)}
         className="w-full rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-        aria-label="Filter by area"
+        aria-label="Filter by customer"
       >
-        <option value="all">All areas</option>
-        {areas.map((area) => (
-          <option key={area} value={area}>{area}</option>
+        <option value="all">All customers</option>
+        <option value="none">No customer</option>
+        {customers.map((customer) => (
+          <option key={customer.id} value={customer.id}>{customer.name}</option>
         ))}
       </select>
     </div>
@@ -125,9 +126,9 @@ export default memo(function ProjectSidebar({
   onCreateProject,
   activeFilter,
   onFilterChange,
-  selectedArea,
-  onAreaChange,
-  areas,
+  selectedCustomer,
+  onCustomerChange,
+  customers,
   attentionCounts,
   showCompleted,
   onToggleCompleted,
@@ -164,7 +165,11 @@ export default memo(function ProjectSidebar({
       />
 
       {/* Area dropdown */}
-      <AreaDropdown areas={areas} selectedArea={selectedArea} onAreaChange={onAreaChange} />
+      <CustomerDropdown
+        customers={customers}
+        selectedCustomer={selectedCustomer}
+        onCustomerChange={onCustomerChange}
+      />
 
       {/* Search */}
       <div className="px-3 pb-2">
@@ -198,11 +203,11 @@ export default memo(function ProjectSidebar({
         {projects.length === 0 ? (
           <div className="px-3 py-8 text-center">
             <p className="text-sm text-gray-500">
-              {activeFilter !== 'all' || selectedArea !== 'all' || searchQuery
+              {activeFilter !== 'all' || selectedCustomer !== 'all' || searchQuery
                 ? 'No projects match the current filters.'
                 : 'No projects yet. Create one to get started.'}
             </p>
-            {(activeFilter !== 'all' || selectedArea !== 'all' || searchQuery) && (
+            {(activeFilter !== 'all' || selectedCustomer !== 'all' || searchQuery) && (
               <button
                 type="button"
                 onClick={() => { onFilterChange('all'); onAreaChange('all'); onSearchChange(''); }}

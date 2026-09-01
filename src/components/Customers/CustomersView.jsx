@@ -89,7 +89,6 @@ export default function CustomersView() {
   const urlCustomerId = searchParams.get('id');
 
   const [customers, setCustomers] = useState([]);
-  const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -99,7 +98,6 @@ export default function CustomersView() {
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [selectedArea, setSelectedArea] = useState('all');
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -116,12 +114,7 @@ export default function CustomersView() {
     setLoading(true);
     setError(null);
     try {
-      const [list, areaList] = await Promise.all([
-        apiClient.getCustomers({ includeArchived: true }),
-        apiClient.getAreas(),
-      ]);
-      setCustomers(list);
-      setAreas(areaList);
+      setCustomers(await apiClient.getCustomers({ includeArchived: true }));
     } catch (err) {
       setError(err.message || 'Failed to load customers.');
     } finally {
@@ -180,15 +173,11 @@ export default function CustomersView() {
         return false;
       }
 
-      if (selectedArea !== 'all') {
-        if ((customer.area || '').toLowerCase() !== selectedArea.toLowerCase()) return false;
-      }
-
       if (term && !customer.name.toLowerCase().includes(term)) return false;
 
       return true;
     });
-  }, [customers, activeFilter, search, selectedArea]);
+  }, [customers, activeFilter, search]);
 
   const counts = useMemo(() => {
     const result = { all: 0, archived: 0 };
@@ -210,9 +199,6 @@ export default function CustomersView() {
     const created = await apiClient.createCustomer(payload);
     setCustomers((prev) => [...prev, { ...created, open_project_count: 0, closed_project_count: 0, open_task_count: 0, last_contact_at: null }]);
     handleSelect(created.id);
-    if (created.area && !areas.includes(created.area)) {
-      setAreas((prev) => [...prev, created.area].sort());
-    }
     return created;
   }
 
@@ -352,9 +338,6 @@ export default function CustomersView() {
           onFilterChange={setActiveFilter}
           search={search}
           onSearchChange={setSearch}
-          areas={areas}
-          selectedArea={selectedArea}
-          onAreaChange={setSelectedArea}
           counts={counts}
         />
       </div>
@@ -402,7 +385,6 @@ export default function CustomersView() {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         onCreate={handleCreate}
-        areas={areas}
       />
 
       <CustomerDeleteModal

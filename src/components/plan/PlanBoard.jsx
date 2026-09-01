@@ -215,7 +215,7 @@ export default function PlanBoard() {
   const hasLoadedRef = useRef(false);
 
   // Areas (derived from backlog tasks for filter)
-  const [areas, setAreas] = useState([]);
+  const [customers, setCustomers] = useState([]);
 
   // Active drag
   const [activeDragTask, setActiveDragTask] = useState(null);
@@ -320,10 +320,15 @@ export default function PlanBoard() {
     }));
 
     if (backlog) {
-      const uniqueAreas = [
-        ...new Set(backlog.filter((t) => t.area).map((t) => t.area)),
-      ].sort();
-      setAreas(uniqueAreas);
+      // Only the customers that actually own something in the backlog, so the
+      // filter never offers one with nothing behind it.
+      const byId = new Map();
+      backlog.forEach((task) => {
+        if (task.customer_id && !byId.has(task.customer_id)) {
+          byId.set(task.customer_id, { id: task.customer_id, name: task.customer_name || 'Unnamed' });
+        }
+      });
+      setCustomers([...byId.values()].sort((a, b) => a.name.localeCompare(b.name)));
     }
   }, [loadColumn]);
 
@@ -767,7 +772,7 @@ export default function PlanBoard() {
           onClick={handleClick}
           onDelete={handleDeleteTask}
           onSnooze={handleSnooze}
-          areas={colKey === STATE.BACKLOG ? areas : []}
+          customers={colKey === STATE.BACKLOG ? customers : []}
         />
 
         {/* Waiting popover */}

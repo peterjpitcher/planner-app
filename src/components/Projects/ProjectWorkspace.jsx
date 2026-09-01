@@ -237,17 +237,14 @@ export default function ProjectWorkspace({
 
             <span className="text-gray-300">|</span>
 
-            {/* Area */}
-            <span className="flex items-center gap-1">
-              <span className="text-gray-400">Area:</span>
-              <InlineEdit
-                value={project.area}
-                onSave={(area) => onUpdateProject(project.id, { area })}
-                placeholder="Add area"
-                maxLength={255}
-                disabled={isReadOnly}
-              />
-            </span>
+            {/* Areas are being retired in favour of the customer. An existing
+                value still shows so nothing looks lost, but there is no longer
+                a way to set one. */}
+            {project.area && (
+              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                {project.area}
+              </span>
+            )}
 
             <span className="text-gray-300">|</span>
 

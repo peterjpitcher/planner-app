@@ -66,7 +66,9 @@ export async function GET(request) {
     
     let query = supabase
       .from('projects')
-      .select('*', { count: 'exact' })
+      // The customer name comes along so the sidebar can offer a customer
+      // filter without a second round trip per project.
+      .select('*, customer:customer_id(name)', { count: 'exact' })
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -83,7 +85,12 @@ export async function GET(request) {
     }
     
     return NextResponse.json({ 
-      data: data || [],
+      // Flattened to customer_name, so components read one field rather than a
+      // nested object that only some code paths would remember to unwrap.
+      data: (data || []).map(({ customer, ...project }) => ({
+        ...project,
+        customer_name: customer?.name || null,
+      })),
       pagination: {
         total: count || 0,
         limit,
