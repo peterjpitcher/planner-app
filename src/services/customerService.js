@@ -390,9 +390,14 @@ export async function getCustomerOverview({ supabase, userId, customerId }) {
       .eq('user_id', userId)
       .eq('customer_id', customerId)
       .order('due_date', { ascending: true, nullsFirst: false }),
+    // The project name comes along so each task card can say which project it
+    // belongs to. Without it the customer's task list is a flat run of names
+    // with no context, which is fine on a project page (everything there is
+    // obviously that project's) and useless here, where one customer's tasks
+    // can span several projects.
     supabase
       .from('tasks')
-      .select('id, name, description, state, today_section, due_date, project_id, area, task_type, chips, sort_order')
+      .select('id, name, description, state, today_section, due_date, project_id, area, task_type, chips, sort_order, project:project_id(name)')
       .eq('user_id', userId)
       .eq('customer_id', customerId)
       .in('state', ACTIVE_STATES)
@@ -413,7 +418,13 @@ export async function getCustomerOverview({ supabase, userId, customerId }) {
       customer,
       openProjects: allProjects.filter((p) => !CLOSED_PROJECT_STATUSES.includes(p.status)),
       closedProjects: allProjects.filter((p) => CLOSED_PROJECT_STATUSES.includes(p.status)),
-      tasks: taskResult.data || [],
+      // Flattened to project_name, which is the shape TaskCard already reads.
+      // A task filed straight against the customer has no project, and simply
+      // gets no badge.
+      tasks: (taskResult.data || []).map(({ project, ...task }) => ({
+        ...task,
+        project_name: project?.name || null,
+      })),
     },
     error: null,
   };
