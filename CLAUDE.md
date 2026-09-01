@@ -149,15 +149,26 @@ OFFICE365_*               # Graph integration (optional)
 - **RLS is effectively bypassed.** Every route uses the service-role client, so security rests entirely
   on the session check plus an explicit `user_id` ownership check in the route or service. If you add a
   route, you must add both.
-  `projects` and `tasks` carried a permissive `ALL` policy for the `authenticated` role with
+  `projects` and `tasks` used to carry a permissive `ALL` policy for the `authenticated` role with
   `USING (true) WITH CHECK (true)` alongside their correct per-user policies. Permissive policies OR
   together, so any Supabase-authenticated JWT could read and write every row through PostgREST with the
-  public anon key, independently of these routes. `notes` never had this and is correctly scoped to
-  `auth.uid() = user_id`.
-  **`20260901000001_phase0_foundations.sql` drops both permissive policies.** Until that migration is
-  pushed, the hole is still open in the live database. Verified against the live database on 2026-08-24.
+  public anon key, independently of these routes.
+  **`20260901000001_phase0_foundations.sql` dropped both. Applied to the live database on 2026-09-01
+  and verified: zero permissive policies remain on either table.** Every table added since carries
+  per-user policies only. Never reintroduce a `USING (true)` policy: it silently disables every other
+  policy on the table.
 - **Never hardcode `'done'`** when excluding finished tasks. Use `CLOSED_STATES` / `closedStatesFilter()`.
-- **Never write `completed_at` or `cancelled_at`** from application code. The DB trigger owns them.
+- **Never write `completed_at`, `cancelled_at`, `completed_customer_id` or `completed_customer_name`**
+  from application code. `fn_task_state_cleanup` owns them. The two `completed_customer_*` columns are
+  a snapshot of who the work was for, taken once when it finishes, so a past report cannot be rewritten
+  by reassigning a project or renaming a customer.
+- **`tasks.customer_id` is app-writable only when `project_id IS NULL`.** With a project,
+  `fn_task_customer_sync` overwrites it from the project. `POST /api/tasks` rejects a request carrying
+  both with a 400 rather than letting the trigger silently discard one.
+- **`projects.stakeholders` is retired.** Each name becomes a customer or a contact through
+  `/customers/setup`. The column is still present but nothing reads or writes it;
+  `20260901000009_phase4_drop_stakeholders.sql` removes it and refuses to run while any name is
+  untriaged.
 - **Anything that changes more than one row is one database transaction, which means one RPC.**
   Separate `.update()` / `.insert()` calls through the Supabase client are separate PostgREST requests
   and therefore separate transactions. A service function is not a transaction boundary. Lifecycle
