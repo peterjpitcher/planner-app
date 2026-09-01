@@ -518,10 +518,43 @@ export async function getTriageData({ supabase, userId }) {
     .eq('user_id', userId)
     .order('name', { ascending: true });
 
+  // 42703 is undefined_column. This screen exists to convert
+  // projects.stakeholders, so once that column has been dropped its job is
+  // done: report an empty triage rather than a 500. Without this the page
+  // throws for good the moment the drop migration runs.
+  if (error?.code === '42703') {
+    return {
+      data: {
+        profile: {
+          projectsWithStakeholders: 0,
+          rawEntries: 0,
+          blankEntries: 0,
+          entriesWithCommas: 0,
+          distinctNames: 0,
+          emailLike: 0,
+          names: [],
+        },
+        unassignedProjects: [],
+        assignedCount: 0,
+        totalProjects: 0,
+        retired: true,
+      },
+      error: null,
+    };
+  }
+
   if (error) return { data: null, error: { status: 500, message: error.message } };
 
   const all = projects || [];
   const profile = profileStakeholders(all);
+
+  // Suggested duplicates, computed once here rather than in the browser, so the
+  // screen shows them immediately on a list of 74 names.
+  const similar = findSimilarNames(profile.names);
+  profile.names = profile.names.map((entry) => ({
+    ...entry,
+    similarTo: similar.get(entry.name) || [],
+  }));
 
   return {
     data: {
@@ -555,108 +588,352 @@ export async function getTriageData({ supabase, userId }) {
  *
  * @returns {Promise<{data: Object|null, error: Object|null}>}
  */
-export async function applyTriage({ supabase, userId, customerNames = [], assignments = [] }) {
-  const created = [];
-  const reused = [];
+/**
+ * Names that probably mean the same person or company.
+ *
+ * The real data is full of them: "Dan" and "Daniel Nixon", "Bill" and "Billy",
+ * "Michael O'Neill" and "ONeill", "Georgia" and "Georgia Cairns". A free-text
+ * box collected over years will always look like this.
+ *
+ * Three cheap rules catch every one of those shapes:
+ *   - one is a prefix of the other        Dan / Daniel Nixon, Bill / Billy
+ *   - one contains the other as a word    Michael O'Neill / ONeill
+ *   - they are within two edits           typos
+ *
+ * Punctuation and case are stripped first, which is what makes O'Neill and
+ * ONeill comparable at all.
+ *
+ * This only ever SUGGESTS. Merging two names that are genuinely two people is
+ * far worse than leaving two rows on screen, and no rule can tell the
+ * difference, so the decision stays with the user.
+ *
+ * @param {Array<{name: string}>} names
+ * @returns {Map<string, string[]>} name to the names it might duplicate
+ */
+export function findSimilarNames(names = []) {
+  const normalise = (value) =>
+    String(value ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const prepared = names.map((entry) => ({
+    name: entry.name,
+    key: normalise(entry.name),
+    words: new Set(normalise(entry.name).split(' ').filter(Boolean)),
+  }));
+
+  const suggestions = new Map();
+
+  for (let i = 0; i < prepared.length; i += 1) {
+    for (let j = i + 1; j < prepared.length; j += 1) {
+      const a = prepared[i];
+      const b = prepared[j];
+      if (!a.key || !b.key || a.key === b.key) continue;
+
+      const shorter = a.key.length <= b.key.length ? a : b;
+      const longer = shorter === a ? b : a;
+
+      const isPrefix = longer.key.startsWith(shorter.key);
+      // Whole-word containment, so "Ann" does not match "Joanna".
+      const sharesWord = [...shorter.words].some((word) => word.length >= 3 && longer.words.has(word));
+      const isNearMiss =
+        Math.abs(a.key.length - b.key.length) <= 2 && editDistance(a.key, b.key) <= 2;
+
+      if (isPrefix || sharesWord || isNearMiss) {
+        if (!suggestions.has(a.name)) suggestions.set(a.name, []);
+        if (!suggestions.has(b.name)) suggestions.set(b.name, []);
+        suggestions.get(a.name).push(b.name);
+        suggestions.get(b.name).push(a.name);
+      }
+    }
+  }
+
+  return suggestions;
+}
+
+function editDistance(a, b) {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+/**
+ * Resolve a customer by name, creating it if it does not exist.
+ *
+ * Shared by the triage decisions and the project assignments so both agree on
+ * what counts as the same customer: the case-insensitive, whitespace-collapsed
+ * name, exactly as the unique index sees it.
+ */
+async function resolveOrCreateCustomer({ supabase, userId, name, cache, created }) {
+  const normalised = normaliseName(name);
+  if (!normalised) return null;
+
+  const key = normalised.toLowerCase();
+  if (cache.has(key)) return cache.get(key);
+
+  const { data: existing } = await findCustomerByName({ supabase, userId, name: normalised });
+  if (existing) {
+    cache.set(key, existing);
+    return existing;
+  }
+
+  const { data: fresh, error } = await createCustomer({
+    supabase,
+    userId,
+    payload: { name: normalised },
+  });
+
+  if (error) {
+    // 409 means it appeared between the lookup and the insert. Re-read rather
+    // than failing the whole run.
+    if (error.status === 409) {
+      const { data: raced } = await findCustomerByName({ supabase, userId, name: normalised });
+      if (raced) cache.set(key, raced);
+      return raced || null;
+    }
+    throw Object.assign(new Error(error.message), { triageError: error });
+  }
+
+  created.push(fresh.name);
+  cache.set(key, fresh);
+  return fresh;
+}
+
+/**
+ * Apply the triage.
+ *
+ * Each decision names a **target**, which is what makes merging work: mark both
+ * "Dan" and "Daniel Nixon" as a person called "Daniel Nixon" and they resolve
+ * to one contact, with the projects from both names linked to it. Nothing about
+ * this is automatic, because two names that look alike are sometimes two people.
+ *
+ * @param {Object} params
+ * @param {Array<{stakeholder: string, type: 'customer'|'person', targetName: string, customerName?: string}>} params.decisions
+ * @param {Array<{projectId: string, customerId?: string, customerName?: string}>} params.assignments
+ * @returns {Promise<{data: Object|null, error: Object|null}>}
+ */
+export async function applyTriage({ supabase, userId, decisions = [], assignments = [] }) {
+  const customersCreated = [];
+  const contactsCreated = [];
   const conflicts = [];
   let assignedProjects = 0;
+  let linkedContacts = 0;
 
   const { data: projects, error: projectError } = await supabase
     .from('projects')
     .select('id, name, stakeholders, customer_id')
     .eq('user_id', userId);
 
+  // The column is gone, so there is nothing left to convert. Say so plainly
+  // rather than failing.
+  if (projectError?.code === '42703') {
+    return {
+      data: {
+        customersCreated: [],
+        contactsCreated: [],
+        projectsAssigned: 0,
+        contactsLinked: 0,
+        conflicts: [],
+        retired: true,
+      },
+      error: null,
+    };
+  }
+
   if (projectError) {
     return { data: null, error: { status: 500, message: projectError.message } };
   }
 
-  const projectById = new Map((projects || []).map((project) => [project.id, project]));
+  const allProjects = projects || [];
+  const projectById = new Map(allProjects.map((project) => [project.id, project]));
+  const customerCache = new Map();
+  const contactCache = new Map();
 
-  for (const rawName of customerNames) {
-    const name = normaliseName(rawName);
-    if (!name) continue;
-
-    const { data: existing } = await findCustomerByName({ supabase, userId, name });
-
-    let customer = existing;
-    if (!customer) {
-      const { data: fresh, error: createError } = await createCustomer({
-        supabase,
-        userId,
-        payload: { name },
-      });
-      if (createError) {
-        // A 409 means someone created it between the lookup and the insert.
-        // Re-read rather than failing the whole run.
-        if (createError.status === 409) {
-          const { data: raced } = await findCustomerByName({ supabase, userId, name });
-          customer = raced;
-        } else {
-          return { data: null, error: createError };
-        }
-      } else {
-        customer = fresh;
-        created.push(customer.name);
-      }
-    } else {
-      reused.push(customer.name);
-    }
-
-    if (!customer) continue;
-
-    // Every project carrying this stakeholder, unless it already has a
-    // different customer.
-    const matching = (projects || []).filter((project) =>
+  /** Projects whose stakeholder array contains this exact name. */
+  const projectsForStakeholder = (name) =>
+    allProjects.filter((project) =>
       (Array.isArray(project.stakeholders) ? project.stakeholders : []).some((entry) =>
-        splitStakeholderEntry(entry).some((part) => part.toLowerCase() === name.toLowerCase())
+        String(entry ?? '')
+          .split(',')
+          .map((part) => normaliseName(part).toLowerCase())
+          .includes(name.toLowerCase())
       )
     );
 
-    for (const project of matching) {
-      if (project.customer_id && project.customer_id !== customer.id) {
-        conflicts.push({ projectId: project.id, projectName: project.name, stakeholder: name });
+  try {
+    for (const decision of decisions) {
+      const stakeholder = normaliseName(decision?.stakeholder);
+      const targetName = normaliseName(decision?.targetName) || stakeholder;
+      if (!stakeholder || !targetName) continue;
+
+      const matching = projectsForStakeholder(stakeholder);
+
+      if (decision.type === 'customer') {
+        const customer = await resolveOrCreateCustomer({
+          supabase,
+          userId,
+          name: targetName,
+          cache: customerCache,
+          created: customersCreated,
+        });
+        if (!customer) continue;
+
+        for (const project of matching) {
+          if (project.customer_id && project.customer_id !== customer.id) {
+            // A customer set by hand is much stronger evidence than a
+            // stakeholder name matching, so it is never overwritten.
+            conflicts.push({
+              projectId: project.id,
+              projectName: project.name,
+              stakeholder,
+            });
+            continue;
+          }
+          if (project.customer_id === customer.id) continue;
+
+          const { error } = await supabase
+            .from('projects')
+            .update({ customer_id: customer.id })
+            .eq('id', project.id)
+            .eq('user_id', userId);
+          if (error) return { data: null, error: { status: 500, message: error.message } };
+
+          assignedProjects += 1;
+          project.customer_id = customer.id;
+        }
         continue;
       }
-      if (project.customer_id === customer.id) continue;
 
-      const { error: updateError } = await supabase
-        .from('projects')
-        .update({ customer_id: customer.id })
-        .eq('id', project.id)
-        .eq('user_id', userId);
+      if (decision.type === 'person') {
+        // A person can belong to a company, which is how several stakeholders
+        // at one client end up under a single customer.
+        let customer = null;
+        if (decision.customerName) {
+          customer = await resolveOrCreateCustomer({
+            supabase,
+            userId,
+            name: decision.customerName,
+            cache: customerCache,
+            created: customersCreated,
+          });
+        }
 
-      if (updateError) {
-        return { data: null, error: { status: 500, message: updateError.message } };
+        const contactKey = `${targetName.toLowerCase()}::${customer?.id || 'standalone'}`;
+        let contact = contactCache.get(contactKey) || null;
+
+        if (!contact) {
+          let query = supabase
+            .from('contacts')
+            .select('id, name, customer_id')
+            .eq('user_id', userId)
+            .ilike('name', targetName);
+          query = customer ? query.eq('customer_id', customer.id) : query.is('customer_id', null);
+
+          const { data: found } = await query.maybeSingle();
+          contact = found || null;
+        }
+
+        if (!contact) {
+          const { data: fresh, error } = await supabase
+            .from('contacts')
+            .insert({
+              user_id: userId,
+              customer_id: customer?.id || null,
+              name: targetName,
+            })
+            .select('id, name, customer_id')
+            .single();
+          if (error) return { data: null, error: { status: 400, message: error.message } };
+          contact = fresh;
+          contactsCreated.push(contact.name);
+        }
+
+        contactCache.set(contactKey, contact);
+
+        for (const project of matching) {
+          const { error } = await supabase
+            .from('project_contacts')
+            .upsert(
+              { project_id: project.id, contact_id: contact.id, user_id: userId },
+              { onConflict: 'project_id,contact_id', ignoreDuplicates: true }
+            );
+          if (error) return { data: null, error: { status: 500, message: error.message } };
+          linkedContacts += 1;
+
+          // Assigning the person's company to the project too, when the project
+          // has none. Without this, marking everyone at a client as people
+          // would leave their projects unattached, which is the situation this
+          // screen exists to fix.
+          if (customer && !project.customer_id) {
+            const { error: assignError } = await supabase
+              .from('projects')
+              .update({ customer_id: customer.id })
+              .eq('id', project.id)
+              .eq('user_id', userId);
+            if (assignError) {
+              return { data: null, error: { status: 500, message: assignError.message } };
+            }
+            assignedProjects += 1;
+            project.customer_id = customer.id;
+          }
+        }
       }
+    }
+
+    // Manual assignments last, so an explicit choice always beats one inferred
+    // from a stakeholder name.
+    for (const assignment of assignments) {
+      const project = projectById.get(assignment.projectId);
+      if (!project) continue;
+
+      let customerId = assignment.customerId || null;
+
+      // Creating a customer straight from a project row. Without this, a
+      // project whose customer is not already in the list and is not one of its
+      // stakeholder names could not be assigned at all.
+      if (!customerId && assignment.customerName) {
+        const customer = await resolveOrCreateCustomer({
+          supabase,
+          userId,
+          name: assignment.customerName,
+          cache: customerCache,
+          created: customersCreated,
+        });
+        customerId = customer?.id || null;
+      }
+
+      if (!customerId || project.customer_id === customerId) continue;
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ customer_id: customerId })
+        .eq('id', assignment.projectId)
+        .eq('user_id', userId);
+      if (error) return { data: null, error: { status: 500, message: error.message } };
+
       assignedProjects += 1;
-      project.customer_id = customer.id;
+      project.customer_id = customerId;
     }
-  }
-
-  // Manual assignments last, so an explicit choice always beats one inferred
-  // from a stakeholder name.
-  for (const assignment of assignments) {
-    const project = projectById.get(assignment.projectId);
-    if (!project) continue;
-    if (project.customer_id === assignment.customerId) continue;
-
-    const { error: updateError } = await supabase
-      .from('projects')
-      .update({ customer_id: assignment.customerId || null })
-      .eq('id', assignment.projectId)
-      .eq('user_id', userId);
-
-    if (updateError) {
-      return { data: null, error: { status: 500, message: updateError.message } };
-    }
-    assignedProjects += 1;
+  } catch (thrown) {
+    if (thrown?.triageError) return { data: null, error: thrown.triageError };
+    throw thrown;
   }
 
   return {
     data: {
-      customersCreated: created,
-      customersReused: reused,
+      customersCreated: [...new Set(customersCreated)],
+      contactsCreated: [...new Set(contactsCreated)],
       projectsAssigned: assignedProjects,
+      contactsLinked: linkedContacts,
       conflicts,
     },
     error: null,

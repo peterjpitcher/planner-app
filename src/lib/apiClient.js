@@ -558,10 +558,10 @@ class APIClient {
     return response?.data ?? response;
   }
 
-  async applyCustomerTriage({ customerNames = [], assignments = [] }) {
+  async applyCustomerTriage({ decisions = [], assignments = [] }) {
     const result = await this.fetchWithAuth('/api/customers/triage', {
       method: 'POST',
-      body: JSON.stringify({ customerNames, assignments }),
+      body: JSON.stringify({ decisions, assignments }),
     });
     clearCustomerCaches();
     clearCache('projects-true');

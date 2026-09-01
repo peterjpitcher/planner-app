@@ -55,7 +55,7 @@ export async function POST(request) {
     const { data, error } = await applyTriage({
       supabase: getSupabaseServiceRole(),
       userId: session.user.id,
-      customerNames: Array.isArray(body?.customerNames) ? body.customerNames : [],
+      decisions: Array.isArray(body?.decisions) ? body.decisions : [],
       assignments: Array.isArray(body?.assignments) ? body.assignments : [],
     });
 
