@@ -39,6 +39,13 @@ BEGIN
   AND NOT EXISTS (
     SELECT 1 FROM public.contacts ct
      WHERE ct.user_id = s.user_id AND lower(btrim(ct.name)) = lower(s.name)
+  )
+  -- A name can also be decided without becoming a record of its own: merged
+  -- into another spelling, or discarded as a filing tag. Both are decisions,
+  -- and without this the guard would block forever on names already dealt with.
+  AND NOT EXISTS (
+    SELECT 1 FROM public.stakeholder_resolutions sr
+     WHERE sr.user_id = s.user_id AND lower(btrim(sr.name)) = lower(s.name)
   );
 
   IF v_untriaged IS NOT NULL AND array_length(v_untriaged, 1) > 0 THEN
