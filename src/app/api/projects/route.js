@@ -66,9 +66,7 @@ export async function GET(request) {
     
     let query = supabase
       .from('projects')
-      // The customer name comes along so the sidebar can offer a customer
-      // filter without a second round trip per project.
-      .select('*, customer:customer_id(name)', { count: 'exact' })
+      .select('*', { count: 'exact' })
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -84,12 +82,29 @@ export async function GET(request) {
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
     
+    // Customer names are looked up separately rather than embedded.
+    //
+    // projects.customer_id is half of a COMPOSITE foreign key,
+    // (customer_id, user_id) -> customers(id, user_id), which is what stops the
+    // database linking a customer to another user's project. PostgREST cannot
+    // resolve an embed hinted on customer_id alone against a composite key, so
+    // `customer:customer_id(name)` fails the whole request. One extra read of a
+    // handful of rows is cheaper than weakening the constraint.
+    const customerIds = [...new Set((data || []).map((p) => p.customer_id).filter(Boolean))];
+    let customerNames = new Map();
+    if (customerIds.length > 0) {
+      const { data: customers } = await supabase
+        .from('customers')
+        .select('id, name')
+        .eq('user_id', session.user.id)
+        .in('id', customerIds);
+      customerNames = new Map((customers || []).map((c) => [c.id, c.name]));
+    }
+
     return NextResponse.json({ 
-      // Flattened to customer_name, so components read one field rather than a
-      // nested object that only some code paths would remember to unwrap.
-      data: (data || []).map(({ customer, ...project }) => ({
+      data: (data || []).map((project) => ({
         ...project,
-        customer_name: customer?.name || null,
+        customer_name: project.customer_id ? customerNames.get(project.customer_id) || null : null,
       })),
       pagination: {
         total: count || 0,
