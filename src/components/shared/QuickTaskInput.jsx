@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlusIcon } from '@heroicons/react/20/solid';
 
 import { apiClient } from '@/lib/apiClient';
-import { parseQuickTaskDate } from '@/lib/quickTaskDateParser';
+import { findNearMiss, parseQuickTask } from '@/lib/quickTaskParser';
 import { getLondonDateKey } from '@/lib/timezone';
 
 /**
@@ -61,6 +61,7 @@ export function parseQuickTasks(value) {
 export default function QuickTaskInput({
   mode = 'single',
   projectId = null,
+  customerId = null,
   onTaskAdded,
   disabled = false,
   state = 'backlog',
@@ -70,10 +71,36 @@ export default function QuickTaskInput({
   const [value, setValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [customers, setCustomers] = useState([]);
   const inputRef = useRef(null);
 
   const baseDateKey = getLondonDateKey();
   const isDisabled = disabled || isSubmitting;
+
+  // A task on a project takes the project's customer: fn_task_customer_sync
+  // overwrites customer_id on write. Accepting a token here would promise a
+  // link the database immediately discards, so the parser refuses it outright.
+  const allowCustomerToken = !projectId;
+
+  useEffect(() => {
+    if (!allowCustomerToken) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const list = await apiClient.getCustomersForCapture();
+        if (!cancelled) setCustomers(list);
+      } catch {
+        // An empty list degrades @Name to "create this customer", which is
+        // still correct. Better than blocking capture on a failed side load.
+        if (!cancelled) setCustomers([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allowCustomerToken]);
 
   const taskNames = useMemo(
     () => (isMulti ? parseQuickTasks(value) : [value.trim()].filter(Boolean)),
@@ -81,18 +108,33 @@ export default function QuickTaskInput({
   );
 
   const parsedTasks = useMemo(
-    () => taskNames.map((name) => parseQuickTaskDate(name, baseDateKey)),
-    [taskNames, baseDateKey]
+    () =>
+      taskNames.map((name) =>
+        parseQuickTask(name, { baseDateKey, customers, allowCreate: allowCustomerToken })
+      ),
+    [taskNames, baseDateKey, customers, allowCustomerToken]
   );
+
+  const parseErrors = parsedTasks.filter((task) => task.error);
 
   // Only surface a preview for lines where the parser actually did something,
   // so a plain "call Bob" does not get a redundant "due today" annotation.
   const recognisedDates = parsedTasks.filter(
-    (task, index) => task.name !== taskNames[index] || task.dueDate !== baseDateKey
+    (task, index) =>
+      !task.error &&
+      (task.name !== taskNames[index] || task.dueDate !== baseDateKey || task.customerName)
   );
 
   async function submit() {
     if (isDisabled || taskNames.length === 0) return;
+
+    // A parse error means the line is ambiguous (two @ tokens, an unclosed
+    // quote, a token on a project input). Guessing would file the task
+    // somewhere the preview did not show, so nothing is written.
+    if (parseErrors.length > 0) {
+      setResult({ type: 'error', message: parseErrors[0].error });
+      return;
+    }
 
     if (isMulti && taskNames.length > MAX_TASKS) {
       setResult({ type: 'error', message: `Add up to ${MAX_TASKS} tasks at a time.` });
@@ -125,6 +167,13 @@ export default function QuickTaskInput({
           projectId: projectId ?? null,
           dueDate: task.dueDate,
           state,
+          // customer_name goes to the server as a name, not an id, so the
+          // resolve-or-create and the task insert happen in one transaction.
+          // Two client calls would leave an empty customer behind whenever the
+          // task failed. The RPC's ON CONFLICT also makes two lines naming the
+          // same new customer resolve to one row instead of racing.
+          customer_id: task.customerId ?? customerId ?? undefined,
+          customer_name: task.createsCustomer ? task.customerName : undefined,
         })
       )
     );
@@ -193,6 +242,11 @@ export default function QuickTaskInput({
 
   if (!isMulti) {
     const preview = recognisedDates[0];
+    const parseError = parseErrors[0]?.error || null;
+    const warning = parsedTasks[0]?.warning || null;
+    const nearMiss = preview?.createsCustomer
+      ? findNearMiss(preview.customerName, customers)
+      : null;
 
     return (
       <form onSubmit={handleSubmit} className="mt-2 flex flex-col gap-1">
@@ -231,12 +285,43 @@ export default function QuickTaskInput({
             <span className="font-medium">{preview.name}</span>
             {' · due '}
             {formatDueDate(preview.dueDate, { short: true })}
+            {preview.customerName && (
+              <>
+                {' · '}
+                <span
+                  className={
+                    preview.createsCustomer
+                      ? 'font-medium text-emerald-700'
+                      : 'font-medium text-indigo-700'
+                  }
+                >
+                  {preview.createsCustomer
+                    ? `New customer: ${preview.customerName}`
+                    : preview.customerName}
+                </span>
+              </>
+            )}
           </p>
         )}
 
-        {result?.type === 'error' && (
+        {/* A near miss is shown, never autocorrected. Typing @Acmme when Acme
+            exists is usually a typo, but it is also how a genuinely new,
+            similar name gets created, so the decision stays with the user. */}
+        {nearMiss && (
+          <p aria-live="polite" className="text-xs text-amber-600">
+            Did you mean {nearMiss.name}?
+          </p>
+        )}
+
+        {warning && !parseError && (
+          <p aria-live="polite" className="text-xs text-amber-600">
+            {warning}
+          </p>
+        )}
+
+        {(parseError || result?.type === 'error') && (
           <p className="text-xs text-red-500" role="alert">
-            {result.message}
+            {parseError || result.message}
           </p>
         )}
       </form>
@@ -295,7 +380,20 @@ export default function QuickTaskInput({
                 key={`${task.name}-${task.dueDate}-${index}`}
                 className="flex items-start justify-between gap-3 text-xs"
               >
-                <span className="min-w-0 truncate text-slate-600">{task.name}</span>
+                <span className="min-w-0 truncate text-slate-600">
+                  {task.name}
+                  {task.customerName && (
+                    <span
+                      className={
+                        task.createsCustomer
+                          ? 'ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700'
+                          : 'ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700'
+                      }
+                    >
+                      {task.createsCustomer ? `new: ${task.customerName}` : task.customerName}
+                    </span>
+                  )}
+                </span>
                 <span className="shrink-0 font-medium text-sky-700">
                   {formatDueDate(task.dueDate)}
                 </span>
@@ -305,9 +403,15 @@ export default function QuickTaskInput({
         </div>
       )}
 
+      {parseErrors.length > 0 && (
+        <p role="alert" className="mt-2 text-xs font-medium text-rose-600">
+          {parseErrors[0].error}
+        </p>
+      )}
+
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <p id="quick-task-list-help" className="text-[11px] text-slate-400">
-          Try “tomorrow”, “next Friday”, “in a week” or “on September 1”
+          Try “tomorrow”, “next Friday”, “@Customer” or “for Customer”
         </p>
         <button
           type="submit"

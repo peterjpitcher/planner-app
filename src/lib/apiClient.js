@@ -493,6 +493,22 @@ class APIClient {
     return response.data || [];
   }
 
+  /**
+   * Minimal id-and-name list for the capture autocomplete and the @token
+   * resolver. Deduped and cached separately from the full list, because it is
+   * read on every keystroke while the full one is read per page load.
+   */
+  async getCustomersForCapture() {
+    return dedupedFetch('customers-capture', async () => {
+      const response = await this.fetchWithAuth('/api/customers');
+      return (response.data || []).map((customer) => ({
+        id: customer.id,
+        name: customer.name,
+        archived_at: customer.archived_at,
+      }));
+    });
+  }
+
   async getCustomer(customerId) {
     const response = await this.fetchWithAuth(`/api/customers/${customerId}`);
     return response?.data ?? response;
