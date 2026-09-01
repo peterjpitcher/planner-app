@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { TrashIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
@@ -8,13 +8,14 @@ import { cn } from '@/lib/utils';
 /**
  * Confirmation for deleting a project.
  *
- * Replaces a window.confirm that read "Delete this project? Tasks will become
- * unassigned." That was true but incomplete, and the omission was the dangerous
- * part: tasks do survive (tasks.project_id is ON DELETE SET NULL) but
- * notes.project_id is still ON DELETE CASCADE, so every note attached to the
- * project is destroyed permanently with no warning and no undo.
+ * This dialog used to lead with a warning that deleting a project destroyed
+ * every note on it, permanently, with no undo. That was accurate:
+ * notes.project_id was ON DELETE CASCADE.
  *
- * This dialog states both outcomes explicitly and leads with the destructive one.
+ * It no longer is. The notes now move to the project's customer, or become
+ * unfiled when it has none, and only an explicit opt-in destroys them. So the
+ * dialog's job changed with it: say what is KEPT and where it goes, and reserve
+ * the warning for the one path that actually loses something.
  */
 export default function ProjectDeleteModal({
   isOpen,
@@ -23,10 +24,17 @@ export default function ProjectDeleteModal({
   projectName,
   taskCount = 0,
   noteCount = 0,
+  customerName = null,
   loading = false,
   submitting = false,
   error = null,
 }) {
+  const [destroyContent, setDestroyContent] = useState(false);
+
+  // Reset between openings so a tick on one project cannot carry to the next.
+  useEffect(() => {
+    if (isOpen) setDestroyContent(false);
+  }, [isOpen]);
   return (
     <Transition.Root show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={submitting ? () => {} : onClose}>
@@ -67,15 +75,6 @@ export default function ProjectDeleteModal({
                     <p className="text-gray-500">Checking what this affects...</p>
                   ) : (
                     <>
-                      {noteCount > 0 && (
-                        <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-red-700">
-                          <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                          <span>
-                            <strong>{noteCount} project note{noteCount === 1 ? '' : 's'}</strong>{' '}
-                            {noteCount === 1 ? 'will be' : 'will be'} permanently deleted.
-                          </span>
-                        </div>
-                      )}
                       <div className="rounded-md bg-gray-50 px-3 py-2 text-gray-600">
                         {taskCount > 0 ? (
                           <>
@@ -86,9 +85,48 @@ export default function ProjectDeleteModal({
                           'This project has no open tasks.'
                         )}
                       </div>
-                      {noteCount === 0 && !loading && (
+
+                      {noteCount > 0 && !destroyContent && (
+                        <div className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-800">
+                          <strong>{noteCount} note{noteCount === 1 ? '' : 's'}</strong> will be kept
+                          {customerName ? (
+                            <> and moved to <strong>{customerName}</strong>&apos;s record.</>
+                          ) : (
+                            <>. This project has no customer, so they will be left unfiled and
+                            listed on the Customers page.</>
+                          )}
+                        </div>
+                      )}
+
+                      {noteCount > 0 && destroyContent && (
+                        <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-red-700">
+                          <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span>
+                            <strong>{noteCount} note{noteCount === 1 ? '' : 's'}</strong> will be
+                            permanently deleted. This cannot be undone.
+                          </span>
+                        </div>
+                      )}
+
+                      {noteCount === 0 && (
                         <p className="text-xs text-gray-500">This project has no notes.</p>
                       )}
+
+                      {/* Never the default. Deleting the notes is a separate,
+                          deliberate choice from deleting the project. */}
+                      {noteCount > 0 && (
+                        <label className="flex items-start gap-2 pt-1 text-xs text-gray-600">
+                          <input
+                            type="checkbox"
+                            checked={destroyContent}
+                            onChange={(event) => setDestroyContent(event.target.checked)}
+                            disabled={submitting}
+                            className="mt-0.5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                          <span>Delete the notes too, rather than keeping them.</span>
+                        </label>
+                      )}
+
                       <p className="text-xs text-gray-500">
                         Its Microsoft To Do list will also be removed from Outlook.
                       </p>
@@ -107,7 +145,7 @@ export default function ProjectDeleteModal({
                   <button
                     type="button"
                     disabled={loading || submitting}
-                    onClick={onConfirm}
+                    onClick={() => onConfirm({ destroyContent })}
                     className={cn(
                       'inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 sm:w-auto',
                       (loading || submitting) && 'cursor-not-allowed opacity-60'

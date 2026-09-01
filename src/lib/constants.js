@@ -9,6 +9,27 @@ export const PROJECT_STATUS = {
   CANCELLED: 'Cancelled'
 };
 
+// Customer lifecycle.
+//
+// Deliberately not PROJECT_STATUS. A customer is not a project and should not
+// borrow its vocabulary: "On Hold" and "In Progress" mean nothing about a
+// relationship, and "Completed" is not the same thing as "Former".
+export const CUSTOMER_STATUS = {
+  ACTIVE: 'Active',
+  PROSPECT: 'Prospect',
+  DORMANT: 'Dormant',
+  FORMER: 'Former'
+};
+
+// Statuses that can still take new projects and tasks without a confirmation.
+// Former can too, but is flagged in the UI first. Archived cannot at all,
+// regardless of status: archive means "this is finished".
+export const CUSTOMER_ACTIVE_STATUSES = [
+  CUSTOMER_STATUS.ACTIVE,
+  CUSTOMER_STATUS.PROSPECT,
+  CUSTOMER_STATUS.DORMANT
+];
+
 // Task States
 export const STATE = {
   TODAY: 'today',
@@ -195,8 +216,17 @@ export const VALIDATION = {
   PROJECT_NAME_MAX: 255,
   TASK_NAME_MIN: 1,
   TASK_NAME_MAX: 255,
-  NOTE_MAX: 1000,
+  // Raised from 1000 in Phase 2, alongside the textarea. 1000 characters could
+  // not hold a pasted email thread, which is exactly what customer notes are
+  // for. The API cap and the input now agree.
+  NOTE_MAX: 20000,
   DESCRIPTION_MAX: 1000,
   STAKEHOLDER_MAX: 50,
-  MAX_STAKEHOLDERS: 10
+  MAX_STAKEHOLDERS: 10,
+  // Customers. The name limit matches the customers_name_length check
+  // constraint, so the API rejects an over-long name with a 400 rather than
+  // letting the database raise a 500.
+  CUSTOMER_NAME_MAX: 120,
+  CUSTOMER_SUMMARY_MAX: 2000,
+  CUSTOMER_WEBSITE_MAX: 500
 };

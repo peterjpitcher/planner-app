@@ -5,6 +5,9 @@ import {
   validateTask,
   validateNote,
   validateIdea,
+  validateCustomer,
+  isSafeWebUrl,
+  normaliseName,
 } from '../validators.js';
 
 // ---------------------------------------------------------------------------
@@ -194,19 +197,7 @@ describe('validateProject', () => {
     expect(result.isValid).toBe(true);
   });
 
-  it('rejects too many stakeholders', () => {
-    const result = validateProject({
-      ...baseProject,
-      stakeholders: Array(11).fill('Alice'),
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.errors.stakeholders).toBeDefined();
-  });
 
-  it('accepts valid stakeholders', () => {
-    const result = validateProject({ ...baseProject, stakeholders: ['Alice', 'Bob'] });
-    expect(result.isValid).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -322,5 +313,105 @@ describe('validateIdea', () => {
     });
     expect(result.isValid).toBe(true);
     expect(Object.keys(result.errors)).toHaveLength(0);
+  });
+});
+
+describe('isSafeWebUrl', () => {
+  it('allows http and https', () => {
+    expect(isSafeWebUrl('https://acme.example')).toBe(true);
+    expect(isSafeWebUrl('http://acme.example/path?q=1')).toBe(true);
+  });
+
+  it('blocks javascript:, which would execute from the customer header link', () => {
+    expect(isSafeWebUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeWebUrl('JavaScript:alert(1)')).toBe(false);
+  });
+
+  it('blocks other schemes rather than listing bad ones', () => {
+    // The set of URL schemes is open-ended, so the allowlist has to be positive.
+    expect(isSafeWebUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+    expect(isSafeWebUrl('file:///etc/passwd')).toBe(false);
+    expect(isSafeWebUrl('vbscript:msgbox(1)')).toBe(false);
+  });
+
+  it('rejects a bare domain, because it cannot be put in an href as-is', () => {
+    expect(isSafeWebUrl('acme.example')).toBe(false);
+  });
+
+  it('rejects empty and non-string values', () => {
+    expect(isSafeWebUrl('')).toBe(false);
+    expect(isSafeWebUrl('   ')).toBe(false);
+    expect(isSafeWebUrl(null)).toBe(false);
+    expect(isSafeWebUrl(undefined)).toBe(false);
+  });
+});
+
+describe('normaliseName', () => {
+  it('collapses runs of whitespace and trims', () => {
+    // The unique index does the same, so the API's 409 and the database
+    // constraint have to agree about what counts as the same name.
+    expect(normaliseName('  Acme   Ltd  ')).toBe('Acme Ltd');
+    expect(normaliseName('Acme\n\tLtd')).toBe('Acme Ltd');
+  });
+
+  it('handles null and undefined without throwing', () => {
+    expect(normaliseName(null)).toBe('');
+    expect(normaliseName(undefined)).toBe('');
+  });
+});
+
+describe('validateCustomer', () => {
+  it('accepts a minimal customer', () => {
+    expect(validateCustomer({ name: 'Acme' }).isValid).toBe(true);
+  });
+
+  it('requires a name', () => {
+    expect(validateCustomer({ name: '   ' }).errors.name).toBeTruthy();
+    expect(validateCustomer({}).errors.name).toBeTruthy();
+  });
+
+  it('enforces the same name limit as the database check constraint', () => {
+    // Matching the constraint means an over-long name gets a 400 from the API
+    // rather than a 500 from Postgres.
+    expect(validateCustomer({ name: 'x'.repeat(120) }).isValid).toBe(true);
+    expect(validateCustomer({ name: 'x'.repeat(121) }).errors.name).toBeTruthy();
+  });
+
+  it('normalises whitespace-like control characters rather than rejecting them', () => {
+    // A pasted name with a newline in it is a formatting accident, not an
+    // attack, and normaliseName has already turned it into a space by the time
+    // the check runs. Rejecting it would be unhelpful.
+    const withNewline = 'Acme' + String.fromCharCode(10) + 'Ltd';
+    const result = validateCustomer({ name: withNewline });
+    expect(result.isValid).toBe(true);
+    expect(normaliseName(withNewline)).toBe('Acme Ltd');
+  });
+
+  it('rejects control characters that are not whitespace', () => {
+    // A null byte or an escape character in a name would break the display and
+    // could make two different rows look identical in the picker.
+    const withNull = 'Acme' + String.fromCharCode(0) + 'Ltd';
+    const withEscape = 'Acme' + String.fromCharCode(27) + 'Ltd';
+    expect(validateCustomer({ name: withNull }).errors.name).toBeTruthy();
+    expect(validateCustomer({ name: withEscape }).errors.name).toBeTruthy();
+  });
+
+  it('rejects an unknown status', () => {
+    expect(validateCustomer({ name: 'Acme', status: 'Nonsense' }).errors.status).toBeTruthy();
+  });
+
+  it('accepts every real status', () => {
+    ['Active', 'Prospect', 'Dormant', 'Former'].forEach((status) => {
+      expect(validateCustomer({ name: 'Acme', status }).isValid).toBe(true);
+    });
+  });
+
+  it('rejects an unsafe website', () => {
+    expect(validateCustomer({ name: 'Acme', website: 'javascript:alert(1)' }).errors.website)
+      .toBeTruthy();
+  });
+
+  it('allows no website at all', () => {
+    expect(validateCustomer({ name: 'Acme', website: null }).isValid).toBe(true);
   });
 });

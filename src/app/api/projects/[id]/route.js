@@ -9,15 +9,18 @@ import {
   getOffice365ListIdForProject,
   syncOffice365Project,
 } from '@/services/office365SyncService';
-import { cascadeProjectStatusToTasks } from '@/services/projectLifecycleService';
+import {
+  changeProjectStatus,
+  deleteProjectPreservingContent,
+} from '@/services/projectLifecycleService';
 
 const PROJECT_UPDATE_FIELDS = [
   'name',
   'description',
   'status',
   'due_date',
-  'stakeholders',
   'area',
+  'customer_id',
 ];
 
 function pickProjectUpdates(payload) {
@@ -73,7 +76,7 @@ export async function PATCH(request, { params }) {
   // Verify ownership
   const { data: existingProject, error: fetchError } = await supabase
     .from('projects')
-    .select('id, user_id, name, description, status, due_date, stakeholders, area')
+    .select('id, user_id, name, description, status, due_date, area, customer_id')
       .eq('id', id)
       .single();
     
@@ -91,46 +94,66 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Validation failed', details: validation.errors }, { status: 400 });
     }
 
-    // Update project
-    const { data, error } = await supabase
-      .from('projects')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    // A status change is a lifecycle operation, not a field update: it closes
+    // the project's open work, moves its notes onto the customer's record,
+    // writes the close-out note and adds any key facts. That spans five tables,
+    // so it runs as one Postgres transaction rather than a sequence of writes
+    // here. The status is therefore held back from the ordinary update and
+    // applied by the RPC.
+    const { status: nextStatus, ...fieldUpdates } = updates;
+    const statusChanging =
+      Object.prototype.hasOwnProperty.call(updates, 'status')
+      && nextStatus !== existingProject.status;
 
-    if (error) {
-      const errorMessage = handleSupabaseError(error, 'update');
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+    let data = existingProject;
+
+    if (Object.keys(fieldUpdates).length > 0) {
+      const { data: updated, error } = await supabase
+        .from('projects')
+        .update({
+          ...fieldUpdates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        const errorMessage = handleSupabaseError(error, 'update');
+        return NextResponse.json({ error: errorMessage }, { status: 400 });
+      }
+      data = updated;
     }
 
-    // Cascade a status change to the project's tasks. Closing a project closes
-    // its open work (Completed -> done, Cancelled -> cancelled); reopening a
-    // cancelled project returns its tasks to backlog. Done server-side so the
-    // rule holds for every caller, not just the projects page.
     let cascade = { tasksChanged: 0, taskState: null };
-    if (Object.prototype.hasOwnProperty.call(updates, 'status')
-        && updates.status !== existingProject.status) {
-      const cascadeResult = await cascadeProjectStatusToTasks({
+    if (statusChanging) {
+      const cascadeResult = await changeProjectStatus({
         supabase,
         userId: session.user.id,
         projectId: id,
         previousStatus: existingProject.status,
-        nextStatus: updates.status,
+        nextStatus,
+        // Optional, and only meaningful on a close. The modal collects them.
+        closeoutNote: typeof body?.closeout_note === 'string' ? body.closeout_note : null,
+        facts: Array.isArray(body?.closeout_facts) ? body.closeout_facts : null,
       });
-      // A failed cascade leaves the project closed but its tasks live, which is
-      // exactly the inconsistency this route exists to prevent. Surface it
-      // rather than reporting a clean success.
+
+      // The whole change either happened or it did not, so there is no longer a
+      // "project updated but tasks were not" state to report.
       if (cascadeResult.error) {
         return NextResponse.json(
-          { error: cascadeResult.error.message, projectUpdated: true },
+          { error: cascadeResult.error.message },
           { status: cascadeResult.error.status || 500 }
         );
       }
       cascade = cascadeResult.data;
+
+      const { data: refreshed } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (refreshed) data = refreshed;
     }
 
     try {
@@ -139,7 +162,7 @@ export async function PATCH(request, { params }) {
       console.warn('Office365 sync failed for updated project:', err);
     }
 
-    return NextResponse.json({ ...data, tasksChanged: cascade.tasksChanged, taskState: cascade.taskState });
+    return NextResponse.json({ ...data, ...cascade });
   } catch (error) {
     console.error('PATCH /api/projects/[id] error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -199,22 +222,33 @@ export async function DELETE(request, { params }) {
       projectId: id,
     });
 
-    // Delete project from DB first (cascade will handle related tasks and notes)
-    const { error } = await supabase
-      .from('projects')
-      .delete()
-      .eq('id', id);
+    // Deleting a project used to destroy every note on it: notes.project_id was
+    // ON DELETE CASCADE, so the rows went with the project and there was no way
+    // back. The RPC stamps a tombstone on every note the project owns or
+    // previously handed to a customer, re-parents them to that customer (or
+    // leaves them unfiled when there is none), and only then deletes the
+    // project. All in one transaction, so there is no window where the project
+    // is gone and the notes are not yet re-parented.
+    //
+    // ?destroyContent=true is the explicit opt-in for actually deleting them.
+    // It is never the default.
+    const { searchParams } = new URL(request.url);
+    const { data: deleteResult, error } = await deleteProjectPreservingContent({
+      supabase,
+      userId: session.user.id,
+      projectId: id,
+      destroyContent: searchParams.get('destroyContent') === 'true',
+    });
 
     if (error) {
-      const errorMessage = handleSupabaseError(error, 'delete');
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+      return NextResponse.json({ error: error.message }, { status: error.status || 500 });
     }
 
     // Clean up Office365 after a successful DB delete, using the id captured
     // above. Best-effort: the project is already gone locally.
     await deleteOffice365ListById({ userId: session.user.id, listId: office365ListId });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ...(deleteResult || {}) });
   } catch (error) {
     console.error('DELETE /api/projects/[id] error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

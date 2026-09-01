@@ -78,6 +78,13 @@ class APIClient {
     return result?.data ?? result;
   }
 
+  /**
+   * Update a project.
+   *
+   * `closeout_note` and `closeout_facts` are not project columns: the route
+   * hands them to close_project so the status change, the task cascade, the
+   * note handover and the close-out note all happen in one transaction.
+   */
   async updateProject(projectId, updates) {
     const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
       method: 'PATCH',
@@ -99,8 +106,15 @@ class APIClient {
     return this.fetchWithAuth(`/api/projects/${projectId}/impact`);
   }
 
-  async deleteProject(projectId) {
-    const result = await this.fetchWithAuth(`/api/projects/${projectId}`, {
+  /**
+   * Delete a project.
+   *
+   * Its notes are kept and moved to the customer by default. destroyContent is
+   * the explicit opt-in to delete them instead, and is never the default.
+   */
+  async deleteProject(projectId, { destroyContent = false } = {}) {
+    const query = destroyContent ? '?destroyContent=true' : '';
+    const result = await this.fetchWithAuth(`/api/projects/${projectId}${query}`, {
       method: 'DELETE',
     });
     // Clear project cache after deletion (mirrors create/update)
@@ -295,10 +309,11 @@ class APIClient {
   }
 
   // Notes
-  async getNotes(projectId = null, taskId = null) {
+  async getNotes(projectId = null, taskId = null, customerId = null) {
     const params = new URLSearchParams();
     if (projectId) params.append('projectId', projectId);
     if (taskId) params.append('taskId', taskId);
+    if (customerId) params.append('customerId', customerId);
 
     return this.fetchWithAuth(`/api/notes?${params}`);
   }
@@ -480,6 +495,272 @@ class APIClient {
     const response = await this.fetchWithAuth('/api/areas');
     return response.data || [];
   }
+
+  // Customers
+
+  async getCustomers({ includeArchived = false, status = null, area = null } = {}) {
+    const params = new URLSearchParams();
+    if (includeArchived) params.append('includeArchived', 'true');
+    if (status) params.append('status', status);
+    if (area) params.append('area', area);
+    const query = params.toString();
+    const response = await this.fetchWithAuth(`/api/customers${query ? `?${query}` : ''}`);
+    return response.data || [];
+  }
+
+  /**
+   * Minimal id-and-name list for the capture autocomplete and the @token
+   * resolver. Deduped and cached separately from the full list, because it is
+   * read on every keystroke while the full one is read per page load.
+   */
+  async getCustomersForCapture() {
+    return dedupedFetch('customers-capture', async () => {
+      const response = await this.fetchWithAuth('/api/customers');
+      return (response.data || []).map((customer) => ({
+        id: customer.id,
+        name: customer.name,
+        archived_at: customer.archived_at,
+      }));
+    });
+  }
+
+  async getCustomer(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}`);
+    return response?.data ?? response;
+  }
+
+  /**
+   * The customer workspace payload: record, open and closed projects, and the
+   * task union. One request because the whole panel changes together when a
+   * different customer is selected.
+   */
+  async getCustomerOverview(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/overview`);
+    return response?.data ?? response;
+  }
+
+  /**
+   * What archiving or deleting would affect. Never cached: it has to reflect
+   * the state at the moment the user is asked to confirm.
+   */
+  async getCustomerImpact(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/impact`);
+    return response?.data ?? response;
+  }
+
+  /**
+   * Stakeholder triage: distinct names, what the column actually contains, and
+   * the projects still lacking a customer. Never cached, because it is a
+   * one-off setup screen that must show current state.
+   */
+  async getCustomerTriage() {
+    const response = await this.fetchWithAuth('/api/customers/triage');
+    return response?.data ?? response;
+  }
+
+  async applyCustomerTriage({ customerNames = [], assignments = [] }) {
+    const result = await this.fetchWithAuth('/api/customers/triage', {
+      method: 'POST',
+      body: JSON.stringify({ customerNames, assignments }),
+    });
+    clearCustomerCaches();
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result?.data ?? result;
+  }
+
+  /** Every note reaching a customer: theirs, their projects', their tasks'. */
+  async getCustomerTimeline(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/timeline`);
+    return response.data || [];
+  }
+
+  async getCustomerFacts(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/facts`);
+    return response.data || [];
+  }
+
+  async createCustomerFact(customerId, payload) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}/facts`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async updateCustomerFact(customerId, factId, payload) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}/facts/${factId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async deleteCustomerFact(customerId, factId) {
+    return this.fetchWithAuth(`/api/customers/${customerId}/facts/${factId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Contacts
+
+  async getContacts({ customerId = null, includeArchived = false } = {}) {
+    const params = new URLSearchParams();
+    if (customerId) params.append('customerId', customerId);
+    if (includeArchived) params.append('includeArchived', 'true');
+    const query = params.toString();
+    const response = await this.fetchWithAuth(`/api/contacts${query ? `?${query}` : ''}`);
+    return response.data || [];
+  }
+
+  async createContact(payload) {
+    const result = await this.fetchWithAuth('/api/contacts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async updateContact(contactId, payload) {
+    const result = await this.fetchWithAuth(`/api/contacts/${contactId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return result?.data ?? result;
+  }
+
+  async deleteContact(contactId) {
+    return this.fetchWithAuth(`/api/contacts/${contactId}`, { method: 'DELETE' });
+  }
+
+  // Notes: editing and deletion, which did not exist before Phase 2
+
+  async updateNote(noteId, updates) {
+    const result = await this.fetchWithAuth(`/api/notes/${noteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    return result?.data ?? result;
+  }
+
+  async deleteNote(noteId) {
+    return this.fetchWithAuth(`/api/notes/${noteId}`, { method: 'DELETE' });
+  }
+
+  /** Notes with no parent at all, left by deleting a customerless project. */
+  async getUnfiledNotes() {
+    const response = await this.fetchWithAuth('/api/unfiled');
+    return response.data || [];
+  }
+
+  async refileNote(noteId, customerId) {
+    const result = await this.fetchWithAuth('/api/unfiled', {
+      method: 'POST',
+      body: JSON.stringify({ noteId, customerId }),
+    });
+    return result?.data ?? result;
+  }
+
+  // Attachments
+  //
+  // The upload is three steps because the file cannot go through a Vercel
+  // function: they cap request bodies at 4.5 MB. The browser sends it straight
+  // to Supabase Storage with a URL the server signs.
+
+  async getAttachments(parentType, parentId) {
+    const params = new URLSearchParams({ parent_type: parentType, parent_id: parentId });
+    const response = await this.fetchWithAuth(`/api/attachments?${params}`);
+    return response.data || [];
+  }
+
+  /**
+   * Upload one file.
+   *
+   * @param {Function} [onProgress] called with 'signing' | 'uploading' | 'finalising'
+   */
+  async uploadAttachment({ parentType, parentId, file }, onProgress) {
+    onProgress?.('signing');
+    const signed = await this.fetchWithAuth('/api/attachments/upload-url', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent_type: parentType,
+        parent_id: parentId,
+        file_name: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+      }),
+    });
+
+    const { attachmentId, path, token } = signed?.data ?? signed;
+
+    onProgress?.('uploading');
+    const { getSupabaseBrowserClient } = await import('./supabaseBrowser');
+    const { error } = await getSupabaseBrowserClient()
+      .storage.from('attachments')
+      .uploadToSignedUrl(path, token, file);
+
+    if (error) throw new Error(error.message || 'Upload failed');
+
+    // The server measures the real object here. Skipping this leaves a pending
+    // row that reconciliation removes within the hour, so a half-finished
+    // upload never shows as a file.
+    onProgress?.('finalising');
+    const finalised = await this.fetchWithAuth(`/api/attachments/${attachmentId}/finalise`, {
+      method: 'POST',
+    });
+
+    return finalised?.data ?? finalised;
+  }
+
+  async getAttachmentDownloadUrl(attachmentId) {
+    const response = await this.fetchWithAuth(`/api/attachments/${attachmentId}/url`);
+    return response?.data ?? response;
+  }
+
+  async deleteAttachment(attachmentId) {
+    return this.fetchWithAuth(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
+  }
+
+  async createCustomer(payload) {
+    const result = await this.fetchWithAuth('/api/customers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    clearCustomerCaches();
+    return result?.data ?? result;
+  }
+
+  async updateCustomer(customerId, updates) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    clearCustomerCaches();
+    return result?.data ?? result;
+  }
+
+  async deleteCustomer(customerId) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}`, {
+      method: 'DELETE',
+    });
+    clearCustomerCaches();
+    // Projects and tasks keep their rows but lose customer_id, so their caches
+    // are stale too.
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result?.data ?? result;
+  }
+}
+
+/**
+ * Customer mutations invalidate the customer list and the capture autocomplete.
+ * Kept in one place so a new mutation cannot forget half of it: a stale
+ * autocomplete would offer a customer that no longer exists, or fail to offer
+ * one that was just created in another tab.
+ */
+function clearCustomerCaches() {
+  clearCache('customers-list');
+  clearCache('customers-capture');
 }
 
 // Export singleton instance

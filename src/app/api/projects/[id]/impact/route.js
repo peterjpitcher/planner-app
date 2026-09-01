@@ -68,7 +68,13 @@ export async function GET(request, { params }) {
       projectName: project.name,
       status: project.status,
       openTasks: tasksResult.data,
+      // What is kept and where it goes, not just what is destroyed. Notes now
+      // move to the customer on delete rather than being cascaded away, so the
+      // dialog can name the destination.
       noteCount: impactResult.data.noteCount,
+      taskCount: impactResult.data.taskCount,
+      customerId: impactResult.data.customerId,
+      customerName: impactResult.data.customerName,
     });
   } catch (error) {
     console.error('GET /api/projects/[id]/impact error:', error);

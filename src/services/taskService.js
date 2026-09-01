@@ -5,6 +5,7 @@ import { computeSortOrder } from '@/lib/sortOrder';
 import { getLondonDateKey } from '@/lib/timezone';
 import { isValidRecurrence, nextRecurrenceDate } from '@/lib/recurrence';
 import { deleteOffice365Task, syncOffice365Task } from '@/services/office365SyncService';
+import { callRpc } from '@/lib/rpc';
 
 const TASK_UPDATE_FIELDS = new Set([
   'name',
@@ -57,6 +58,11 @@ const TASK_CREATE_FIELDS = new Set([
   'waiting_reason',
   'follow_up_date',
   'project_id',
+  // Customer link. Writable only when there is no project: fn_task_customer_sync
+  // overwrites it from the project whenever project_id is set, so accepting
+  // both would report a link the database discards. createTask rejects the
+  // combination outright rather than letting the trigger silently win.
+  'customer_id',
   // Capture inbox (F3): inbox is client-settable ONLY at create time, so the
   // three capture entry points (plain quick-capture, idea promotion, Office365
   // inbound pull) can mark a freshly captured task as awaiting triage. It is
@@ -141,6 +147,48 @@ function applyRecurrenceRules(fields) {
   return {};
 }
 
+/**
+ * Create a task and, if the named customer does not exist yet, create that too,
+ * in one database transaction.
+ *
+ * This exists because the @Name capture token can name a customer you have not
+ * set up. Doing it as two client calls (POST /api/customers then POST
+ * /api/tasks) leaves an empty customer behind every time the task insert fails.
+ *
+ * One request is also not one transaction, which matters here: /today submits up
+ * to 25 lines in parallel, so two lines naming the same new customer would race
+ * on the unique index and one would fail its whole task. The RPC resolves that
+ * with ON CONFLICT DO NOTHING plus a re-select, so both lines land against the
+ * same row.
+ *
+ * @returns {Promise<{data: Object|null, error: Object|null}>}
+ */
+export async function createTaskWithCustomerName({ supabase, userId, payload }) {
+  const { name, dueDate, due_date: dueDateSnake, state, projectId, project_id: projectIdSnake } = payload || {};
+
+  const { data, error } = await callRpc(supabase, 'create_task_with_customer', {
+    p_user_id: userId,
+    p_name: name,
+    p_due_date: dueDate || dueDateSnake || null,
+    p_state: state || STATE.BACKLOG,
+    p_project_id: projectId || projectIdSnake || null,
+    p_customer_id: null,
+    p_customer_name: payload.customer_name,
+  });
+
+  if (error) return { data: null, error };
+
+  return {
+    data: {
+      ...(data?.task || {}),
+      // Surfaced so the UI can say "Created customer Northgate" with a link,
+      // rather than the creation being invisible.
+      createdCustomer: data?.createdCustomer ? data.customer : null,
+    },
+    error: null,
+  };
+}
+
 export async function createTask({ supabase, userId, payload, options = {} }) {
   // Map camelCase frontend fields to snake_case DB columns
   const { projectId, dueDate, ...rest } = payload || {};
@@ -164,6 +212,18 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
   taskData.user_id = userId;
   taskData.state = taskData.state || STATE.BACKLOG;
 
+  // A task on a project takes the project's customer. Sending both is a caller
+  // bug, and silently dropping one of them would make the response disagree
+  // with what was actually stored.
+  if (taskData.project_id && taskData.customer_id) {
+    return {
+      error: {
+        status: 400,
+        message: "A task on a project takes the project's customer. Send one or the other.",
+      },
+    };
+  }
+
   // When state = 'today' and no today_section provided, default to 'good_to_do'
   if (taskData.state === STATE.TODAY && !taskData.today_section) {
     taskData.today_section = TODAY_SECTION.GOOD_TO_DO;
@@ -179,6 +239,23 @@ export async function createTask({ supabase, userId, payload, options = {} }) {
   const validation = validateTask(taskData);
   if (!validation.isValid) {
     return { error: { status: 400, details: validation.errors } };
+  }
+
+  // Validate customer ownership. The composite foreign key would refuse a
+  // mismatch anyway, but a 403 here is a clearer answer than a constraint error.
+  if (taskData.customer_id) {
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('user_id')
+      .eq('id', taskData.customer_id)
+      .maybeSingle();
+
+    if (customerError || !customer) {
+      return { error: { status: 404, message: 'Customer not found' } };
+    }
+    if (customer.user_id !== userId) {
+      return { error: { status: 403, message: 'Forbidden' } };
+    }
   }
 
   // Validate project ownership if project_id is provided

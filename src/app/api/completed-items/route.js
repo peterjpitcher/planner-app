@@ -24,7 +24,7 @@ export async function GET(request) {
     // Fetch completed tasks
     const { data: tasks, error: tasksError } = await supabase
       .from('tasks')
-      .select('*, project:project_id(id, name, stakeholders, area)')
+      .select('*, project:project_id(id, name, area, customer_id)')
       .eq('user_id', session.user.id)
       .eq('state', 'done')
       .gte('completed_at', startDate)
@@ -43,7 +43,7 @@ export async function GET(request) {
     // 20260709000003_project_completed_at.sql to be applied first.
     const { data: projects, error: projectsError } = await supabase
       .from('projects')
-      .select('*, stakeholders, area')
+      .select('*, area, customer_id')
       .eq('user_id', session.user.id)
       .eq('status', 'Completed')
       .gte('completed_at', startDate)

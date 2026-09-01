@@ -266,11 +266,107 @@ async function listTodoLists({ accessToken }) {
   return items;
 }
 
+// Separator between the customer and the project in a remote list name. One
+// constant so it can be changed in one place.
+export const LIST_NAME_SEPARATOR = ': ';
+
+// No maximum for todoTaskList.displayName is documented in the Graph API, so
+// this is a defensive cap rather than a known limit.
+const LIST_NAME_MAX = 100;
+
+/**
+ * Remote list name for a project: "Customer: Project", or just the project name
+ * when it has no customer.
+ *
+ * Truncation trims the customer part first so the project name survives intact,
+ * and appends a short stable suffix from the project id whenever it actually
+ * truncates. Without that suffix, two long project names under the same customer
+ * would truncate to the same string and collide, which matters because adoption
+ * matches on name.
+ *
+ * @param {{id: string, name: string}} project
+ * @param {string|null} customerName
+ * @returns {string}
+ */
+export function buildListDisplayName(project, customerName = null) {
+  const projectName = String(project?.name || '').trim();
+  const customer = String(customerName || '').trim();
+
+  if (!customer) {
+    if (projectName.length <= LIST_NAME_MAX) return projectName;
+    const suffix = ` #${String(project?.id || '').slice(0, 4)}`;
+    return `${projectName.slice(0, LIST_NAME_MAX - suffix.length)}${suffix}`;
+  }
+
+  const full = `${customer}${LIST_NAME_SEPARATOR}${projectName}`;
+  if (full.length <= LIST_NAME_MAX) return full;
+
+  const suffix = ` #${String(project?.id || '').slice(0, 4)}`;
+  const budget = LIST_NAME_MAX - suffix.length - LIST_NAME_SEPARATOR.length;
+
+  // Give the project name as much room as it needs, then whatever is left to
+  // the customer. If the project name alone busts the budget, truncate that too
+  // rather than producing a name longer than the cap.
+  if (projectName.length >= budget) {
+    return `${projectName.slice(0, budget)}${suffix}`;
+  }
+
+  const customerBudget = budget - projectName.length;
+  return `${customer.slice(0, customerBudget)}${LIST_NAME_SEPARATOR}${projectName}${suffix}`;
+}
+
+/**
+ * Attach customer_name to project rows, so buildListDisplayName has something to
+ * work with. One query for the whole set rather than a join, because the sync
+ * already reads projects with select('*') and a join would change those shapes.
+ *
+ * Best-effort: a failed lookup leaves customer_name undefined, which produces
+ * the bare project name. A Graph sync should not fall over because a name could
+ * not be decorated.
+ *
+ * @param {Object} params
+ * @param {Object} params.supabase
+ * @param {string} params.userId
+ * @param {Array<Object>} params.projects
+ * @returns {Promise<Array<Object>>}
+ */
+export async function attachCustomerNames({ supabase, userId, projects }) {
+  const list = Array.isArray(projects) ? projects : [];
+  const customerIds = [...new Set(list.map((p) => p?.customer_id).filter(Boolean))];
+  if (customerIds.length === 0) return list;
+
+  try {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id, name')
+      .eq('user_id', userId)
+      .in('id', customerIds);
+
+    if (error) throw error;
+
+    const namesById = new Map((data || []).map((row) => [row.id, row.name]));
+    return list.map((project) => ({
+      ...project,
+      customer_name: project?.customer_id ? namesById.get(project.customer_id) || null : null,
+    }));
+  } catch (err) {
+    console.warn('Office365: could not resolve customer names for list titles:', err);
+    return list;
+  }
+}
+
 /**
  * Index the user's remote lists by display name, so a project can adopt the
  * list it used to own instead of creating a second one beside it. Best-effort:
  * a failed read just means we fall back to creating, which is the old
  * behaviour, so a Graph blip cannot block a sync.
+ *
+ * Maps to an array, not a single id. The previous "first match wins" was unsafe:
+ * project names are not unique in this database, so two projects called
+ * "Website Rebuild" produce two identical remote names and one project's sync
+ * would silently attach to the other project's list. That is tasks going to the
+ * wrong place, not a cosmetic problem, so an ambiguous name is now adopted by
+ * nobody.
  */
 async function buildRemoteListIndex({ accessToken }) {
   try {
@@ -279,14 +375,34 @@ async function buildRemoteListIndex({ accessToken }) {
     for (const list of lists) {
       const name = typeof list?.displayName === 'string' ? list.displayName.trim().toLowerCase() : null;
       if (!name || !list?.id) continue;
-      // First match wins, so a duplicate pair adopts the older list.
-      if (!byName.has(name)) byName.set(name, list.id);
+      const existing = byName.get(name);
+      if (existing) existing.push(list.id);
+      else byName.set(name, [list.id]);
     }
     return byName;
   } catch (err) {
     console.warn('Office365: could not read remote lists, falling back to create:', err);
     return new Map();
   }
+}
+
+/**
+ * The one remote list a name unambiguously identifies, or null.
+ *
+ * Returns null when the name matches more than one remote list. Creating a
+ * fresh list is the safe outcome there; guessing is not.
+ *
+ * @param {Map<string, string[]>} index
+ * @param {string} name
+ * @returns {string|null}
+ */
+export function resolveUnambiguousList(index, name) {
+  if (!index || !name) return null;
+  const key = String(name).trim().toLowerCase();
+  if (!key) return null;
+  const matches = index.get(key);
+  if (!matches || matches.length !== 1) return null;
+  return matches[0];
 }
 
 async function createTodoList({ accessToken, displayName }) {
@@ -503,15 +619,34 @@ async function ensureProjectList({ supabase, accessToken, userId, project, exist
     // reconnecting used to recreate every list beside the originals: 34 lists
     // became 68 and 229 tasks became 458, with the originals orphaned forever
     // because nothing ever reads the lists collection again.
-    const adoptedListId = project.name
-      ? remoteListsByName?.get(String(project.name).trim().toLowerCase()) || null
-      : null;
+    const displayName = buildListDisplayName(project, project.customer_name);
 
-    const listId = adoptedListId || (await createTodoList({ accessToken, displayName: project.name }))?.id;
+    // Try the composed name, then fall back to the bare project name so lists
+    // created before customers existed are still adopted rather than duplicated.
+    // Both lookups refuse an ambiguous match.
+    const adoptedListId =
+      resolveUnambiguousList(remoteListsByName, displayName) ||
+      resolveUnambiguousList(remoteListsByName, project.name);
+
+    const listId = adoptedListId || (await createTodoList({ accessToken, displayName }))?.id;
     if (!listId) throw new Error('Office365 list creation did not return an id');
+
     // Claimed, so two projects sharing a name cannot adopt the same list.
-    if (adoptedListId && project.name) {
-      remoteListsByName.delete(String(project.name).trim().toLowerCase());
+    if (adoptedListId) {
+      [displayName, project.name].forEach((candidate) => {
+        const key = String(candidate || '').trim().toLowerCase();
+        if (key) remoteListsByName?.delete(key);
+      });
+    }
+
+    // An adopted list keeps whatever name it had, so bring it in line with the
+    // composed one now rather than leaving it stale until the next pass.
+    if (adoptedListId) {
+      try {
+        await updateTodoList({ accessToken, listId, displayName });
+      } catch (err) {
+        console.warn('Office365: could not rename adopted list:', err);
+      }
     }
 
     const { data, error } = await supabase
@@ -529,14 +664,18 @@ async function ensureProjectList({ supabase, accessToken, userId, project, exist
     return data;
   }
 
-  // Keep list name in sync (best-effort).
+  // Keep list name in sync (best-effort). This is also what performs the
+  // one-off bulk rename after customers land: every project with a customer
+  // gets "Customer: Project" on the first sync. A partial run is not an error,
+  // the next sync finishes it.
   if (current.list_id && typeof project.name === 'string') {
+    const displayName = buildListDisplayName(project, project.customer_name);
     try {
-      await updateTodoList({ accessToken, listId: current.list_id, displayName: project.name });
+      await updateTodoList({ accessToken, listId: current.list_id, displayName });
     } catch (err) {
       const message = String(err?.message || '');
       if (message.includes('(404)')) {
-        const recreated = await createTodoList({ accessToken, displayName: project.name });
+        const recreated = await createTodoList({ accessToken, displayName });
         const newListId = recreated?.id;
         if (!newListId) throw new Error('Office365 list recreation did not return an id');
 
@@ -804,7 +943,11 @@ async function performFullSync({ supabase, userId }) {
   if (projectsError) throw projectsError;
   if (tasksError) throw tasksError;
 
-  const activeProjects = (projects || []).filter((project) => isProjectActive(project.status));
+  const activeProjects = await attachCustomerNames({
+    supabase,
+    userId,
+    projects: (projects || []).filter((project) => isProjectActive(project.status)),
+  });
   const activeProjectIds = new Set(activeProjects.map((project) => project.id));
 
   const { data: projectMaps, error: projectMapsError } = await supabase
@@ -1639,6 +1782,12 @@ export async function syncOffice365Project({ userId, projectId }) {
     return;
   }
 
+  const [decoratedProject] = await attachCustomerNames({
+    supabase,
+    userId,
+    projects: [project],
+  });
+
   const accessToken = await getValidOffice365AccessToken({ userId });
 
   const { data: mapRows, error: mapError } = await supabase
@@ -1652,7 +1801,7 @@ export async function syncOffice365Project({ userId, projectId }) {
     supabase,
     accessToken,
     userId,
-    project,
+    project: decoratedProject || project,
     existingMap: mapByProjectId,
     remoteListsByName: await buildRemoteListIndex({ accessToken }),
   });
@@ -1786,7 +1935,7 @@ export async function syncOffice365Task({ userId, taskId }) {
 
   const { data: project, error: projectError } = await supabase
     .from('projects')
-    .select('id, name, status')
+    .select('id, name, status, customer_id')
     .eq('id', task.project_id)
     .eq('user_id', userId)
     .single();
@@ -1834,11 +1983,12 @@ export async function syncOffice365Task({ userId, taskId }) {
   let listId = projectMapping?.list_id;
   if (!listId) {
     // Ensure list exists first.
+    const [decorated] = await attachCustomerNames({ supabase, userId, projects: [project] });
     const ensured = await ensureProjectList({
       supabase,
       accessToken,
       userId,
-      project,
+      project: decorated || project,
       existingMap: null,
       remoteListsByName: await buildRemoteListIndex({ accessToken }),
     });

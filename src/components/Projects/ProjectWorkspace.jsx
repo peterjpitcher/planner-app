@@ -17,8 +17,10 @@ import { getStatusClasses, cn } from '@/lib/styleUtils';
 import { getDueDateStatus, formatDate } from '@/lib/dateUtils';
 import { PROJECT_STATUS, STATE } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
-import AddTaskInput from '@/components/shared/AddTaskInput';
+import QuickTaskInput from '@/components/shared/QuickTaskInput';
+import CustomerPicker from '@/components/shared/CustomerPicker';
 import ProjectNotes from './ProjectNotes';
+import AttachmentsPanel from '@/components/shared/AttachmentsPanel';
 
 const STATE_GROUPS = [
   { key: 'today', label: 'Today', labelClass: 'text-red-600' },
@@ -249,20 +251,27 @@ export default function ProjectWorkspace({
 
             <span className="text-gray-300">|</span>
 
-            {/* Stakeholders */}
+            {/* Customer. Setting it here also repoints every task on the
+                project, via fn_project_customer_cascade. */}
             <span className="flex items-center gap-1">
-              <span className="text-gray-400">Stakeholders:</span>
-              <InlineEdit
-                value={(project.stakeholders || []).join(', ')}
-                onSave={(val) => {
-                  const parsed = val ? val.split(',').map((s) => s.trim()).filter(Boolean) : [];
-                  onUpdateProject(project.id, { stakeholders: parsed });
-                }}
-                placeholder="Add stakeholders"
+              <span className="text-gray-400">Customer:</span>
+              <CustomerPicker
+                id={`project-customer-${project.id}`}
+                value={project.customer_id}
                 disabled={isReadOnly}
+                onChange={(customerId) => onUpdateProject(project.id, { customer_id: customerId })}
+                className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
               />
             </span>
+
           </div>
+
+          {/* The free-text stakeholders field lived here. It was a comma
+              separated box whose contents nothing could search, filter or roll
+              up, and it mixed company names with people's names. Each entry has
+              been converted to a customer or a contact, and the column is gone.
+              The customer is set above; their people live on the customer's
+              page. */}
 
           {/* Description */}
           <div className="mt-3">
@@ -291,7 +300,11 @@ export default function ProjectWorkspace({
 
           {!isReadOnly && (
             <div className="mb-3">
-              <AddTaskInput projectId={isUnassigned ? null : project.id} onTaskAdded={onTaskAdded} />
+              <QuickTaskInput
+                mode="single"
+                projectId={isUnassigned ? null : project.id}
+                onTaskAdded={onTaskAdded}
+              />
             </div>
           )}
 
@@ -334,10 +347,16 @@ export default function ProjectWorkspace({
           )}
         </div>
 
-        {/* Right: Notes — unassigned tasks have no project to attach notes to */}
+        {/* Right: notes and files. Unassigned tasks have no project to hang
+            either off, so the whole column is skipped there. */}
         {!isUnassigned && (
-          <div className="min-w-0 overflow-y-auto md:flex-[2]">
+          <div className="min-w-0 space-y-6 overflow-y-auto md:flex-[2]">
             <ProjectNotes projectId={project.id} disabled={isReadOnly} />
+            <AttachmentsPanel
+              parentType="project"
+              parentId={project.id}
+              disabled={isReadOnly}
+            />
           </div>
         )}
       </div>

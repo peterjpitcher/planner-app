@@ -2,7 +2,12 @@ import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-import { createTask, updateTask, deleteTask } from '@/services/taskService';
+import {
+  createTask,
+  createTaskWithCustomerName,
+  deleteTask,
+  updateTask,
+} from '@/services/taskService';
 import { maybeAutoSyncOffice365 } from '@/services/office365SyncService';
 import { handleSupabaseError } from '@/lib/errorHandler';
 
@@ -167,11 +172,23 @@ export async function POST(request) {
 
     const body = await request.json();
     const supabase = getSupabaseServiceRole();
-    const { data, error } = await createTask({
-      supabase,
-      userId: session.user.id,
-      payload: body
-    });
+
+    // A named customer takes the RPC path, so resolve-or-create and the task
+    // insert are one transaction. Without it a failed task insert would leave a
+    // brand new empty customer behind. An id-only customer needs no RPC: the
+    // row already exists, so the ordinary insert plus the composite foreign key
+    // is enough.
+    const { data, error } = body?.customer_name
+      ? await createTaskWithCustomerName({
+          supabase,
+          userId: session.user.id,
+          payload: body,
+        })
+      : await createTask({
+          supabase,
+          userId: session.user.id,
+          payload: body
+        });
 
     if (error) {
       const response = { error: error.message || 'Unable to create task' };

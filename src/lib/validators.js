@@ -1,6 +1,10 @@
 // Validation Utilities
 
-import { VALIDATION, PROJECT_STATUS, STATE, TODAY_SECTION, TASK_TYPE, CHIP_VALUES, IDEA_STATE } from './constants';
+import { VALIDATION, PROJECT_STATUS, STATE, TODAY_SECTION, TASK_TYPE, CHIP_VALUES, IDEA_STATE, CUSTOMER_STATUS } from './constants';
+
+// Characters that must never appear in a name: they break display and can
+// make two different rows look identical.
+const CTRL_RE = /[\u0000-\u001f\u007f]/;
 
 /**
  * Validate project data
@@ -30,22 +34,92 @@ export function validateProject(project) {
     }
   }
 
-  // Stakeholders validation
-  if (project.stakeholders && Array.isArray(project.stakeholders)) {
-    if (project.stakeholders.length > VALIDATION.MAX_STAKEHOLDERS) {
-      errors.stakeholders = `Maximum ${VALIDATION.MAX_STAKEHOLDERS} stakeholders allowed`;
-    }
-    const invalidStakeholders = project.stakeholders.filter(
-      sh => !sh || sh.trim().length === 0 || sh.length > VALIDATION.STAKEHOLDER_MAX
-    );
-    if (invalidStakeholders.length > 0) {
-      errors.stakeholders = 'Invalid stakeholder names';
-    }
-  }
-
   // Description validation
   if (project.description && project.description.length > VALIDATION.DESCRIPTION_MAX) {
     errors.description = `Description must be less than ${VALIDATION.DESCRIPTION_MAX} characters`;
+  }
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors
+  };
+}
+
+/**
+ * Only http and https are allowed in a customer website.
+ *
+ * This is not pedantry. The value is rendered as an href on the customer
+ * header, and an unvalidated one accepts `javascript:`, which executes on
+ * click. A denylist of known-bad schemes would be the wrong shape: the set of
+ * URL schemes is open-ended, so the allowlist has to be positive.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function isSafeWebUrl(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return false;
+
+  let parsed;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    return false;
+  }
+
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+}
+
+/**
+ * Collapse runs of whitespace and trim, so "Acme   Ltd " and "Acme Ltd" are the
+ * same customer rather than two that merely look alike. The unique index does
+ * the same normalisation, so doing it here keeps the API's 409 and the
+ * database's constraint talking about the same thing.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+export function normaliseName(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Validate customer data.
+ *
+ * @param {Object} customer
+ * @returns {Object} { isValid: boolean, errors: Object }
+ */
+export function validateCustomer(customer) {
+  const errors = {};
+
+  const name = normaliseName(customer?.name);
+  if (name.length === 0) {
+    errors.name = 'Customer name is required';
+  } else if (name.length > VALIDATION.CUSTOMER_NAME_MAX) {
+    errors.name = `Customer name must be ${VALIDATION.CUSTOMER_NAME_MAX} characters or fewer`;
+  } else if (CTRL_RE.test(name)) {
+    // Control characters break the display, and a name containing a newline
+    // makes two visually identical rows in the customer picker.
+    errors.name = 'Customer name contains invalid characters';
+  }
+
+  if (customer?.status && !Object.values(CUSTOMER_STATUS).includes(customer.status)) {
+    errors.status = 'Invalid customer status';
+  }
+
+  if (customer?.summary && customer.summary.length > VALIDATION.CUSTOMER_SUMMARY_MAX) {
+    errors.summary = `Summary must be ${VALIDATION.CUSTOMER_SUMMARY_MAX} characters or fewer`;
+  }
+
+  if (customer?.website) {
+    if (customer.website.length > VALIDATION.CUSTOMER_WEBSITE_MAX) {
+      errors.website = `Website must be ${VALIDATION.CUSTOMER_WEBSITE_MAX} characters or fewer`;
+    } else if (!isSafeWebUrl(customer.website)) {
+      errors.website = 'Website must be a full http or https address';
+    }
+  }
+
+  if (customer?.area && customer.area.length > VALIDATION.STAKEHOLDER_MAX) {
+    errors.area = `Area must be ${VALIDATION.STAKEHOLDER_MAX} characters or fewer`;
   }
 
   return {

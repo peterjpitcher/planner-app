@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { ExclamationTriangleIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { PROJECT_STATUS } from '@/lib/constants';
@@ -51,12 +51,38 @@ export default function ProjectStatusChangeModal({
   openTasks,
   loading = false,
   submitting = false,
+  customerName = null,
   error = null,
 }) {
   const copy = COPY[targetStatus];
   if (!copy) return null;
 
   const tasks = openTasks || [];
+
+  // Close-out capture. Asked on EVERY close, Completed or Cancelled, with no
+  // setting to turn it off: what you know at the moment you finish something is
+  // exactly what gets lost, and a project that has gone quiet is the one you
+  // will not come back to and write up later.
+  const [closeoutNote, setCloseoutNote] = useState('');
+  const [factLabel, setFactLabel] = useState('');
+  const [factValue, setFactValue] = useState('');
+
+  // Reset between openings, so last time's text is never submitted against a
+  // different project.
+  useEffect(() => {
+    if (isOpen) {
+      setCloseoutNote('');
+      setFactLabel('');
+      setFactValue('');
+    }
+  }, [isOpen]);
+
+  function confirm() {
+    const facts = factLabel.trim() && factValue.trim()
+      ? [{ label: factLabel.trim(), value: factValue.trim() }]
+      : [];
+    onConfirm({ closeoutNote: closeoutNote.trim() || null, facts });
+  }
   const taskCount = tasks.length;
   const { Icon } = copy;
 
@@ -137,6 +163,72 @@ export default function ProjectStatusChangeModal({
                   )}
                 </div>
 
+                {/* Close-out capture, on every close. */}
+                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <label
+                    htmlFor="closeout-note"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    {targetStatus === PROJECT_STATUS.CANCELLED
+                      ? 'Anything worth remembering about why this stopped?'
+                      : 'Anything worth remembering about this?'}
+                  </label>
+                  <textarea
+                    id="closeout-note"
+                    rows={3}
+                    value={closeoutNote}
+                    onChange={(event) => setCloseoutNote(event.target.value)}
+                    disabled={submitting}
+                    placeholder="Optional. Leave it blank and nothing is written."
+                    className="mt-1.5 w-full resize-y rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                  />
+
+                  {customerName ? (
+                    <>
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        This will be pinned to <strong>{customerName}</strong>, and every note
+                        on this project moves onto their record. Reopening brings them back.
+                      </p>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <div>
+                          <label htmlFor="closeout-fact-label" className="sr-only">
+                            Key fact label
+                          </label>
+                          <input
+                            id="closeout-fact-label"
+                            type="text"
+                            value={factLabel}
+                            onChange={(event) => setFactLabel(event.target.value)}
+                            disabled={submitting}
+                            placeholder="Key fact (optional)"
+                            className="w-full rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="closeout-fact-value" className="sr-only">
+                            Key fact value
+                          </label>
+                          <input
+                            id="closeout-fact-value"
+                            type="text"
+                            value={factValue}
+                            onChange={(event) => setFactValue(event.target.value)}
+                            disabled={submitting}
+                            placeholder="Value"
+                            className="w-full rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-amber-700">
+                      This project has no customer, so any notes stay on the project and this
+                      one is pinned to it. Set a customer to keep them on a customer record.
+                    </p>
+                  )}
+                </div>
+
                 {error && (
                   <div className="mt-3 flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                     <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -148,7 +240,7 @@ export default function ProjectStatusChangeModal({
                   <button
                     type="button"
                     disabled={loading || submitting}
-                    onClick={onConfirm}
+                    onClick={confirm}
                     className={cn(
                       'inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto',
                       copy.confirmClass,
