@@ -100,6 +100,25 @@ export default function CustomerTriage({ onDone }) {
 
   const profile = data?.profile;
 
+  // Once projects.stakeholders is dropped this screen has done its job.
+  if (data?.retired) {
+    return (
+      <div className="mx-auto max-w-4xl p-6">
+        <h1 className="text-lg font-semibold text-gray-900">Set up your customers</h1>
+        <p className="mt-2 text-sm text-gray-500">
+          Nothing left to sort out. Every stakeholder name has been turned into a customer
+          or a person, and the old field has been retired.
+        </p>
+        <Link
+          href="/customers"
+          className="mt-4 inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        >
+          Go to customers
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
       <h1 className="text-lg font-semibold text-gray-900">Set up your customers</h1>

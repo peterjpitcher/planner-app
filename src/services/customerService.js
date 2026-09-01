@@ -518,6 +518,31 @@ export async function getTriageData({ supabase, userId }) {
     .eq('user_id', userId)
     .order('name', { ascending: true });
 
+  // 42703 is undefined_column. This screen exists to convert
+  // projects.stakeholders, so once that column has been dropped its job is
+  // done: report an empty triage rather than a 500. Without this the page
+  // throws for good the moment the drop migration runs.
+  if (error?.code === '42703') {
+    return {
+      data: {
+        profile: {
+          projectsWithStakeholders: 0,
+          rawEntries: 0,
+          blankEntries: 0,
+          entriesWithCommas: 0,
+          distinctNames: 0,
+          emailLike: 0,
+          names: [],
+        },
+        unassignedProjects: [],
+        assignedCount: 0,
+        totalProjects: 0,
+        retired: true,
+      },
+      error: null,
+    };
+  }
+
   if (error) return { data: null, error: { status: 500, message: error.message } };
 
   const all = projects || [];
@@ -707,6 +732,22 @@ export async function applyTriage({ supabase, userId, decisions = [], assignment
     .from('projects')
     .select('id, name, stakeholders, customer_id')
     .eq('user_id', userId);
+
+  // The column is gone, so there is nothing left to convert. Say so plainly
+  // rather than failing.
+  if (projectError?.code === '42703') {
+    return {
+      data: {
+        customersCreated: [],
+        contactsCreated: [],
+        projectsAssigned: 0,
+        contactsLinked: 0,
+        conflicts: [],
+        retired: true,
+      },
+      error: null,
+    };
+  }
 
   if (projectError) {
     return { data: null, error: { status: 500, message: projectError.message } };
