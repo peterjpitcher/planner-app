@@ -5,27 +5,13 @@ import { getLondonDateKey } from '@/lib/timezone';
 import { CLOSED_STATES, STATE } from '@/lib/constants';
 import { getOffice365Connection, getValidOffice365AccessToken } from '@/services/office365ConnectionService';
 
-const TODO_TASK_SELECT_FULL = [
-  'id',
-  'title',
-  'status',
-  'importance',
-  'dueDateTime',
-  'completedDateTime',
-  'body',
-  'createdDateTime',
-  'lastModifiedDateTime',
-].join(',');
-
-const TODO_TASK_SELECT_MINIMAL = [
-  'id',
-  'title',
-  'status',
-  'importance',
-  'dueDateTime',
-  'createdDateTime',
-  'lastModifiedDateTime',
-].join(',');
+// No $select anywhere in this file. Microsoft rejects $select on the To Do task
+// endpoints for this mailbox with `400 RequestBroker--ParseUri`, so every read
+// used to burn one or two guaranteed-failed Graph calls before falling back to
+// the unprojected form. Graph returns the full task entity when $select is
+// omitted (title, body, status, dueDateTime, completedDateTime, etag and the
+// timestamps), which is everything the sync reads, so the projection bought
+// nothing even when it worked. Verified against the live mailbox.
 
 function isProjectActive(status) {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
@@ -110,6 +96,21 @@ function normalizeLocalTask(task) {
  */
 export function isTaskFinished(task) {
   return CLOSED_STATES.includes(task?.state);
+}
+
+/**
+ * Whether a task belongs in Outlook at all.
+ *
+ * The single definition of what Outlook is allowed to hold: live work in an
+ * active project, nothing else. The push pass and the delete pass both read it,
+ * which is the point. When they each carried their own version of the rule they
+ * disagreed, and finished tasks were pushed as completed items and then never
+ * cleaned up, so Outlook accumulated months of ticked-off work.
+ */
+export function shouldTaskExistInOutlook({ task, activeProjectIds }) {
+  if (!task?.project_id) return false;
+  if (!activeProjectIds?.has(task.project_id)) return false;
+  return !isTaskFinished(task);
 }
 
 function normalizeRemoteTask(todoTask) {
@@ -342,12 +343,7 @@ async function deleteTodoTask({ accessToken, listId, todoTaskId }) {
 
 async function listTodoTasks({ accessToken, listId }) {
   const listIdVariants = [encodeURIComponent(listId), listId];
-  const queryVariants = [
-    `?$top=100&$select=${TODO_TASK_SELECT_FULL}`,
-    `?$top=100&$select=${TODO_TASK_SELECT_MINIMAL}`,
-    '?$top=100',
-    '',
-  ];
+  const queryVariants = ['?$top=100', ''];
 
   const fetchAllPages = async ({ initialPath }) => {
     const items = [];
@@ -392,11 +388,7 @@ async function listTodoTasks({ accessToken, listId }) {
 async function fetchTodoTask({ accessToken, listId, todoTaskId }) {
   const listIdVariants = [encodeURIComponent(listId), listId];
   const encodedTodoTaskId = encodeURIComponent(todoTaskId);
-  const queryVariants = [
-    `?$select=${TODO_TASK_SELECT_FULL}`,
-    `?$select=${TODO_TASK_SELECT_MINIMAL}`,
-    '',
-  ];
+  const queryVariants = [''];
 
   let lastError = null;
   for (const listIdValue of listIdVariants) {
@@ -429,13 +421,23 @@ function hasTaskField(task, field) {
   return Object.prototype.hasOwnProperty.call(task || {}, field);
 }
 
-function shouldFetchFullRemoteTask(remoteTask) {
+/**
+ * Whether a second, per-task Graph GET is needed to fill in a field the list
+ * read did not return.
+ *
+ * This used to demand body, dueDateTime AND completedDateTime, which meant it
+ * returned true for every task ever read: Graph omits dueDateTime on a task
+ * with no due date and completedDateTime on a task that is not completed, both
+ * of which are correct and mean "null", not "not loaded". The result was one
+ * extra Graph round trip per task per sync, roughly a hundred wasted calls a
+ * run on an every-minute cron. Only ask for detail when a field we actually act
+ * on is genuinely missing.
+ */
+export function shouldFetchFullRemoteTask(remoteTask) {
   if (!remoteTask) return false;
-  return (
-    !hasTaskField(remoteTask, 'body') ||
-    !hasTaskField(remoteTask, 'completedDateTime') ||
-    !hasTaskField(remoteTask, 'dueDateTime')
-  );
+  if (!hasTaskField(remoteTask, 'body')) return true;
+  // completedDateTime only carries information when the task is completed.
+  return remoteTask.status === 'completed' && !hasTaskField(remoteTask, 'completedDateTime');
 }
 
 async function todoTaskExists({ accessToken, listId, todoTaskId }) {
@@ -804,7 +806,6 @@ async function performFullSync({ supabase, userId }) {
 
   const activeProjects = (projects || []).filter((project) => isProjectActive(project.status));
   const activeProjectIds = new Set(activeProjects.map((project) => project.id));
-  const desiredTasks = (tasks || []).filter((task) => activeProjectIds.has(task.project_id));
 
   const { data: projectMaps, error: projectMapsError } = await supabase
     .from('office365_project_lists')
@@ -834,7 +835,6 @@ async function performFullSync({ supabase, userId }) {
   }
 
   const desiredProjectIds = new Set(activeProjects.map((p) => p.id));
-  const desiredTaskIds = new Set(desiredTasks.map((t) => t.id));
 
   // Read once per run. Only needed when some project has no list mapping, which
   // is the reconnect case; skipping it otherwise keeps the common run at the
@@ -1336,8 +1336,19 @@ async function performFullSync({ supabase, userId }) {
   }
 
   // Push local tasks -> Office 365 (only when different).
+  //
+  // Finished work is excluded outright, not pushed as a completed item. The
+  // stale-mapping pass below now deletes finished tasks from Outlook, so
+  // pushing them here would mean writing an item on its way to being deleted,
+  // and worse: a finished task whose remote item was already deleted but whose
+  // mapping row survived a failed DB write would hit the "mapping but no remote
+  // task" branch and be RECREATED in Outlook, only to be deleted again on the
+  // next run, for ever. Leaving finished tasks to the delete pass is the only
+  // way the two passes agree.
   const tasksAfterPull = Array.from(localTasksById.values());
-  const desiredTasksAfterPull = tasksAfterPull.filter((task) => activeProjectIds.has(task.project_id));
+  const desiredTasksAfterPull = tasksAfterPull.filter((task) =>
+    shouldTaskExistInOutlook({ task, activeProjectIds })
+  );
 
   for (const task of desiredTasksAfterPull) {
     const projectMap = projectMapByProjectId.get(task.project_id);
@@ -1391,13 +1402,8 @@ async function performFullSync({ supabase, userId }) {
     }
 
     if (!mapping) {
-      // Never create a NEW remote item for finished work. Outlook is a list of
-      // things still to do, and pushing a done or cancelled task into it as a
-      // pre-completed item is noise. This also closes the loop on the two-way
-      // delete: deleting an item in Outlook cancels the local task and unlinks
-      // the pair, and without this guard the very next pass would recreate it.
-      // An EXISTING mapping is still updated to 'completed' below, so finishing
-      // a task in the app still ticks it off in Outlook.
+      // Belt and braces: finished work is already filtered out of the loop
+      // above. Kept so this branch stays correct if the filter ever moves.
       if (isTaskFinished(task)) continue;
 
       const payload = buildTodoTaskPayload(task);
@@ -1533,9 +1539,29 @@ async function performFullSync({ supabase, userId }) {
     }
   }
 
-  // Remove stale task mappings (and delete remote tasks) for local deletions or inactive projects.
+  // Remove stale task mappings (and delete the remote tasks) for local
+  // deletions, inactive projects and finished work.
+  //
+  // Finished work used to be kept: a done or cancelled task was ticked off in
+  // Outlook and then left there for good, because the retained set was every
+  // task in an active project regardless of state. Outlook filled up with
+  // months of completed items (78 of 101 on this account), which is the "old
+  // tasks are still in Office 365" complaint. Outlook is a list of things still
+  // to do, so a task that is finished leaves it.
+  //
+  // Computed from the POST-pull task state so a task ticked off in Outlook
+  // earlier in this same run is removed now rather than one run later. Tasks
+  // the pull unlinked are absent from localTasksById and so are not retained,
+  // which is correct: their remote item is already gone and the delete below
+  // is a no-op 404.
+  const retainedTaskIds = new Set(
+    Array.from(localTasksById.values())
+      .filter((task) => shouldTaskExistInOutlook({ task, activeProjectIds }))
+      .map((task) => task.id)
+  );
+
   for (const mapping of taskMaps || []) {
-    if (desiredTaskIds.has(mapping.task_id)) continue;
+    if (retainedTaskIds.has(mapping.task_id)) continue;
     const removed = await removeRemote(() =>
       deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id })
     );
@@ -1663,17 +1689,57 @@ export async function getOffice365ListIdForProject({ userId, projectId }) {
 
 /**
  * Delete a To Do list by id, for the case where the mapping row has already
- * been cascaded away. Best-effort and never throws: the local delete has
- * already happened by the time this runs.
+ * been cascaded away, or is about to be (disconnect). Best-effort and never
+ * throws: the local delete has already happened by the time this runs.
+ *
+ * Returns true when the list is gone (deleted, or already absent), false when
+ * the delete genuinely failed, so callers can report how much was cleaned up.
  */
 export async function deleteOffice365ListById({ userId, listId }) {
-  if (!listId) return;
+  if (!listId) return false;
   try {
     const accessToken = await getValidOffice365AccessToken({ userId });
-    await deleteTodoList({ accessToken, listId });
+    return await removeRemote(() => deleteTodoList({ accessToken, listId }));
   } catch (err) {
-    console.warn('Office365: failed to delete remote list for a deleted project:', err);
+    console.warn('Office365: failed to delete remote list:', err);
+    return false;
   }
+}
+
+/**
+ * Delete several To Do lists on one access token, for disconnect.
+ *
+ * Deliberately not a loop over deleteOffice365ListById: that resolves a token
+ * per call, so disconnecting an account with twenty-odd lists meant twenty-odd
+ * vault reads on top of the deletes and risked running the request out of time
+ * half way through, leaving the rest of the lists stranded in Outlook with
+ * their mapping rows already gone.
+ *
+ * Never throws. Reports what it managed, so the caller can tell the user which
+ * lists they still need to remove by hand.
+ */
+export async function deleteOffice365Lists({ userId, listIds }) {
+  const ids = (listIds || []).filter(Boolean);
+  if (!ids.length) return { deleted: 0, failed: 0 };
+
+  let accessToken;
+  try {
+    accessToken = await getValidOffice365AccessToken({ userId });
+  } catch (err) {
+    // An expired or revoked token means Graph is unreachable. Say nothing was
+    // cleaned up rather than reporting a silent success.
+    console.warn('Office365: cannot reach Graph to delete lists:', err);
+    return { deleted: 0, failed: ids.length };
+  }
+
+  let deleted = 0;
+  let failed = 0;
+  for (const listId of ids) {
+    const removed = await removeRemote(() => deleteTodoList({ accessToken, listId }));
+    if (removed) deleted += 1;
+    else failed += 1;
+  }
+  return { deleted, failed };
 }
 
 export async function deleteOffice365Project({ userId, projectId }) {
@@ -1727,8 +1793,11 @@ export async function syncOffice365Task({ userId, taskId }) {
 
   if (projectError) throw projectError;
 
-  if (!isProjectActive(project.status)) {
-    // Project is not eligible for sync; ensure task is removed remotely if it exists.
+  // Outlook only ever holds live work in an active project. A task that is
+  // finished, or whose project is no longer active, is removed rather than
+  // ticked off, so finishing something in the app clears it from Outlook now
+  // instead of waiting for the next cron run to tidy up.
+  if (!isProjectActive(project.status) || isTaskFinished(task)) {
     const { data: existingMapping } = await supabase
       .from('office365_task_items')
       .select('*')

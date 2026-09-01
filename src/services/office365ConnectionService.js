@@ -155,10 +155,44 @@ export async function upsertOffice365ConnectionFromTokenResponse({
   return data;
 }
 
+/**
+ * Disconnect Office 365, removing the To Do lists this app created.
+ *
+ * The remote lists MUST go before the mapping rows do. Disconnect used to drop
+ * every mapping and leave Outlook untouched, and Microsoft's `/me/todo/lists`
+ * cannot be relied on to enumerate the lists this app creates (on some
+ * mailboxes it returns only the built-in ones), so once the mapping row was
+ * gone nothing in the app could ever find that list again. Every disconnect
+ * permanently stranded a full set of lists, and the next connect built a second
+ * set beside them.
+ *
+ * Deleting a To Do list deletes the tasks inside it, so the lists are enough.
+ * Best-effort per list: a list we cannot delete is reported, not fatal, because
+ * refusing to disconnect over a Graph blip would trap the user in a connection
+ * they have asked to end.
+ */
 export async function deleteOffice365Connection({ userId }) {
   const supabase = getSupabaseServiceRole();
   const existing = await getOffice365Connection({ userId });
   if (!existing) return { deleted: false };
+
+  const { data: projectLists } = await supabase
+    .from('office365_project_lists')
+    .select('list_id')
+    .eq('user_id', userId);
+
+  const listIds = (projectLists || []).map((row) => row?.list_id).filter(Boolean);
+  let listsDeleted = 0;
+  let listsFailed = 0;
+
+  if (listIds.length) {
+    // Imported lazily: office365SyncService imports this module, so a top-level
+    // import here would be a cycle.
+    const { deleteOffice365Lists } = await import('@/services/office365SyncService');
+    const result = await deleteOffice365Lists({ userId, listIds });
+    listsDeleted = result.deleted;
+    listsFailed = result.failed;
+  }
 
   await deleteSecret(existing.refresh_token_secret_id).catch(() => {});
   await deleteSecret(existing.access_token_secret_id).catch(() => {});
@@ -169,7 +203,7 @@ export async function deleteOffice365Connection({ userId }) {
   const { error } = await supabase.from('office365_connections').delete().eq('user_id', userId);
   if (error) throw error;
 
-  return { deleted: true };
+  return { deleted: true, listsDeleted, listsFailed };
 }
 
 export async function getValidOffice365AccessToken({ userId }) {

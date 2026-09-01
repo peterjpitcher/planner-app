@@ -72,6 +72,17 @@ export default function IntegrationsClient() {
   };
 
   const disconnect = async () => {
+    // Disconnecting now deletes the To Do lists this app created, which takes
+    // the tasks inside them with it. That is destructive and irreversible from
+    // Outlook's side, so it is confirmed rather than done on a single click.
+    const confirmed = window.confirm(
+      'Disconnect Office 365?\n\n' +
+        'This deletes the Microsoft To Do lists Planner created for your projects, ' +
+        'and every task inside them. Your Planner projects and tasks are not affected.\n\n' +
+        'Lists you made yourself in To Do are left alone.'
+    );
+    if (!confirmed) return;
+
     setNotice('');
     setDisconnecting(true);
     try {
@@ -80,7 +91,15 @@ export default function IntegrationsClient() {
       if (!response.ok) {
         throw new Error(json?.error || 'Disconnect failed');
       }
-      setNotice('Office 365 disconnected.');
+      // Say what actually happened in Outlook. A list we could not delete is
+      // stranded there for good, because Microsoft does not let us list them
+      // back, so the user has to know to remove it by hand.
+      const failed = Number(json?.listsFailed || 0);
+      setNotice(
+        failed > 0
+          ? `Office 365 disconnected. ${json?.listsDeleted || 0} lists removed, but ${failed} could not be deleted. Please remove those from Microsoft To Do yourself.`
+          : `Office 365 disconnected. ${json?.listsDeleted || 0} lists removed from Microsoft To Do.`
+      );
       await refreshStatus();
     } catch (err) {
       setNotice(String(err?.message || 'Disconnect failed'));
@@ -108,6 +127,15 @@ export default function IntegrationsClient() {
               <span className="font-medium">Status:</span>{' '}
               {status.loading ? 'Loading…' : (status.connected ? 'Connected' : 'Not connected')}
             </div>
+            {/* Which mailbox is actually being written to. The status route has
+                always returned this and the page never showed it, so a
+                connection pointing at the wrong Microsoft account looked
+                identical to a correct one. */}
+            {status.connected && status?.microsoftUserEmail && (
+              <div className="mt-1">
+                <span className="font-medium">Account:</span> {status.microsoftUserEmail}
+              </div>
+            )}
             {lastSyncedLabel && (
               <div className="mt-1">
                 <span className="font-medium">Last sync:</span> {lastSyncedLabel}
@@ -160,7 +188,9 @@ export default function IntegrationsClient() {
           </div>
 
           <div className="text-xs text-muted-foreground">
-            Projects are synced as task lists; tasks are synced to/from their project list. Automatic background sync runs every minute.
+            Projects are synced as task lists; tasks are synced to/from their project list. Completed
+            and cancelled tasks are removed from Microsoft To Do. Automatic background sync runs every
+            five minutes.
           </div>
         </CardContent>
       </Card>

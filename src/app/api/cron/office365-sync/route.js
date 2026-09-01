@@ -60,7 +60,17 @@ export async function GET(request) {
       const result = await syncOffice365All({ userId });
       // A run that completed clears any failure recorded by an earlier one, so
       // a transient Graph blip does not leave a permanent warning on screen.
-      await clearOffice365SyncFailure({ userId });
+      //
+      // Only a run that actually did the work has earned that. syncOffice365All
+      // returns { skipped: 'locked' } WITHOUT throwing when another run holds
+      // the per-user lock, and clearing on that outcome wiped the error a
+      // genuinely failing run had just recorded. With the cron firing over and
+      // over, a sync that was failing every time still showed "Connected,
+      // syncing normally" on the settings page, which is the exact failure mode
+      // the sync_error column was added to prevent.
+      if (!result?.skipped) {
+        await clearOffice365SyncFailure({ userId });
+      }
       results.push({ userId, ok: true, ...result });
     } catch (err) {
       // Record it on the connection, which is what the automations panel reads.

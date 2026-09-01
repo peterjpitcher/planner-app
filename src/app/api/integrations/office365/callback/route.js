@@ -8,6 +8,7 @@ import {
   getOffice365Scopes,
   getOffice365TenantId,
 } from '@/lib/office365/oauth';
+import { office365GraphRequest } from '@/lib/office365/graph';
 import { upsertOffice365ConnectionFromTokenResponse } from '@/services/office365ConnectionService';
 
 const COOKIE_STATE = 'o365_oauth_state';
@@ -99,11 +100,30 @@ export async function GET(request) {
       scopes: getOffice365Scopes(),
     });
 
+    // Ask Microsoft which account was actually just connected. This used to be
+    // taken from the Planner login (or an env var), which is a different thing
+    // entirely, so the settings page could name one mailbox while the sync
+    // wrote to another and nothing on screen gave that away. The User.Read
+    // scope is already granted, so this costs one call at connect time and
+    // nothing afterwards. Falls back to the session email if the call fails, so
+    // a Graph blip cannot block an otherwise good connection.
+    let microsoftEmail = null;
+    try {
+      const meResponse = await office365GraphRequest({
+        accessToken: tokenResponse?.access_token,
+        method: 'GET',
+        path: '/me',
+      });
+      microsoftEmail = meResponse?.mail || meResponse?.userPrincipalName || null;
+    } catch (meError) {
+      console.warn('Office365 callback: could not read the connected account from Graph:', meError);
+    }
+
     await upsertOffice365ConnectionFromTokenResponse({
       userId,
       tokenResponse,
       tenantIdOverride: getOffice365TenantId(),
-      userEmail: session?.user?.email || (process.env.MICROSOFT_USER_EMAIL || '').trim() || null,
+      userEmail: microsoftEmail || session?.user?.email || null,
     });
 
     const response = NextResponse.redirect(buildReturnUrl({ origin: url.origin, returnTo: returnToCookie, status: 'connected' }));

@@ -3,6 +3,8 @@ import {
   buildTodoTaskPayload,
   fromGraphDueDateTime,
   isTaskFinished,
+  shouldFetchFullRemoteTask,
+  shouldTaskExistInOutlook,
 } from '../office365SyncService';
 
 
@@ -83,5 +85,66 @@ describe('buildTodoTaskPayload', () => {
     expect(payload.title).toBe('Ring the supplier');
     expect(payload.body.content).toBe('about the invoice');
     expect(payload.dueDateTime).toBeTruthy();
+  });
+});
+
+describe('shouldTaskExistInOutlook', () => {
+  const activeProjectIds = new Set(['p-active']);
+  const live = { id: 't1', project_id: 'p-active', state: 'today' };
+
+  it('keeps live work in an active project', () => {
+    expect(shouldTaskExistInOutlook({ task: live, activeProjectIds })).toBe(true);
+    expect(shouldTaskExistInOutlook({ task: { ...live, state: 'backlog' }, activeProjectIds })).toBe(true);
+    expect(shouldTaskExistInOutlook({ task: { ...live, state: 'waiting' }, activeProjectIds })).toBe(true);
+  });
+
+  it('removes finished work, so Outlook stops filling up with ticked-off tasks', () => {
+    // The old rule kept every task in an active project whatever its state, so
+    // done and cancelled tasks sat in Outlook for ever.
+    expect(shouldTaskExistInOutlook({ task: { ...live, state: 'done' }, activeProjectIds })).toBe(false);
+    expect(shouldTaskExistInOutlook({ task: { ...live, state: 'cancelled' }, activeProjectIds })).toBe(false);
+  });
+
+  it('removes anything in a project that is no longer active', () => {
+    expect(shouldTaskExistInOutlook({ task: { ...live, project_id: 'p-closed' }, activeProjectIds })).toBe(false);
+  });
+
+  it('removes tasks with no project, and copes with junk', () => {
+    expect(shouldTaskExistInOutlook({ task: { ...live, project_id: null }, activeProjectIds })).toBe(false);
+    expect(shouldTaskExistInOutlook({ task: null, activeProjectIds })).toBe(false);
+    expect(shouldTaskExistInOutlook({ task: live, activeProjectIds: undefined })).toBe(false);
+  });
+});
+
+describe('shouldFetchFullRemoteTask', () => {
+  // Graph omits dueDateTime on a task with no due date, and completedDateTime
+  // on a task that is not completed. Both mean "null", not "not loaded". The
+  // old predicate treated them as missing, so it asked for a second Graph call
+  // for every task on every sync.
+  it('does not fetch when a live task simply has no due date', () => {
+    expect(shouldFetchFullRemoteTask({ id: 'x', title: 'a', status: 'notStarted', body: { content: '' } })).toBe(false);
+  });
+
+  it('does not fetch when a completed task already carries its completion time', () => {
+    expect(
+      shouldFetchFullRemoteTask({
+        id: 'x',
+        status: 'completed',
+        body: { content: '' },
+        completedDateTime: { dateTime: '2026-01-28T00:00:00', timeZone: 'UTC' },
+      })
+    ).toBe(false);
+  });
+
+  it('fetches when the body is genuinely absent', () => {
+    expect(shouldFetchFullRemoteTask({ id: 'x', status: 'notStarted' })).toBe(true);
+  });
+
+  it('fetches when a completed task is missing its completion time', () => {
+    expect(shouldFetchFullRemoteTask({ id: 'x', status: 'completed', body: { content: '' } })).toBe(true);
+  });
+
+  it('handles a missing task', () => {
+    expect(shouldFetchFullRemoteTask(null)).toBe(false);
   });
 });
