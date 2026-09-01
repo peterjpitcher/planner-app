@@ -2,6 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { UsersIcon } from '@heroicons/react/24/outline';
 
@@ -24,14 +25,30 @@ function EmptyState({ customers, onSelect }) {
         </div>
 
         {customers.length === 0 ? (
-          <p className="mt-4 rounded-lg border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">
-            No customers yet. Create one to start filing projects, tasks and notes against them.
-          </p>
+          <div className="mt-4 rounded-lg border border-dashed border-gray-200 p-8 text-center">
+            <p className="text-sm text-gray-500">
+              No customers yet. Your projects already carry stakeholder names, so the
+              quickest start is to turn those into customers.
+            </p>
+            <Link
+              href="/customers/setup"
+              className="mt-3 inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              Set up from stakeholders
+            </Link>
+          </div>
         ) : (
           <>
             <p className="mt-2 text-sm text-gray-500">
               Pick a customer to see everything open for them in one place.
             </p>
+
+            <Link
+              href="/customers/setup"
+              className="mt-3 inline-block text-sm font-medium text-indigo-600 underline hover:text-indigo-700"
+            >
+              Assign projects to customers
+            </Link>
 
             {needsWork.length > 0 && (
               <section className="mt-6">

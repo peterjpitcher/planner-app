@@ -418,3 +418,247 @@ export async function getCustomerOverview({ supabase, userId, customerId }) {
     error: null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Stakeholder triage and bulk assignment
+// ---------------------------------------------------------------------------
+//
+// projects.stakeholders is a text[] of free-text names typed into a comma
+// separated box over a long period. Some entries are companies, which should
+// become customers. Some are people, which should become contacts. No rule can
+// tell them apart, and guessing would either invent junk customers or bury real
+// customer names as contacts, so the conversion is a screen you confirm rather
+// than a silent migration.
+//
+// Phase 1 handles the customer half. The person half needs the contacts table,
+// which lands in Phase 2 on the same screen. A name left untouched here stays in
+// the column, so nothing is lost between the two.
+
+/** Split one stakeholder array element into individual names. */
+function splitStakeholderEntry(entry) {
+  return String(entry ?? '')
+    .split(',')
+    .map((part) => normaliseName(part))
+    .filter((part) => part.length > 0);
+}
+
+/**
+ * Profile what is actually in the stakeholders column, so the conversion starts
+ * from the data rather than from an assumption about it.
+ *
+ * @param {Array<{id: string, name: string, stakeholders: string[]|null}>} projects
+ * @returns {Object}
+ */
+export function profileStakeholders(projects) {
+  let rawEntries = 0;
+  let blankEntries = 0;
+  let entriesWithCommas = 0;
+  let emailLike = 0;
+
+  const byName = new Map();
+
+  (projects || []).forEach((project) => {
+    const entries = Array.isArray(project.stakeholders) ? project.stakeholders : [];
+    entries.forEach((entry) => {
+      rawEntries += 1;
+      if (normaliseName(entry).length === 0) {
+        blankEntries += 1;
+        return;
+      }
+      if (String(entry).includes(',')) entriesWithCommas += 1;
+
+      splitStakeholderEntry(entry).forEach((name) => {
+        const key = name.toLowerCase();
+        if (!byName.has(key)) {
+          byName.set(key, {
+            name,
+            // An entry containing @ is a person's address, not a company name.
+            looksLikeEmail: name.includes('@'),
+            projects: [],
+          });
+        }
+        const record = byName.get(key);
+        if (!record.projects.some((p) => p.id === project.id)) {
+          record.projects.push({ id: project.id, name: project.name });
+        }
+      });
+    });
+  });
+
+  byName.forEach((record) => {
+    if (record.looksLikeEmail) emailLike += 1;
+  });
+
+  return {
+    projectsWithStakeholders: (projects || []).filter(
+      (p) => Array.isArray(p.stakeholders) && p.stakeholders.length > 0
+    ).length,
+    rawEntries,
+    blankEntries,
+    entriesWithCommas,
+    distinctNames: byName.size,
+    emailLike,
+    // Most-used first: those are the ones most likely to be real customers.
+    names: [...byName.values()].sort(
+      (a, b) => b.projects.length - a.projects.length || a.name.localeCompare(b.name)
+    ),
+  };
+}
+
+/**
+ * The triage payload: every distinct stakeholder name, and every project that
+ * still has no customer.
+ *
+ * @returns {Promise<{data: Object|null, error: Object|null}>}
+ */
+export async function getTriageData({ supabase, userId }) {
+  const { data: projects, error } = await supabase
+    .from('projects')
+    .select('id, name, status, stakeholders, customer_id')
+    .eq('user_id', userId)
+    .order('name', { ascending: true });
+
+  if (error) return { data: null, error: { status: 500, message: error.message } };
+
+  const all = projects || [];
+  const profile = profileStakeholders(all);
+
+  return {
+    data: {
+      profile,
+      unassignedProjects: all
+        .filter((project) => !project.customer_id)
+        .filter((project) => !CLOSED_PROJECT_STATUSES.includes(project.status))
+        .map((project) => ({
+          id: project.id,
+          name: project.name,
+          status: project.status,
+          stakeholders: Array.isArray(project.stakeholders) ? project.stakeholders : [],
+        })),
+      assignedCount: all.filter((project) => project.customer_id).length,
+      totalProjects: all.length,
+    },
+    error: null,
+  };
+}
+
+/**
+ * Apply the triage: create customers from chosen names, assign their projects,
+ * and apply any manual project assignments.
+ *
+ * A name already used by an existing customer links to that one rather than
+ * failing, so running the screen twice is safe.
+ *
+ * A project that already has a different customer is never overwritten. It is
+ * reported back as a conflict for you to resolve, because a stakeholder name
+ * matching is much weaker evidence than a customer you set by hand.
+ *
+ * @returns {Promise<{data: Object|null, error: Object|null}>}
+ */
+export async function applyTriage({ supabase, userId, customerNames = [], assignments = [] }) {
+  const created = [];
+  const reused = [];
+  const conflicts = [];
+  let assignedProjects = 0;
+
+  const { data: projects, error: projectError } = await supabase
+    .from('projects')
+    .select('id, name, stakeholders, customer_id')
+    .eq('user_id', userId);
+
+  if (projectError) {
+    return { data: null, error: { status: 500, message: projectError.message } };
+  }
+
+  const projectById = new Map((projects || []).map((project) => [project.id, project]));
+
+  for (const rawName of customerNames) {
+    const name = normaliseName(rawName);
+    if (!name) continue;
+
+    const { data: existing } = await findCustomerByName({ supabase, userId, name });
+
+    let customer = existing;
+    if (!customer) {
+      const { data: fresh, error: createError } = await createCustomer({
+        supabase,
+        userId,
+        payload: { name },
+      });
+      if (createError) {
+        // A 409 means someone created it between the lookup and the insert.
+        // Re-read rather than failing the whole run.
+        if (createError.status === 409) {
+          const { data: raced } = await findCustomerByName({ supabase, userId, name });
+          customer = raced;
+        } else {
+          return { data: null, error: createError };
+        }
+      } else {
+        customer = fresh;
+        created.push(customer.name);
+      }
+    } else {
+      reused.push(customer.name);
+    }
+
+    if (!customer) continue;
+
+    // Every project carrying this stakeholder, unless it already has a
+    // different customer.
+    const matching = (projects || []).filter((project) =>
+      (Array.isArray(project.stakeholders) ? project.stakeholders : []).some((entry) =>
+        splitStakeholderEntry(entry).some((part) => part.toLowerCase() === name.toLowerCase())
+      )
+    );
+
+    for (const project of matching) {
+      if (project.customer_id && project.customer_id !== customer.id) {
+        conflicts.push({ projectId: project.id, projectName: project.name, stakeholder: name });
+        continue;
+      }
+      if (project.customer_id === customer.id) continue;
+
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update({ customer_id: customer.id })
+        .eq('id', project.id)
+        .eq('user_id', userId);
+
+      if (updateError) {
+        return { data: null, error: { status: 500, message: updateError.message } };
+      }
+      assignedProjects += 1;
+      project.customer_id = customer.id;
+    }
+  }
+
+  // Manual assignments last, so an explicit choice always beats one inferred
+  // from a stakeholder name.
+  for (const assignment of assignments) {
+    const project = projectById.get(assignment.projectId);
+    if (!project) continue;
+    if (project.customer_id === assignment.customerId) continue;
+
+    const { error: updateError } = await supabase
+      .from('projects')
+      .update({ customer_id: assignment.customerId || null })
+      .eq('id', assignment.projectId)
+      .eq('user_id', userId);
+
+    if (updateError) {
+      return { data: null, error: { status: 500, message: updateError.message } };
+    }
+    assignedProjects += 1;
+  }
+
+  return {
+    data: {
+      customersCreated: created,
+      customersReused: reused,
+      projectsAssigned: assignedProjects,
+      conflicts,
+    },
+    error: null,
+  };
+}

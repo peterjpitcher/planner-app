@@ -43,7 +43,7 @@ No user-visible change. Everything after this assumes a real transaction boundar
 - [ ] **1.10** `parseQuickTask` with customer resolution and the token grammar
 - [ ] **1.11** `create_task_with_customer` RPC and the `customer_name` path on `POST /api/tasks`
 - [ ] **1.12** Office 365 `buildListDisplayName` with ambiguity-safe adoption
-- [ ] **1.13** Stakeholder triage and bulk assignment screen
+- [ ] **1.13** Stakeholder triage (Customer and Skip halves) and bulk project assignment. The Person half needs `contacts`, so it lands in Phase 2 on the same screen
 - [ ] **1.14** Tests
 - [ ] **1.15** Verify and commit
 

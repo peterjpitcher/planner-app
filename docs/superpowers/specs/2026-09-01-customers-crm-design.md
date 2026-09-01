@@ -259,11 +259,23 @@ FROM public.projects, unnest(coalesce(stakeholders, '{}')) AS s;
 
 **The screen.** One row per distinct name, showing which projects use it. Three choices:
 
-| Choice | What happens |
-|---|---|
-| **Customer** | Creates a customer with that name. Every project carrying that stakeholder is assigned to it, unless you have already given that project a different customer, in which case the row is flagged for you to resolve |
-| **Person** | Creates a contact, linked to those projects through `project_contacts`. Attached to the project's customer where it has one, standalone otherwise |
-| **Skip** | Nothing is written. The name stays untouched in the column until the drop |
+| Choice | What happens | Phase |
+|---|---|---|
+| **Customer** | Creates a customer with that name. Every project carrying that stakeholder is assigned to it, unless you have already given that project a different customer, in which case the row is flagged for you to resolve | 1 |
+| **Person** | Creates a contact, linked to those projects through `project_contacts`. Attached to the project's customer where it has one, standalone otherwise | 2 |
+| **Skip** | Nothing is written. The name stays untouched in the column until the drop | 1 |
+
+**The two halves land in different phases, because they have to.** `contacts` does
+not exist until Phase 2, so the Person choice has nowhere to write in Phase 1.
+Rather than delay the whole screen, Phase 1 ships the **Customer** and **Skip**
+choices, which is the half that matters first: it is what makes `/customers`
+non-empty and what the bulk project assignment depends on. Phase 2 adds the
+Person choice to the same screen once `contacts` exists.
+
+No state is needed to bridge them. A name you do not mark as a customer in Phase
+1 simply stays in `stakeholders`, untouched, and is still there for the Person
+pass in Phase 2. The Phase 4 drop gate counts a name as triaged once it has been
+marked customer, marked person, or explicitly skipped.
 
 A "Customer" choice that collides with a customer you already created links to the existing one instead of failing. Names are pre-sorted with the most-used first, since those are most likely to be real customers.
 

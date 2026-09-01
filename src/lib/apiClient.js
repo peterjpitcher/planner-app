@@ -533,6 +533,27 @@ class APIClient {
     return response?.data ?? response;
   }
 
+  /**
+   * Stakeholder triage: distinct names, what the column actually contains, and
+   * the projects still lacking a customer. Never cached, because it is a
+   * one-off setup screen that must show current state.
+   */
+  async getCustomerTriage() {
+    const response = await this.fetchWithAuth('/api/customers/triage');
+    return response?.data ?? response;
+  }
+
+  async applyCustomerTriage({ customerNames = [], assignments = [] }) {
+    const result = await this.fetchWithAuth('/api/customers/triage', {
+      method: 'POST',
+      body: JSON.stringify({ customerNames, assignments }),
+    });
+    clearCustomerCaches();
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result?.data ?? result;
+  }
+
   async createCustomer(payload) {
     const result = await this.fetchWithAuth('/api/customers', {
       method: 'POST',
