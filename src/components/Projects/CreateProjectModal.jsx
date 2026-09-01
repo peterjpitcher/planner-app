@@ -25,7 +25,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [area, setArea] = useState('');
   const [customerId, setCustomerId] = useState(null);
   const [status, setStatus] = useState(PROJECT_STATUS.OPEN);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,7 +42,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
     setName('');
     setDescription('');
     setDueDate('');
-    setArea('');
     setCustomerId(null);
     setStatus(PROJECT_STATUS.OPEN);
     setError(null);
@@ -72,7 +70,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
         name: trimmedName,
         description: description.trim() || null,
         due_date: dueDate || null,
-        area: area.trim() || null,
         customer_id: customerId,
         status,
       });
@@ -83,7 +80,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [name, description, dueDate, area, customerId, status, resetForm, onCreated]);
+  }, [name, description, dueDate, customerId, status, resetForm, onCreated]);
 
   return (
     <Dialog open={isOpen} onClose={handleClose} className="relative z-50">
@@ -236,26 +233,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
                 </div>
               </div>
 
-              {/* Area */}
-              <div>
-                <label
-                  htmlFor="create-project-area"
-                  className="block text-xs font-medium uppercase tracking-wide text-gray-400 mb-1"
-                >
-                  Area
-                </label>
-                <input
-                  id="create-project-area"
-                  type="text"
-                  value={area}
-                  onChange={(e) => setArea(e.target.value)}
-                  placeholder="e.g. Marketing, Engineering…"
-                  maxLength={255}
-                  disabled={isSubmitting}
-                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60 disabled:bg-gray-50"
-                  aria-label="Project area"
-                />
-              </div>
 
               {/* Customer. Optional: a project can exist without one, and the
                   bulk assignment screen exists precisely because most existing

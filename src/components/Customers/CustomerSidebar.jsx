@@ -112,9 +112,6 @@ function CustomerSidebar({
   onFilterChange,
   search,
   onSearchChange,
-  areas,
-  selectedArea,
-  onAreaChange,
   counts,
 }) {
   return (
@@ -159,23 +156,6 @@ function CustomerSidebar({
 
       <FilterPills activeFilter={activeFilter} onFilterChange={onFilterChange} counts={counts} />
 
-      {areas.length > 0 && (
-        <div className="px-3 pb-2">
-          <select
-            value={selectedArea}
-            onChange={(event) => onAreaChange(event.target.value)}
-            aria-label="Filter by area"
-            className="w-full rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-          >
-            <option value="all">All areas</option>
-            {areas.map((area) => (
-              <option key={area} value={area}>
-                {area}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {customers.length === 0 ? (

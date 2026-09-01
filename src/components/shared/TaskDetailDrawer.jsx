@@ -111,7 +111,6 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
   const [name, setName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [description, setDescription] = useState('');
-  const [area, setArea] = useState('');
   const [taskType, setTaskType] = useState('');
   const [chips, setChips] = useState([]);
   const [dueDate, setDueDate] = useState('');
@@ -152,7 +151,6 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
 
     setName(task.name ?? '');
     setDescription(task.description ?? '');
-    setArea(task.area ?? '');
     setTaskType(task.task_type ?? '');
     setChips(Array.isArray(task.chips) ? task.chips : []);
     setDueDate(toDateInputValue(task.due_date));
@@ -243,10 +241,7 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
   }, [description, task, saveField]);
 
   const handleAreaBlur = useCallback(() => {
-    if (area !== (task?.area ?? '')) {
-      saveField('area', area);
-    }
-  }, [area, task, saveField]);
+  }, [task, saveField]);
 
   const handleTaskTypeChange = useCallback(
     (e) => {
@@ -492,18 +487,6 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
             </FieldRow>
 
             {/* Area */}
-            <FieldRow label="Area" htmlFor="drawer-area">
-              <input
-                id="drawer-area"
-                type="text"
-                value={area}
-                onChange={(e) => setArea(e.target.value)}
-                onBlur={handleAreaBlur}
-                placeholder="e.g. Marketing, Engineering…"
-                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                aria-label="Task area"
-              />
-            </FieldRow>
 
             {/* Task type */}
             <FieldRow label="Task type" htmlFor="drawer-task-type">

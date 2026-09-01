@@ -59,17 +59,21 @@ export function computeAttentionCounts(projects, tasksByProject) {
   return { overdue, noTasks, stale, onHold };
 }
 
-export function deriveAreas(projects) {
+/**
+ * The customers that actually own at least one of these projects, so the filter
+ * never offers a customer with nothing behind it.
+ *
+ * Replaces deriveAreas. Areas are being retired: they were a free-text stand-in
+ * for who the work was for, and that is now a real record.
+ */
+export function deriveProjectCustomers(projects) {
   const seen = new Map();
   for (const project of projects) {
-    if (project.area) {
-      const lower = project.area.toLowerCase().trim();
-      if (!seen.has(lower)) {
-        seen.set(lower, project.area.trim());
-      }
+    if (project.customer_id && project.customer_name && !seen.has(project.customer_id)) {
+      seen.set(project.customer_id, { id: project.customer_id, name: project.customer_name });
     }
   }
-  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function getAttentionType(project, projectTasks = []) {
@@ -79,14 +83,20 @@ export function getAttentionType(project, projectTasks = []) {
   return null;
 }
 
-export function getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter, selectedArea }) {
+export function getVisibleProjects(projects, tasksByProject, { showCompleted, activeFilter, selectedCustomer }) {
   const STATUS_ORDER = ['In Progress', 'Open', 'On Hold', 'Completed', 'Cancelled'];
 
   return projects
     .filter((p) => {
       if (!showCompleted && (p.status === 'Completed' || p.status === 'Cancelled')) return false;
-      if (selectedArea && selectedArea !== 'all') {
-        if ((p.area || '').toLowerCase() !== selectedArea.toLowerCase()) return false;
+      if (selectedCustomer && selectedCustomer !== 'all') {
+        // "none" is a real answer, not a missing filter: it is how you find the
+        // projects that still need assigning.
+        if (selectedCustomer === 'none') {
+          if (p.customer_id) return false;
+        } else if (p.customer_id !== selectedCustomer) {
+          return false;
+        }
       }
       if (activeFilter && activeFilter !== 'all') {
         return matchesFilter(p, activeFilter, tasksByProject[p.id] || []);

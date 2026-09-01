@@ -163,14 +163,15 @@ export default function CustomerWorkspace({
               </span>
             )}
 
-            <span className="text-gray-400">Area:</span>
-            <InlineEdit
-              value={customer.area}
-              placeholder="Add an area"
-              disabled={isArchived}
-              onSave={(area) => onUpdateCustomer(customer.id, { area: area || null })}
-              className="text-gray-700"
-            />
+            {/* Areas are being retired in favour of the customer itself. Any
+                existing value still shows, but there is no longer a way to set
+                one: the thing it was standing in for is now the record you are
+                looking at. */}
+            {customer.area && (
+              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                {customer.area}
+              </span>
+            )}
           </div>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">

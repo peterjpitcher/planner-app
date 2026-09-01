@@ -5,10 +5,9 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { CUSTOMER_STATUS, VALIDATION } from '@/lib/constants';
 
-export default function CreateCustomerModal({ isOpen, onClose, onCreate, areas = [] }) {
+export default function CreateCustomerModal({ isOpen, onClose, onCreate }) {
   const [name, setName] = useState('');
   const [status, setStatus] = useState(CUSTOMER_STATUS.ACTIVE);
-  const [area, setArea] = useState('');
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -18,7 +17,6 @@ export default function CreateCustomerModal({ isOpen, onClose, onCreate, areas =
     if (isOpen) {
       setName('');
       setStatus(CUSTOMER_STATUS.ACTIVE);
-      setArea('');
       setWebsite('');
       setError(null);
     }
@@ -35,7 +33,6 @@ export default function CreateCustomerModal({ isOpen, onClose, onCreate, areas =
       await onCreate({
         name: trimmed,
         status,
-        area: area.trim() || null,
         website: website.trim() || null,
       });
       onClose();
@@ -107,7 +104,7 @@ export default function CreateCustomerModal({ isOpen, onClose, onCreate, areas =
                     />
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
                     <div>
                       <label
                         htmlFor="customer-status"
@@ -129,27 +126,6 @@ export default function CreateCustomerModal({ isOpen, onClose, onCreate, areas =
                       </select>
                     </div>
 
-                    <div>
-                      <label
-                        htmlFor="customer-area"
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Area
-                      </label>
-                      <input
-                        id="customer-area"
-                        type="text"
-                        list="customer-area-options"
-                        value={area}
-                        onChange={(event) => setArea(event.target.value)}
-                        className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                      />
-                      <datalist id="customer-area-options">
-                        {areas.map((option) => (
-                          <option key={option} value={option} />
-                        ))}
-                      </datalist>
-                    </div>
                   </div>
 
                   <div>
