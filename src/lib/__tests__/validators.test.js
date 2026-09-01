@@ -197,19 +197,7 @@ describe('validateProject', () => {
     expect(result.isValid).toBe(true);
   });
 
-  it('rejects too many stakeholders', () => {
-    const result = validateProject({
-      ...baseProject,
-      stakeholders: Array(11).fill('Alice'),
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.errors.stakeholders).toBeDefined();
-  });
 
-  it('accepts valid stakeholders', () => {
-    const result = validateProject({ ...baseProject, stakeholders: ['Alice', 'Bob'] });
-    expect(result.isValid).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------

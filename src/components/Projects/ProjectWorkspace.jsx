@@ -264,22 +264,14 @@ export default function ProjectWorkspace({
               />
             </span>
 
-            <span className="text-gray-300">|</span>
-
-            {/* Stakeholders */}
-            <span className="flex items-center gap-1">
-              <span className="text-gray-400">Stakeholders:</span>
-              <InlineEdit
-                value={(project.stakeholders || []).join(', ')}
-                onSave={(val) => {
-                  const parsed = val ? val.split(',').map((s) => s.trim()).filter(Boolean) : [];
-                  onUpdateProject(project.id, { stakeholders: parsed });
-                }}
-                placeholder="Add stakeholders"
-                disabled={isReadOnly}
-              />
-            </span>
           </div>
+
+          {/* The free-text stakeholders field lived here. It was a comma
+              separated box whose contents nothing could search, filter or roll
+              up, and it mixed company names with people's names. Each entry has
+              been converted to a customer or a contact, and the column is gone.
+              The customer is set above; their people live on the customer's
+              page. */}
 
           {/* Description */}
           <div className="mt-3">

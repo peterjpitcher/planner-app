@@ -11,7 +11,6 @@ const PROJECT_UPDATE_FIELDS = [
   'description',
   'status',
   'due_date',
-  'stakeholders',
   'area',
   'customer_id',
 ];

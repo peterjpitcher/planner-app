@@ -34,19 +34,6 @@ export function validateProject(project) {
     }
   }
 
-  // Stakeholders validation
-  if (project.stakeholders && Array.isArray(project.stakeholders)) {
-    if (project.stakeholders.length > VALIDATION.MAX_STAKEHOLDERS) {
-      errors.stakeholders = `Maximum ${VALIDATION.MAX_STAKEHOLDERS} stakeholders allowed`;
-    }
-    const invalidStakeholders = project.stakeholders.filter(
-      sh => !sh || sh.trim().length === 0 || sh.length > VALIDATION.STAKEHOLDER_MAX
-    );
-    if (invalidStakeholders.length > 0) {
-      errors.stakeholders = 'Invalid stakeholder names';
-    }
-  }
-
   // Description validation
   if (project.description && project.description.length > VALIDATION.DESCRIPTION_MAX) {
     errors.description = `Description must be less than ${VALIDATION.DESCRIPTION_MAX} characters`;

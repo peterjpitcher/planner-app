@@ -19,7 +19,6 @@ const PROJECT_UPDATE_FIELDS = [
   'description',
   'status',
   'due_date',
-  'stakeholders',
   'area',
   'customer_id',
 ];
@@ -77,7 +76,7 @@ export async function PATCH(request, { params }) {
   // Verify ownership
   const { data: existingProject, error: fetchError } = await supabase
     .from('projects')
-    .select('id, user_id, name, description, status, due_date, stakeholders, area, customer_id')
+    .select('id, user_id, name, description, status, due_date, area, customer_id')
       .eq('id', id)
       .single();
     
