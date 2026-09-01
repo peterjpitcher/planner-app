@@ -13,6 +13,7 @@ const PROJECT_UPDATE_FIELDS = [
   'due_date',
   'stakeholders',
   'area',
+  'customer_id',
 ];
 
 function pickProjectUpdates(payload) {

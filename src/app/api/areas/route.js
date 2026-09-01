@@ -15,23 +15,32 @@ export async function GET(request) {
     const userId = session.user.id;
     const supabase = getSupabaseServiceRole();
 
-    // Fetch all non-null areas from tasks and projects for this user
-    const [{ data: taskAreas }, { data: projectAreas }] = await Promise.all([
-      supabase
-        .from('tasks')
-        .select('area')
-        .eq('user_id', userId)
-        .not('area', 'is', null),
-      supabase
-        .from('projects')
-        .select('area')
-        .eq('user_id', userId)
-        .not('area', 'is', null),
-    ]);
+    // Fetch all non-null areas from tasks, projects and customers for this user.
+    // Customers carry the same free-text area dimension, so the dropdown has to
+    // offer one set across all three or the customer list can be filtered by an
+    // area the picker does not know about.
+    const [{ data: taskAreas }, { data: projectAreas }, { data: customerAreas }] =
+      await Promise.all([
+        supabase
+          .from('tasks')
+          .select('area')
+          .eq('user_id', userId)
+          .not('area', 'is', null),
+        supabase
+          .from('projects')
+          .select('area')
+          .eq('user_id', userId)
+          .not('area', 'is', null),
+        supabase
+          .from('customers')
+          .select('area')
+          .eq('user_id', userId)
+          .not('area', 'is', null),
+      ]);
 
     // Case-insensitive dedup — first occurrence wins
     const seen = new Map();
-    [...(taskAreas || []), ...(projectAreas || [])].forEach(row => {
+    [...(taskAreas || []), ...(projectAreas || []), ...(customerAreas || [])].forEach(row => {
       const key = row.area.toLowerCase();
       if (!seen.has(key)) seen.set(key, row.area);
     });

@@ -480,6 +480,83 @@ class APIClient {
     const response = await this.fetchWithAuth('/api/areas');
     return response.data || [];
   }
+
+  // Customers
+
+  async getCustomers({ includeArchived = false, status = null, area = null } = {}) {
+    const params = new URLSearchParams();
+    if (includeArchived) params.append('includeArchived', 'true');
+    if (status) params.append('status', status);
+    if (area) params.append('area', area);
+    const query = params.toString();
+    const response = await this.fetchWithAuth(`/api/customers${query ? `?${query}` : ''}`);
+    return response.data || [];
+  }
+
+  async getCustomer(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}`);
+    return response?.data ?? response;
+  }
+
+  /**
+   * The customer workspace payload: record, open and closed projects, and the
+   * task union. One request because the whole panel changes together when a
+   * different customer is selected.
+   */
+  async getCustomerOverview(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/overview`);
+    return response?.data ?? response;
+  }
+
+  /**
+   * What archiving or deleting would affect. Never cached: it has to reflect
+   * the state at the moment the user is asked to confirm.
+   */
+  async getCustomerImpact(customerId) {
+    const response = await this.fetchWithAuth(`/api/customers/${customerId}/impact`);
+    return response?.data ?? response;
+  }
+
+  async createCustomer(payload) {
+    const result = await this.fetchWithAuth('/api/customers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    clearCustomerCaches();
+    return result?.data ?? result;
+  }
+
+  async updateCustomer(customerId, updates) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    clearCustomerCaches();
+    return result?.data ?? result;
+  }
+
+  async deleteCustomer(customerId) {
+    const result = await this.fetchWithAuth(`/api/customers/${customerId}`, {
+      method: 'DELETE',
+    });
+    clearCustomerCaches();
+    // Projects and tasks keep their rows but lose customer_id, so their caches
+    // are stale too.
+    clearCache('projects-true');
+    clearCache('projects-false');
+    return result?.data ?? result;
+  }
+}
+
+/**
+ * Customer mutations invalidate the customer list and the capture autocomplete.
+ * Kept in one place so a new mutation cannot forget half of it: a stale
+ * autocomplete would offer a customer that no longer exists, or fail to offer
+ * one that was just created in another tab.
+ */
+function clearCustomerCaches() {
+  clearCache('customers-list');
+  clearCache('customers-capture');
 }
 
 // Export singleton instance

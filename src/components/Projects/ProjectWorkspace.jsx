@@ -18,6 +18,7 @@ import { getDueDateStatus, formatDate } from '@/lib/dateUtils';
 import { PROJECT_STATUS, STATE } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
 import QuickTaskInput from '@/components/shared/QuickTaskInput';
+import CustomerPicker from '@/components/shared/CustomerPicker';
 import ProjectNotes from './ProjectNotes';
 
 const STATE_GROUPS = [
@@ -244,6 +245,21 @@ export default function ProjectWorkspace({
                 placeholder="Add area"
                 maxLength={255}
                 disabled={isReadOnly}
+              />
+            </span>
+
+            <span className="text-gray-300">|</span>
+
+            {/* Customer. Setting it here also repoints every task on the
+                project, via fn_project_customer_cascade. */}
+            <span className="flex items-center gap-1">
+              <span className="text-gray-400">Customer:</span>
+              <CustomerPicker
+                id={`project-customer-${project.id}`}
+                value={project.customer_id}
+                disabled={isReadOnly}
+                onChange={(customerId) => onUpdateProject(project.id, { customer_id: customerId })}
+                className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
               />
             </span>
 
