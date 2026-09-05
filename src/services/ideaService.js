@@ -1,6 +1,7 @@
 import { validateIdea } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { getLondonDateKey } from '@/lib/timezone';
+import { callRpc } from '@/lib/rpc';
 
 const IDEA_UPDATE_FIELDS = new Set([
   'title', 'notes', 'area', 'idea_state',
@@ -188,78 +189,11 @@ export async function deleteIdea({ supabase, userId, ideaId }) {
 }
 
 export async function promoteIdea({ supabase, userId, ideaId }) {
-  const { data: idea, error: fetchError } = await supabase
-    .from('ideas')
-    .select('*')
-    .eq('id', ideaId)
-    .eq('user_id', userId)
-    .single();
-
-  if (fetchError || !idea) {
-    return { error: { status: 404, message: 'Idea not found or unauthorized' } };
-  }
-
-  if (idea.idea_state === 'promoted') {
-    return { error: { status: 409, message: 'Already promoted' } };
-  }
-
-  // FF-027: flip the idea to 'promoted' FIRST and conditionally, so concurrent
-  // or retried promotes cannot both create a task. Only the caller whose update
-  // actually changes a row (idea_state was not already 'promoted') proceeds to
-  // create the task; a losing race sees "Already promoted" and creates nothing.
-  const previousState = idea.idea_state;
-  const { data: claimed, error: claimError } = await supabase
-    .from('ideas')
-    .update({ idea_state: 'promoted', updated_at: new Date().toISOString() })
-    .eq('id', ideaId)
-    .eq('user_id', userId)
-    .neq('idea_state', 'promoted')
-    .select('id');
-
-  if (claimError) {
-    const errorMessage = handleSupabaseError(claimError, 'update');
-    return { error: { status: 500, message: errorMessage } };
-  }
-
-  if (!claimed || claimed.length === 0) {
-    // Lost the race — another request already promoted this idea. No task.
-    return { error: { status: 409, message: 'Already promoted' } };
-  }
-
-  // Build task description from idea fields
-  const description = [idea.why_it_matters, idea.smallest_step, idea.notes]
-    .filter(Boolean).join('\n\n');
-
-  const { data: task, error: taskError } = await supabase
-    .from('tasks')
-    .insert({
-      user_id: userId,
-      name: idea.title,
-      description: description || null,
-      state: 'backlog',
-      area: idea.area,
-      source_idea_id: idea.id,
-      sort_order: 0,
-      entered_state_at: new Date().toISOString(),
-      // Capture inbox (F3): a promoted idea lands in undated backlog, so flag it
-      // for triage exactly like a plain quick-capture — otherwise it sinks unseen.
-      inbox: true,
-    })
-    .select()
-    .single();
-
-  if (taskError) {
-    // The task insert failed after we claimed the idea. Revert the state so a
-    // retry can promote cleanly instead of leaving an orphaned 'promoted' idea
-    // with no task (which would vanish from the vault).
-    await supabase
-      .from('ideas')
-      .update({ idea_state: previousState })
-      .eq('id', ideaId)
-      .eq('user_id', userId);
-    const errorMessage = handleSupabaseError(taskError, 'create');
-    return { error: { status: 500, message: errorMessage } };
-  }
-
-  return { data: task };
+  // The idea lock, task insert and state change share one transaction.
+  const { data, error } = await callRpc(supabase, 'promote_idea', {
+    p_user_id: userId,
+    p_idea_id: ideaId,
+  });
+  if (error) return { error };
+  return { data };
 }

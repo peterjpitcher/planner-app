@@ -1,0 +1,4 @@
+Implementation base: a6da89d527ae0cb244c20f81c67d64b34bf6c45f
+Original checkout unchanged at 677e50b8b7cccd67589a1e64576f4e5e16c3cbb9.
+Original dirty paths: CustomerWorkspace.jsx; QuickTaskInput.test.jsx; .claude/; outputs/; Customers/__tests__/.
+Four unpublished commits remain separate.
