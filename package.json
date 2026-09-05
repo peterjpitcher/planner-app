@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "TZ=Europe/London vitest run",
+    "test:watch": "vitest",
+    "test:utc": "TZ=UTC vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

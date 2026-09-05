@@ -55,7 +55,6 @@ export default function ProjectStatusChangeModal({
   error = null,
 }) {
   const copy = COPY[targetStatus];
-  if (!copy) return null;
 
   const tasks = openTasks || [];
 
@@ -83,6 +82,8 @@ export default function ProjectStatusChangeModal({
       : [];
     onConfirm({ closeoutNote: closeoutNote.trim() || null, facts });
   }
+  if (!copy) return null;
+
   const taskCount = tasks.length;
   const { Icon } = copy;
 

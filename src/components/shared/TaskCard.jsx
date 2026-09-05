@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Menu, Portal } from '@headlessui/react';
 import { EllipsisVerticalIcon, Bars2Icon, ArrowPathIcon, BellAlertIcon } from '@heroicons/react/20/solid';
@@ -12,6 +12,7 @@ import { getLondonDateKey } from '@/lib/timezone';
 import { STATE, TODAY_SECTION, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD } from '@/lib/constants';
 import { recurrenceBadgeLabel } from '@/lib/recurrenceLabels';
 import ChipBadge from './ChipBadge';
+import DatePicker, { DatePickerDialog } from './DatePicker';
 
 // Add whole days to a YYYY-MM-DD key using noon UTC to sidestep DST edges.
 // Snooze presets are always derived from the London date key, never a raw Date.
@@ -91,54 +92,23 @@ const MOVE_TARGETS = [
 function DueDateBadge({ dueDate, onChangeDueDate }) {
   const status = useMemo(() => getDueDateStatus(dueDate), [dueDate]);
   if (!status) return null;
-
   return (
-    <label
-      className="relative shrink-0 cursor-pointer"
-      onClick={(e) => e.stopPropagation()}
+    <DatePicker
+      value={dueDate}
+      title="Change task due date"
+      onSave={onChangeDueDate}
+      className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium hover:ring-1 hover:ring-indigo-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${status.styles.bg} ${status.styles.text}`}
     >
-      <span
-        className={`text-xs font-medium px-1.5 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-indigo-300 ${status.styles.bg} ${status.styles.text}`}
-      >
-        {status.label}
-      </span>
-      <input
-        type="date"
-        className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
-        tabIndex={-1}
-        value={typeof dueDate === 'string' ? dueDate : format(dueDate, 'yyyy-MM-dd')}
-        onChange={(e) => {
-          e.stopPropagation();
-          onChangeDueDate?.(e.target.value || null);
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-    </label>
+      {status.label}
+    </DatePicker>
   );
 }
 
 function NoDueDatePicker({ onChangeDueDate }) {
   return (
-    <label
-      className="relative shrink-0 cursor-pointer"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <span
-        className="text-xs font-medium px-1.5 py-0.5 rounded cursor-pointer text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 hover:text-gray-600"
-      >
-        + date
-      </span>
-      <input
-        type="date"
-        className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
-        tabIndex={-1}
-        onChange={(e) => {
-          e.stopPropagation();
-          if (e.target.value) onChangeDueDate?.(e.target.value);
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-    </label>
+    <DatePicker title="Set task due date" onSave={onChangeDueDate} className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">
+      + date
+    </DatePicker>
   );
 }
 
@@ -161,6 +131,7 @@ function NoDueDatePicker({ onChangeDueDate }) {
  * }} props
  */
 export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze }) {
+  const [dateEditor, setDateEditor] = useState(null);
   const {
     attributes,
     listeners,
@@ -454,24 +425,9 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
             ))}
             <Menu.Item>
               {({ active }) => (
-                <label
-                  className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm ${
-                    active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
-                  }`}
-                >
+                <button type="button" onClick={() => setDateEditor('due')} className={`w-full px-3 py-1.5 text-left text-sm ${active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'}`}>
                   Pick a date
-                  <input
-                    type="date"
-                    className="ml-auto h-6 w-[130px] cursor-pointer rounded border border-gray-200 bg-transparent px-1 text-xs text-gray-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                    defaultValue={task.due_date || ''}
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        onUpdate?.(task.id, { due_date: e.target.value });
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </label>
+                </button>
               )}
             </Menu.Item>
             {task.due_date && (
@@ -519,23 +475,9 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
                 ))}
                 <Menu.Item>
                   {({ active }) => (
-                    <label
-                      className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm ${
-                        active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
-                      }`}
-                    >
-                      Pick a date
-                      <input
-                        type="date"
-                        min={londonKey}
-                        className="ml-auto h-6 w-[130px] cursor-pointer rounded border border-gray-200 bg-transparent px-1 text-xs text-gray-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                        defaultValue={task.snoozed_until || ''}
-                        onChange={(e) => {
-                          if (e.target.value) onSnooze(task.id, e.target.value);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </label>
+                    <button type="button" onClick={() => setDateEditor('snooze')} className={`w-full px-3 py-1.5 text-left text-sm ${active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'}`}>
+                      Pick a snooze date
+                    </button>
                   )}
                 </Menu.Item>
                 {isSnoozed && (
@@ -585,6 +527,17 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
           </Menu.Items>
         </Menu>
       </div>
+      {dateEditor && (
+        <DatePickerDialog
+          value={dateEditor === 'snooze' ? task.snoozed_until : task.due_date}
+          title={dateEditor === 'snooze' ? 'Snooze task until' : 'Change task due date'}
+          min={dateEditor === 'snooze' ? londonKey : undefined}
+          onClose={() => setDateEditor(null)}
+          onSave={(value) => dateEditor === 'snooze'
+            ? onSnooze?.(task.id, value)
+            : onUpdate?.(task.id, { due_date: value })}
+        />
+      )}
     </div>
   );
 }

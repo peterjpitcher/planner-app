@@ -5,6 +5,7 @@ import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { XMarkIcon, LinkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import ChipBadge from './ChipBadge';
+import DatePicker from './DatePicker';
 import { STATE, TASK_TYPE, CHIP_VALUES } from '@/lib/constants';
 import { RECURRENCE_OPTIONS, hasInterval, intervalUnitLabel } from '@/lib/recurrenceLabels';
 import { quickPickOptions, toDateInputValue } from '@/lib/dateUtils';
@@ -104,7 +105,7 @@ function FieldRow({ label, htmlFor, children, helpText }) {
  *   projects: object[],
  * }} props
  */
-export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDelete, projects: projectsProp }) {
+export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDelete, projects: projectsProp, error = null }) {
   const api = useApiClient();
 
   // Local field state — initialised from task prop when drawer opens
@@ -240,9 +241,6 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
     }
   }, [description, task, saveField]);
 
-  const handleAreaBlur = useCallback(() => {
-  }, [task, saveField]);
-
   const handleTaskTypeChange = useCallback(
     (e) => {
       const value = e.target.value;
@@ -263,23 +261,11 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
     [chips, saveField]
   );
 
-  const handleDueDateBlur = useCallback(() => {
-    if (dueDate !== toDateInputValue(task?.due_date)) {
-      saveField('due_date', dueDate || null);
-    }
-  }, [dueDate, task, saveField]);
-
   const handleWaitingReasonBlur = useCallback(() => {
     if (waitingReason !== (task?.waiting_reason ?? '')) {
       saveField('waiting_reason', waitingReason);
     }
   }, [waitingReason, task, saveField]);
-
-  const handleFollowUpDateBlur = useCallback(() => {
-    if (followUpDate !== toDateInputValue(task?.follow_up_date)) {
-      saveField('follow_up_date', followUpDate || null);
-    }
-  }, [followUpDate, task, saveField]);
 
   const handleProjectChange = useCallback(
     (e) => {
@@ -471,6 +457,7 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
               Scrollable body
           ---------------------------------------------------------------- */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+            {error && <p role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
             {/* Description */}
             <FieldRow label="Description" htmlFor="drawer-description">
@@ -533,14 +520,12 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
 
             {/* Due date */}
             <FieldRow label="Due date" htmlFor="drawer-due-date">
-              <input
+              <DatePicker
                 id="drawer-due-date"
-                type="date"
+                title="Change task due date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                onBlur={handleDueDateBlur}
+                onSave={(value) => { setDueDate(value || ''); saveField('due_date', value); }}
                 className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                aria-label="Task due date"
               />
               {/* Quick picks */}
               <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Quick date picks">
@@ -635,14 +620,12 @@ export default function TaskDetailDrawer({ task, isOpen, onClose, onUpdate, onDe
                 </FieldRow>
 
                 <FieldRow label="Follow-up date" htmlFor="drawer-follow-up-date">
-                  <input
+                  <DatePicker
                     id="drawer-follow-up-date"
-                    type="date"
+                    title="Change follow-up date"
                     value={followUpDate}
-                    onChange={(e) => setFollowUpDate(e.target.value)}
-                    onBlur={handleFollowUpDateBlur}
+                    onSave={(value) => { setFollowUpDate(value || ''); saveField('follow_up_date', value); }}
                     className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                    aria-label="Follow-up date"
                   />
                 </FieldRow>
               </>

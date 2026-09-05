@@ -344,7 +344,11 @@ export default function CustomerWorkspace({
 
         {!isArchived && (
           <div className="mb-3">
-            <QuickTaskInput mode="single" onTaskAdded={onTaskAdded} />
+            <QuickTaskInput
+              mode="single"
+              customerId={customer.id}
+              onTaskAdded={onTaskAdded}
+            />
           </div>
         )}
 

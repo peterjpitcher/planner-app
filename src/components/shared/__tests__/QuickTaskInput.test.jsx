@@ -79,6 +79,20 @@ describe('QuickTaskInput, single mode', () => {
     expect(createTask.mock.calls[0][0].projectId).toBeNull();
   });
 
+  it('sends the selected customer for a customer workspace task', async () => {
+    render(<QuickTaskInput mode="single" customerId="customer-1" />);
+
+    typeTask('Prepare the account review');
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(createTask.mock.calls[0][0]).toMatchObject({
+      name: 'Prepare the account review',
+      projectId: null,
+      customer_id: 'customer-1',
+    });
+  });
+
   it('previews what it understood before you commit', async () => {
     render(<QuickTaskInput mode="single" />);
 
