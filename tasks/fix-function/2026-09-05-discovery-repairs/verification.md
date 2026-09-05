@@ -1,6 +1,6 @@
 # Verification record
 
-All 18 approved findings have repairs and regression coverage. Fifteen have been released in PRs #25, #26 and #27. Three recurrence/promotion findings remain in draft PR #28 and depend on the unapplied migration in migration-approval.md.
+All 18 approved findings have repairs and regression coverage. Fifteen have been released in PRs #25, #26 and #27. The final three recurrence/promotion findings are merged in PR #28 after approved migration application and production smoke tests.
 
 ## Exact local checks
 
@@ -97,3 +97,16 @@ Other application routes, authentication, existing lifecycle SQL/triggers, sched
 - Live destructive lifecycle, Graph/Storage removal and cron runs were not triggered with business records. Their failure/retry paths were run through real services/routes with controlled integration dependencies. CRON_MANUAL_TOKEN was unavailable locally, so no authenticated live dry-run probe was attempted.
 - Unapplied migration: 20260905162045_atomic_promotion_and_recurrence.sql. SHA-256 94e48625e7a550e6a9716070241436ada0a64c8a75eafe58bd797fa8069d98fb.
 - Remaining PR: https://github.com/peterjpitcher/planner-app/pull/28, draft against main, pending exact production approval and migration application.
+
+## Approved final migration and release
+
+- User explicitly approved the exact packet in chat.
+- Reconfirmed production planner-app, hufxwovthhsjmtifvign, ACTIVE_HEALTHY and the repository URL host.
+- Recomputed approved file SHA-256: 94e48625e7a550e6a9716070241436ada0a64c8a75eafe58bd797fa8069d98fb. No SQL edits.
+- Preflight found neither new RPC nor table present and zero historical completed recurring sources to seed.
+- Supabase MCP apply_migration returned success; recorded live version 20260905164422, name atomic_promotion_and_recurrence, applied 5 September 2026 at 16:44:22 UTC.
+- Verified both SECURITY DEFINER definitions, pinned empty search paths, all table columns/defaults/nullability, foreign keys, primary key, index, RLS and restrictive grants. No table policies added.
+- Approved smoke ran as service_role and returned Workflow smoke passed; all synthetic rows rolled back. It exercised recurrence, standalone customer retention, duplicate prevention, foreign ownership rejection, promotion and repeat-promotion conflict.
+- Actual anon and authenticated attempts were denied for both RPCs and receipt-table reads. Production receipt count remained zero after smoke.
+- PR #28 merged as 51d12c7640cf84078e82fd221dd093b4cd615186. Its source tree is identical to the fully verified 735-test repair branch.
+- The approved rollback remains prepared, was tested locally, and was not required. No migration from this task remains unapplied.
