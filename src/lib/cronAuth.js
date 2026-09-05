@@ -167,5 +167,6 @@ export async function claimCronRun({ supabase, operation, runDate }) {
  */
 export async function updateCronRun({ supabase, runId, patch }) {
   if (!runId) return;
-  await supabase.from('cron_runs').update(patch).eq('id', runId);
+  const { error } = await supabase.from('cron_runs').update(patch).eq('id', runId);
+  if (error) throw new Error(`Cron run tracking failed: ${error.message || error}`);
 }

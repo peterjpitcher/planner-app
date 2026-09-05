@@ -27,6 +27,12 @@ export async function GET(request) {
     return NextResponse.json({ error: msg }, { status: auth.status });
   }
 
+  // Even resolving an OAuth token can refresh it in Vault, so stop before
+  // constructing the sync path for a preview request.
+  if (auth.dryRun) {
+    return NextResponse.json({ dryRun: true, skipped: true, reason: 'dry_run' });
+  }
+
   const supabase = getSupabaseServiceRole();
   const { data: connections, error } = await supabase
     .from('office365_connections')

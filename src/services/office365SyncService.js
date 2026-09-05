@@ -3,7 +3,7 @@ import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { office365GraphRequest } from '@/lib/office365/graph';
 import { getLondonDateKey } from '@/lib/timezone';
 import { CLOSED_STATES, STATE } from '@/lib/constants';
-import { getOffice365Connection, getValidOffice365AccessToken } from '@/services/office365ConnectionService';
+import { getOffice365Connection, getValidOffice365AccessToken, recordOffice365SyncFailure } from '@/services/office365ConnectionService';
 
 // No $select anywhere in this file. Microsoft rejects $select on the To Do task
 // endpoints for this mailbox with `400 RequestBroker--ParseUri`, so every read
@@ -1217,7 +1217,9 @@ async function performFullSync({ supabase, userId }) {
       }
 
       const localTask = localTasksById.get(existingMapping.task_id);
-      if (!localTask) continue;
+      // Retained mappings for finished work are pending remote deletion. A
+      // surviving remote item must never reopen the completed local record.
+      if (!localTask || isTaskFinished(localTask)) continue;
 
       const remoteEtag = remoteTask?.['@odata.etag'] || null;
       const localMs = toTimestampMs(localTask.updated_at || localTask.created_at);
@@ -1703,22 +1705,35 @@ async function performFullSync({ supabase, userId }) {
       .map((task) => task.id)
   );
 
+  let cleanupFailures = 0;
   for (const mapping of taskMaps || []) {
     if (retainedTaskIds.has(mapping.task_id)) continue;
     const removed = await removeRemote(() =>
       deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id })
     );
-    if (!removed) continue;
-    await supabase.from('office365_task_items').delete().eq('id', mapping.id);
+    if (!removed) {
+      cleanupFailures += 1;
+      continue;
+    }
+    const { error: unlinkError } = await supabase.from('office365_task_items').delete().eq('id', mapping.id);
+    if (unlinkError) cleanupFailures += 1;
   }
 
   // Remove stale project mappings (and delete remote lists) for local deletions or inactive projects.
   for (const mapping of projectMaps || []) {
     if (desiredProjectIds.has(mapping.project_id)) continue;
     const removed = await removeRemote(() => deleteTodoList({ accessToken, listId: mapping.list_id }));
-    if (!removed) continue;
-    await supabase.from('office365_project_lists').delete().eq('id', mapping.id);
-    await supabase.from('office365_task_items').delete().eq('user_id', userId).eq('project_id', mapping.project_id);
+    if (!removed) {
+      cleanupFailures += 1;
+      continue;
+    }
+    const { error: projectUnlinkError } = await supabase.from('office365_project_lists').delete().eq('id', mapping.id);
+    const { error: taskUnlinkError } = await supabase.from('office365_task_items').delete().eq('user_id', userId).eq('project_id', mapping.project_id);
+    if (projectUnlinkError || taskUnlinkError) cleanupFailures += 1;
+  }
+
+  if (cleanupFailures > 0) {
+    throw new Error(`Outlook cleanup failed for ${cleanupFailures} item(s); retained mappings will be retried`);
   }
 
   await supabase
@@ -1923,7 +1938,6 @@ export async function deleteOffice365Project({ userId, projectId }) {
 
 export async function syncOffice365Task({ userId, taskId }) {
   const supabase = getSupabaseServiceRole();
-  const accessToken = await getValidOffice365AccessToken({ userId });
 
   const { data: task, error } = await supabase
     .from('tasks')
@@ -1947,30 +1961,15 @@ export async function syncOffice365Task({ userId, taskId }) {
   // ticked off, so finishing something in the app clears it from Outlook now
   // instead of waiting for the next cron run to tidy up.
   if (!isProjectActive(project.status) || isTaskFinished(task)) {
-    const { data: existingMapping } = await supabase
-      .from('office365_task_items')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('task_id', task.id)
-      .maybeSingle();
-
-    if (existingMapping?.id) {
-      try {
-        await deleteTodoTask({ accessToken, listId: existingMapping.list_id, todoTaskId: existingMapping.todo_task_id });
-      } catch (err) {
-        // Ignore.
-      }
-      await supabase.from('office365_task_items').delete().eq('id', existingMapping.id);
+    const result = await deleteOffice365Task({ userId, taskId });
+    if (result.error) {
+      await recordOffice365SyncFailure({ userId, message: 'Outlook cleanup is pending. The next sync will retry.' });
+      throw new Error(result.error.message);
     }
-
-    await supabase
-      .from('office365_connections')
-      .update({ last_synced_at: new Date().toISOString() })
-      .eq('user_id', userId);
-
     return;
   }
 
+  const accessToken = await getValidOffice365AccessToken({ userId });
   const { data: projectMapping, error: projectMappingError } = await supabase
     .from('office365_project_lists')
     .select('*')
@@ -2024,29 +2023,37 @@ export async function syncOffice365Task({ userId, taskId }) {
 }
 
 export async function deleteOffice365Task({ userId, taskId }) {
-  const supabase = getSupabaseServiceRole();
-  const accessToken = await getValidOffice365AccessToken({ userId });
-
-  const { data: mapping, error } = await supabase
-    .from('office365_task_items')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('task_id', taskId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!mapping) return;
-
+  const failure = {
+    error: { status: 503, message: 'Outlook could not remove this task. Try deleting it again shortly.' },
+  };
   try {
-    await deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id });
-  } catch (err) {
-    // Ignore.
+    const supabase = getSupabaseServiceRole();
+    // Unmapped tasks have nothing to delete remotely and need no connection.
+    const { data: mapping, error } = await supabase
+      .from('office365_task_items')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('task_id', taskId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!mapping) return { error: null };
+
+    const accessToken = await getValidOffice365AccessToken({ userId });
+    const removed = await removeRemote(() =>
+      deleteTodoTask({ accessToken, listId: mapping.list_id, todoTaskId: mapping.todo_task_id })
+    );
+    if (!removed) return failure;
+
+    const { error: unlinkError } = await supabase
+      .from('office365_task_items').delete().eq('id', mapping.id).eq('user_id', userId);
+    if (unlinkError) throw unlinkError;
+
+    // Deleting one item is not a completed full sync. Leave last_synced_at
+    // alone so retries and outstanding inbound changes are not postponed.
+    return { error: null };
+  } catch (error) {
+    console.warn('Office365 task deletion could not finish:', error?.message || error);
+    return failure;
   }
-
-  await supabase.from('office365_task_items').delete().eq('id', mapping.id);
-
-  await supabase
-    .from('office365_connections')
-    .update({ last_synced_at: new Date().toISOString() })
-    .eq('user_id', userId);
 }

@@ -272,11 +272,17 @@ export async function finaliseUpload({ supabase, userId, attachmentId }) {
   if (problems.length > 0) {
     // The object failed validation, so it must not be left sitting in the
     // bucket consuming quota for a row nobody can use.
-    await supabase.storage.from(ATTACHMENT_BUCKET).remove([row.storage_path]);
-    await supabase
+    const { error: removalError } = await supabase.storage.from(ATTACHMENT_BUCKET).remove([row.storage_path]);
+    const { error: markError } = await supabase
       .from('attachments')
-      .update({ status: 'failed', last_error: problems.join(', ') })
+      .update({
+        status: removalError ? 'deleting' : 'failed',
+        ...(removalError ? { deleting_at: new Date().toISOString() } : {}),
+        last_error: problems.join(', '),
+      })
       .eq('id', attachmentId);
+    // A failed marker update leaves the pending row available to expiry cleanup.
+    if (markError) console.error('Rejected attachment cleanup marker failed:', markError.message);
 
     return { data: null, error: { status: 422, message: `Upload rejected: ${problems.join(', ')}.` } };
   }
@@ -393,8 +399,9 @@ export async function deleteAttachment({ supabase, userId, attachmentId }) {
     return { data: { deleted: false, retrying: true }, error: null };
   }
 
-  await supabase.from('attachments').delete().eq('id', attachmentId).eq('user_id', userId);
-  return { data: { deleted: true }, error: null };
+  const { error: deleteError } = await supabase
+    .from('attachments').delete().eq('id', attachmentId).eq('user_id', userId);
+  return { data: { deleted: !deleteError, ...(deleteError ? { retrying: true } : {}) }, error: null };
 }
 
 /**
@@ -413,17 +420,21 @@ export async function reconcileAttachments({ supabase, now = new Date() }) {
 
   // Pending uploads whose hour is up. The expiry is the grace period, so an
   // in-flight upload is never swept.
-  const { data: stale } = await supabase
+  const { data: stale, error: staleError } = await supabase
     .from('attachments')
     .select('id, storage_path')
     .eq('status', 'pending')
     .lt('upload_expires_at', now.toISOString())
     .limit(200);
 
+  if (staleError) throw new Error(`Attachment cleanup query failed: ${staleError.message}`);
+
   for (const row of stale || []) {
     try {
-      await supabase.storage.from(ATTACHMENT_BUCKET).remove([row.storage_path]);
-      await supabase.from('attachments').delete().eq('id', row.id);
+      const { error: objectError } = await supabase.storage.from(ATTACHMENT_BUCKET).remove([row.storage_path]);
+      if (objectError) throw objectError;
+      const { error: deleteError } = await supabase.from('attachments').delete().eq('id', row.id);
+      if (deleteError) throw deleteError;
       result.stalePendingRemoved += 1;
     } catch {
       result.failures += 1;
@@ -432,17 +443,21 @@ export async function reconcileAttachments({ supabase, now = new Date() }) {
 
   // Deletes that got as far as the marker and no further.
   const cutoff = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  const { data: stuck } = await supabase
+  const { data: stuck, error: stuckError } = await supabase
     .from('attachments')
     .select('id, storage_path')
     .eq('status', 'deleting')
     .lt('deleting_at', cutoff)
     .limit(200);
 
+  if (stuckError) throw new Error(`Attachment cleanup query failed: ${stuckError.message}`);
+
   for (const row of stuck || []) {
     try {
-      await supabase.storage.from(ATTACHMENT_BUCKET).remove([row.storage_path]);
-      await supabase.from('attachments').delete().eq('id', row.id);
+      const { error: objectError } = await supabase.storage.from(ATTACHMENT_BUCKET).remove([row.storage_path]);
+      if (objectError) throw objectError;
+      const { error: deleteError } = await supabase.from('attachments').delete().eq('id', row.id);
+      if (deleteError) throw deleteError;
       result.stuckDeletesCompleted += 1;
     } catch {
       result.failures += 1;

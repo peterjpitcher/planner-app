@@ -21,6 +21,8 @@ import { reconcileAttachments } from '@/services/attachmentService';
  * failure is visible rather than buried in serverless logs.
  */
 export async function GET(request) {
+  let supabase;
+  let runId = null;
   try {
     const auth = verifyCronAuth(request);
     if (!auth.authorized) {
@@ -28,21 +30,22 @@ export async function GET(request) {
       return NextResponse.json({ error: msg }, { status: auth.status });
     }
 
-    const supabase = getSupabaseServiceRole();
-    const runDate = getLondonDateKey();
-
-    let runId = null;
-    if (!auth.dryRun) {
-      const claim = await claimCronRun({
-        supabase,
-        operation: 'reconcile-attachments',
-        runDate,
-      });
-      if (claim.alreadyRan) {
-        return NextResponse.json({ skipped: true, reason: 'already_ran' }, { status: 200 });
-      }
-      runId = claim.runId;
+    // Preview requests must not claim a run or touch Storage.
+    if (auth.dryRun) {
+      return NextResponse.json({ dryRun: true, skipped: true, reason: 'dry_run' });
     }
+
+    supabase = getSupabaseServiceRole();
+    const runDate = getLondonDateKey();
+    const claim = await claimCronRun({
+      supabase,
+      operation: 'reconcile-attachments',
+      runDate,
+    });
+    if (!claim.claimed) {
+      return NextResponse.json({ skipped: true, reason: claim.reason }, { status: 200 });
+    }
+    runId = claim.runId;
 
     const { data } = await reconcileAttachments({ supabase });
 
@@ -51,15 +54,25 @@ export async function GET(request) {
         supabase,
         runId,
         patch: {
-          status: data.failures > 0 ? 'partial' : 'success',
-          details: data,
+          // Failed runs are reclaimable on the same date. Cleanup preserves
+          // unfinished rows, so a retry can safely finish only those remaining.
+          status: data.failures > 0 ? 'failed' : 'success',
+          tasks_affected: data.stalePendingRemoved + data.stuckDeletesCompleted,
+          error: data.failures > 0 ? `${data.failures} attachment cleanup operation(s) failed` : null,
         },
       });
     }
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ data }, { status: data.failures > 0 ? 500 : 200 });
   } catch (error) {
     console.error('GET /api/cron/reconcile-attachments error:', error);
+    if (supabase && runId) {
+      try {
+        await updateCronRun({ supabase, runId, patch: { status: 'failed', error: String(error?.message || error) } });
+      } catch (trackingError) {
+        console.error('Attachment cleanup failure could not be recorded:', trackingError);
+      }
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
