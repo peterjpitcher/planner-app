@@ -1,6 +1,6 @@
 # Verification record
 
-All 18 approved findings have repairs and regression coverage. Production has not yet changed. Three recurrence/promotion findings depend on the unapplied migration in migration-approval.md.
+All 18 approved findings have repairs and regression coverage. Fifteen have been released in PRs #25, #26 and #27. Three recurrence/promotion findings remain in draft PR #28 and depend on the unapplied migration in migration-approval.md.
 
 ## Exact local checks
 
@@ -24,7 +24,7 @@ All 18 approved findings have repairs and regression coverage. Production has no
 3. codex/integration-repairs: depends on batch 2, includes remote deletion failure propagation, attachment retries and read-only dry runs.
 4. codex/discovery-repairs: depends on batch 3 and exact approved production migration before merge. Atomic recurrence and promotion require the two new RPCs.
 
-Each boundary is being verified independently before release. Database changes remain unapplied.
+Each boundary passed independently: date bf8fcba, 674 tests per zone; workflow 54bf5e9, 707 tests per zone; integration 41b544e, 732 tests per zone. Lint and production build passed for each. Subsequent merge commits have identical source trees to the tested boundaries. Database changes remain unapplied.
 
 ## Preserved work
 
@@ -81,3 +81,19 @@ Other application routes, authentication, existing lifecycle SQL/triggers, sched
 - `supabase/__tests__/workflow-repairs.sql`
 - `supabase/migrations/20260905162045_atomic_promotion_and_recurrence.sql`
 - `vitest.config.js`
+
+## Production release verification
+
+- Merged PRs: https://github.com/peterjpitcher/planner-app/pull/25, /26 and /27.
+- Production commit: 24758aa35dc14bfbd99eb10e6cb7d972575a0750.
+- Deployment: dpl_BxmT5nbs2DW6RageBLHEtqR8Merh, READY, production.
+- Deployment URL: https://oj-planner-k7jq0ulmb-peter-pitchers-projects.vercel.app.
+- Canonical https://planner.orangejelly.co.uk resolved to that exact deployment ID. Vercel production listing metadata matches the full merge commit.
+- Production source tree is identical to independently tested integration commit 41b544e.
+- Signed-in Chrome Today: changed the existing 2026-09-03 due date to draft 2026-10-19; editor stayed open; Cancel retained the task in Today; reopening showed 2026-09-03. No business update submitted.
+- Signed-in Chrome Projects: changed 2026-09-30 to draft 2026-10-30; editor stayed open; Cancel retained the selected project and Due Sep 30. No business update submitted.
+- Live native month-arrow automation could not retain a valid accessibility element ID. Native month-arrow plus explicit Save was proven against the identical local date component; production verification used draft entry and Cancel instead. This is a verification limit, not evidence of an application failure.
+- Bounded production runtime error lookup returned No logs found. This is absence of returned error logs, not proof of every external integration action.
+- Live destructive lifecycle, Graph/Storage removal and cron runs were not triggered with business records. Their failure/retry paths were run through real services/routes with controlled integration dependencies. CRON_MANUAL_TOKEN was unavailable locally, so no authenticated live dry-run probe was attempted.
+- Unapplied migration: 20260905162045_atomic_promotion_and_recurrence.sql. SHA-256 94e48625e7a550e6a9716070241436ada0a64c8a75eafe58bd797fa8069d98fb.
+- Remaining PR: https://github.com/peterjpitcher/planner-app/pull/28, draft against main, pending exact production approval and migration application.
