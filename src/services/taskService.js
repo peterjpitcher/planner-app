@@ -1,4 +1,4 @@
-import { STATE, TODAY_SECTION, PROJECT_STATUS, CLOSED_STATES, closedStatesFilter } from '@/lib/constants';
+import { STATE, TODAY_SECTION, CLOSED_STATES } from '@/lib/constants';
 import { validateTask } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { computeSortOrder } from '@/lib/sortOrder';
@@ -120,7 +120,7 @@ async function computeAppendSortOrder({ supabase, userId, state, todaySection })
   return computeSortOrder(max, null); // max + gap, or gap when the bucket is empty
 }
 
-const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, plan_reason, recurrence, recurrence_interval, created_at, updated_at';
+const TASK_SELECT_FIELDS = 'id, name, description, due_date, state, today_section, sort_order, area, customer_id, task_type, chips, waiting_reason, follow_up_date, chase_count, project_id, user_id, completed_at, entered_state_at, source_idea_id, snoozed_until, snooze_count, inbox, carried_count, carried_section, autoplanned_at, plan_reason, recurrence, recurrence_interval, created_at, updated_at';
 
 /**
  * Recurring tasks (F6/P4): validate + coerce the recurrence fields on any write.
@@ -620,55 +620,19 @@ export async function spawnNextRecurrence({ supabase, userId, task }) {
       return { spawned: false };
     }
 
-    // Idempotence. `settingDone` is derived purely from the state transition, so
-    // un-completing a recurring task and completing it again fires the spawn a
-    // second time, and nothing on the row records that an occurrence already
-    // exists. The series gained a duplicate on every undo and redo cycle. There
-    // is no column to stamp without a migration, so look for the occurrence
-    // instead: an open sibling with the same name, rule and due date IS the next
-    // occurrence, and a second copy of it is never wanted.
-    //
-    // A failed lookup deliberately falls through and spawns. A duplicate is
-    // visible in Backlog and can be deleted; a silently broken series is not.
-    const { data: existingOccurrence } = await supabase
-      .from('tasks')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('name', task.name)
-      .eq('recurrence', task.recurrence)
-      .eq('due_date', nextDue)
-      .not('state', 'in', closedStatesFilter())
-      .limit(1);
-    // No need to exclude the source row: nextDue is always strictly later than
-    // the task's own due date, because the base is the later of that date and
-    // today and every pattern advances from it.
-    if (existingOccurrence && existingOccurrence.length > 0) {
-      return { spawned: false, reason: 'already_exists' };
-    }
-
-    const spawn = await createTask({
-      supabase,
-      userId,
-      payload: {
-        name: task.name,
-        description: task.description,
-        project_id: task.project_id,
-        area: task.area,
-        task_type: task.task_type,
-        chips: task.chips,
-        recurrence: task.recurrence,
-        recurrence_interval: task.recurrence_interval || 1,
-        due_date: nextDue,
-        state: STATE.BACKLOG,
-      },
-      // Skip the synchronous Graph call; the periodic Office365 sync picks it up.
-      options: { skipOffice365Sync: true },
+    // The source id is the durable identity. The RPC locks the source and
+    // creates the next task plus its receipt in one transaction. Unrelated
+    // tasks can share names and dates without suppressing one another.
+    const { data, error } = await callRpc(supabase, 'spawn_task_recurrence', {
+      p_user_id: userId,
+      p_task_id: task.id,
+      p_due_date: nextDue,
     });
-    if (spawn?.error) {
-      console.warn(`Recurrence spawn failed for task ${task.id}:`, spawn.error);
-      return { spawned: false };
+    if (error) {
+      console.warn(`Recurrence spawn failed for task ${task.id}:`, error);
+      return { spawned: false, error };
     }
-    return { spawned: true, task: spawn.data };
+    return data;
   } catch (err) {
     console.warn(`Recurrence spawn threw for task ${task?.id}:`, err);
     return { spawned: false };
