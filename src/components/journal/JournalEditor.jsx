@@ -36,6 +36,8 @@ export default function JournalEditor({ onEntrySaved }) {
     const [saveNotice, setSaveNotice] = useState('');
     const textareaRef = useRef(null);
     const pendingEntryIdRef = useRef(null);
+    const contentRef = useRef(content);
+    contentRef.current = content;
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -84,7 +86,7 @@ export default function JournalEditor({ onEntrySaved }) {
     }, [content]);
 
     const handleSave = async () => {
-        if (!content.trim()) return;
+        if (!content.trim() || isSaving) return;
 
         setIsSaving(true);
         setSaveNotice('');
@@ -100,15 +102,20 @@ export default function JournalEditor({ onEntrySaved }) {
             } else if (aiStatus && aiStatus !== 'cleaned') {
                 setSaveNotice('Saved without AI cleanup. Your original entry is safe.');
             }
-            setContent(''); // Clear after save for fresh entry? Or keep? 
-            pendingEntryIdRef.current = null;
-            if (typeof window !== 'undefined') {
+            if (contentRef.current === content) {
+                setContent('');
+                pendingEntryIdRef.current = null;
                 window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+            } else {
+                // A save acknowledges only its snapshot. Keep later edits as a
+                // new draft, with a fresh id so a retry cannot return the old entry.
+                pendingEntryIdRef.current = createEntryId();
+                window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+                    content: contentRef.current,
+                    entryId: pendingEntryIdRef.current,
+                }));
+                setSaveNotice('The earlier text was saved. Your latest changes remain in the draft.');
             }
-            // User request: "open a plain text box and just write whatever I want to in"
-            // Usually journal apps clear after "saving" an entry if it's treated as a discrete note, OR keep it if it's a daily log.
-            // The DB schema is `id, content, created_at`. This implies discrete entries.
-            // So I'll clear it and notify parent to refresh list.
             if (onEntrySaved) onEntrySaved(savedEntry);
         } catch (error) {
             console.error('Failed to save journal entry:', error);

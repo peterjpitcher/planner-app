@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { UsersIcon } from '@heroicons/react/24/outline';
 
 import { apiClient } from '@/lib/apiClient';
+import TaskDetailDrawer from '@/components/shared/TaskDetailDrawer';
 import { CUSTOMER_STATUS } from '@/lib/constants';
 import CustomerSidebar from './CustomerSidebar';
 import CustomerWorkspace from './CustomerWorkspace';
@@ -95,6 +96,10 @@ export default function CustomersView() {
   const [selectedCustomerId, setSelectedCustomerId] = useState(urlCustomerId);
   const [overview, setOverview] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [taskError, setTaskError] = useState(null);
+  const selectedCustomerRef = useRef(selectedCustomerId);
+  selectedCustomerRef.current = selectedCustomerId;
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -110,15 +115,17 @@ export default function CustomersView() {
   // away from overwriting the one you are now looking at.
   const overviewRequestRef = useRef(0);
 
-  const loadCustomers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadCustomers = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       setCustomers(await apiClient.getCustomers({ includeArchived: true }));
     } catch (err) {
       setError(err.message || 'Failed to load customers.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -128,6 +135,8 @@ export default function CustomersView() {
 
   const loadOverview = useCallback(async (customerId) => {
     if (!customerId) {
+      overviewRequestRef.current += 1;
+      setOverviewLoading(false);
       setOverview(null);
       return;
     }
@@ -136,10 +145,10 @@ export default function CustomersView() {
     setOverviewLoading(true);
     try {
       const data = await apiClient.getCustomerOverview(customerId);
-      if (overviewRequestRef.current !== requestId) return;
+      if (overviewRequestRef.current !== requestId || selectedCustomerRef.current !== customerId) return;
       setOverview(data);
     } catch (err) {
-      if (overviewRequestRef.current !== requestId) return;
+      if (overviewRequestRef.current !== requestId || selectedCustomerRef.current !== customerId) return;
       setError(err.message || 'Failed to load this customer.');
       setOverview(null);
     } finally {
@@ -151,10 +160,20 @@ export default function CustomersView() {
     loadOverview(selectedCustomerId);
   }, [selectedCustomerId, loadOverview]);
 
+  useEffect(() => {
+    if (selectedTaskId && !overview?.tasks?.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(null);
+    }
+  }, [overview, selectedTaskId]);
+
   // Keep the URL in step so a customer can be linked to and survives a refresh.
   const handleSelect = useCallback(
     (customerId) => {
+      selectedCustomerRef.current = customerId;
       setSelectedCustomerId(customerId);
+      setSelectedTaskId(null);
+      setTaskError(null);
+      setOverview(null);
       router.replace(customerId ? `/customers?id=${customerId}` : '/customers', { scroll: false });
     },
     [router]
@@ -271,23 +290,52 @@ export default function CustomersView() {
   }
 
   const refreshAfterTaskChange = useCallback(() => {
-    loadOverview(selectedCustomerId);
-    loadCustomers();
-  }, [loadOverview, loadCustomers, selectedCustomerId]);
-
-  async function handleCompleteTask(taskId) {
-    await apiClient.updateTask(taskId, { state: 'done' });
-    refreshAfterTaskChange();
-  }
+    loadOverview(selectedCustomerRef.current);
+    loadCustomers({ silent: true });
+  }, [loadOverview, loadCustomers]);
 
   async function handleUpdateTask(taskId, updates) {
-    await apiClient.updateTask(taskId, updates);
-    refreshAfterTaskChange();
+    setTaskError(null);
+    const customerId = selectedCustomerRef.current;
+    try {
+      const saved = await apiClient.updateTask(taskId, updates);
+      if (selectedCustomerRef.current !== customerId) return;
+      setOverview((prev) => prev ? {
+        ...prev,
+        tasks: prev.tasks.map((task) => task.id === taskId ? { ...task, ...updates, ...saved } : task),
+      } : prev);
+      refreshAfterTaskChange();
+    } catch (err) {
+      if (selectedCustomerRef.current === customerId) {
+        setTaskError(err.message || 'Could not save the task. Your change was not saved.');
+        // Refresh also restores the drawer's local field after a rejected save.
+        loadOverview(customerId);
+      }
+    }
+  }
+
+  async function handleCompleteTask(taskId) {
+    await handleUpdateTask(taskId, { state: 'done' });
+  }
+
+  async function handleMoveTask(taskId, state, section) {
+    const updates = { state };
+    if (state === 'today') updates.today_section = section || 'good_to_do';
+    await handleUpdateTask(taskId, updates);
   }
 
   async function handleDeleteTask(taskId) {
-    await apiClient.deleteTask(taskId);
-    refreshAfterTaskChange();
+    setTaskError(null);
+    const customerId = selectedCustomerRef.current;
+    try {
+      await apiClient.deleteTask(taskId);
+      if (selectedCustomerRef.current !== customerId) return;
+      setSelectedTaskId(null);
+      setOverview((prev) => prev ? { ...prev, tasks: prev.tasks.filter((task) => task.id !== taskId) } : prev);
+      refreshAfterTaskChange();
+    } catch (err) {
+      if (selectedCustomerRef.current === customerId) setTaskError(err.message || 'Could not delete the task.');
+    }
   }
 
   if (loading) {
@@ -307,18 +355,19 @@ export default function CustomersView() {
   }
 
   const selected = overview?.customer;
+  const visibleError = error || (!selectedTaskId ? taskError : null);
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col md:flex-row">
-      {error && (
+      {visibleError && (
         <div
           role="alert"
           className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700"
         >
-          <span>{error}</span>
+          <span>{visibleError}</span>
           <button
             type="button"
-            onClick={() => setError(null)}
+            onClick={() => { setError(null); setTaskError(null); }}
             className="text-xs font-medium underline"
           >
             Dismiss
@@ -363,9 +412,10 @@ export default function CustomersView() {
           onDelete={openDelete}
           onTaskAdded={refreshAfterTaskChange}
           onCompleteTask={handleCompleteTask}
+          onMoveTask={handleMoveTask}
           onUpdateTask={handleUpdateTask}
           onDeleteTask={handleDeleteTask}
-          onTaskClick={() => {}}
+          onTaskClick={(taskId) => { setTaskError(null); setSelectedTaskId(taskId); }}
         />
       ) : overviewLoading ? (
         <div className="min-w-0 flex-1 animate-pulse p-6">
@@ -380,6 +430,15 @@ export default function CustomersView() {
           />
         </div>
       )}
+
+      <TaskDetailDrawer
+        task={overview?.tasks?.find((task) => task.id === selectedTaskId) || null}
+        isOpen={Boolean(selectedTaskId)}
+        error={taskError}
+        onClose={() => setSelectedTaskId(null)}
+        onUpdate={handleUpdateTask}
+        onDelete={handleDeleteTask}
+      />
 
       <CreateCustomerModal
         isOpen={isCreateOpen}

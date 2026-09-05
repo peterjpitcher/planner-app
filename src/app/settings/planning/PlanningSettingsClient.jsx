@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { AUTOPILOT_LEVEL } from '@/lib/constants';
 import { cn } from '@/lib/utils';
@@ -45,10 +45,12 @@ export default function PlanningSettingsClient() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [feedback, setFeedback] = useState(null); // { type: 'success' | 'error', message }
 
-  useEffect(() => {
-    async function loadSettings() {
+  const loadSettings = useCallback(async () => {
+      setIsLoading(true);
+      setLoadError(null);
       try {
         const data = await apiClient.getUserSettings();
         if (data) {
@@ -62,14 +64,14 @@ export default function PlanningSettingsClient() {
             ai_planning_enabled: data.ai_planning_enabled ?? DEFAULT_SETTINGS.ai_planning_enabled,
           });
         }
-      } catch {
-        // Use defaults if settings don't exist yet
+      } catch (err) {
+        setLoadError(err.message || 'Could not load your planning settings.');
       } finally {
         setIsLoading(false);
       }
-    }
-    loadSettings();
   }, []);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
   function handleChange(field, value) {
     setSettings((prev) => ({ ...prev, [field]: value }));
@@ -78,6 +80,7 @@ export default function PlanningSettingsClient() {
 
   async function handleSave(e) {
     e.preventDefault();
+    if (isLoading || loadError || isSaving) return;
     setIsSaving(true);
     setFeedback(null);
     try {
@@ -90,6 +93,15 @@ export default function PlanningSettingsClient() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <div role="alert" className="mx-auto max-w-lg rounded-md bg-red-50 p-4 text-sm text-red-700">
+        <p>{loadError}</p>
+        <button type="button" onClick={loadSettings} className="mt-2 underline">Retry loading settings</button>
+      </div>
+    );
   }
 
   if (isLoading) {

@@ -2,7 +2,7 @@ import { getAuthContext } from '@/lib/authServer';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimiter';
-import { getOpenProjectTasks, getProjectDeletionImpact } from '@/services/projectLifecycleService';
+import { getOpenProjectTasks, getProjectDeletionImpact, getReopeningProjectTasks } from '@/services/projectLifecycleService';
 
 // GET /api/projects/[id]/impact - What a status change or delete would affect.
 //
@@ -46,9 +46,10 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const [tasksResult, impactResult] = await Promise.all([
+    const [tasksResult, impactResult, reopeningResult] = await Promise.all([
       getOpenProjectTasks({ supabase, userId: session.user.id, projectId: id }),
       getProjectDeletionImpact({ supabase, userId: session.user.id, projectId: id }),
+      getReopeningProjectTasks({ supabase, userId: session.user.id, projectId: id, status: project.status }),
     ]);
 
     if (tasksResult.error) {
@@ -64,7 +65,12 @@ export async function GET(request, { params }) {
       );
     }
 
+    if (reopeningResult.error) {
+      return NextResponse.json({ error: reopeningResult.error.message }, { status: reopeningResult.error.status });
+    }
+
     return NextResponse.json({
+      reopeningTasks: reopeningResult.data,
       projectName: project.name,
       status: project.status,
       openTasks: tasksResult.data,

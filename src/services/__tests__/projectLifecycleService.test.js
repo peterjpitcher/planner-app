@@ -3,6 +3,7 @@ import {
   changeProjectStatus,
   deleteProjectPreservingContent,
   getOpenProjectTasks,
+  getReopeningProjectTasks,
   getProjectDeletionImpact,
   isClosingStatus,
   taskStateForClosingStatus,
@@ -159,17 +160,28 @@ describe('changeProjectStatus', () => {
     expect(data.taskState).toBeNull();
   });
 
-  it('leaves tasks alone when moving between two live statuses', async () => {
-    const supabase = makeRpcSupabase();
-    const { data } = await changeProjectStatus({
-      supabase,
-      ...base,
-      previousStatus: PROJECT_STATUS.OPEN,
-      nextStatus: PROJECT_STATUS.ON_HOLD,
-    });
-
+  it.each([
+    ['Open', 'In Progress'], ['Open', 'On Hold'],
+    ['In Progress', 'Open'], ['In Progress', 'On Hold'],
+    ['On Hold', 'Open'], ['On Hold', 'In Progress'],
+  ])('persists %s to %s without touching tasks', async (previousStatus, nextStatus) => {
+    const chain = {
+      update: vi.fn(() => chain), eq: vi.fn(() => chain), select: vi.fn(() => chain),
+      maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'project-1' } }),
+    };
+    const supabase = { from: vi.fn(() => chain), rpc: vi.fn() };
+    const { data } = await changeProjectStatus({ supabase, ...base, previousStatus, nextStatus });
+    expect(supabase.from).toHaveBeenCalledExactlyOnceWith('projects');
+    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ status: nextStatus }));
+    expect(chain.eq.mock.calls).toEqual([['id', 'project-1'], ['user_id', 'user-1'], ['status', previousStatus]]);
     expect(supabase.rpc).not.toHaveBeenCalled();
     expect(data.tasksChanged).toBe(0);
+  });
+
+  it('rejects an active status change when its prior state changed concurrently', async () => {
+    const chain = { update: () => chain, eq: () => chain, select: () => chain, maybeSingle: async () => ({ data: null }) };
+    const result = await changeProjectStatus({ supabase: { from: () => chain }, ...base, previousStatus: 'Open', nextStatus: 'On Hold' });
+    expect(result.error.status).toBe(409);
   });
 
   it('surfaces an ownership failure as a 403 rather than a 500', async () => {
@@ -284,5 +296,24 @@ describe('getProjectDeletionImpact', () => {
     expect(data.taskCount).toBe(5);
     expect(data.noteCount).toBe(2);
     expect(data.customerName).toBe('Acme Ltd');
+  });
+});
+
+
+describe('reopening impact', () => {
+  it('lists only cancelled work carrying the lifecycle receipt', async () => {
+    const chain = {
+      select: vi.fn(() => chain), eq: vi.fn(() => chain), not: vi.fn(() => chain),
+      order: vi.fn(async () => ({ data: [{ id: 't1', name: 'Cancelled by project' }] })),
+    };
+    const result = await getReopeningProjectTasks({ supabase: { from: () => chain }, ...base, status: 'Cancelled' });
+    expect(chain.eq.mock.calls).toEqual([['project_id', 'project-1'], ['user_id', 'user-1'], ['state', 'cancelled']]);
+    expect(chain.not).toHaveBeenCalledWith('lifecycle_move_id', 'is', null);
+    expect(result.data[0].name).toBe('Cancelled by project');
+  });
+  it.each(['Completed', 'Open'])('does not restore work for %s projects', async status => {
+    const supabase = { from: vi.fn() };
+    expect(await getReopeningProjectTasks({ supabase, ...base, status })).toEqual({ data: [] });
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 });

@@ -268,6 +268,7 @@ export default function ProjectsView() {
   const [pendingDelete, setPendingDelete] = useState(null); // { projectId, name }
   const [impact, setImpact] = useState(null); // { openTasks, noteCount }
   const [impactLoading, setImpactLoading] = useState(false);
+  const [impactError, setImpactError] = useState(null);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState(null);
 
@@ -287,15 +288,16 @@ export default function ProjectsView() {
     const token = impactGuardRef.current.begin();
     setImpactLoading(true);
     setImpact(null);
+    setImpactError(null);
     setConfirmError(null);
     try {
       const result = await apiClient.getProjectImpact(projectId);
       if (impactGuardRef.current.isStale(token)) return;
-      setImpact({ openTasks: result.openTasks || [], noteCount: result.noteCount || 0 });
+      setImpact({ ...result, projectId, openTasks: result.openTasks || [], noteCount: result.noteCount || 0 });
     } catch (err) {
       if (impactGuardRef.current.isStale(token)) return;
-      setConfirmError(err.message || 'Could not load what this would affect.');
-      setImpact({ openTasks: [], noteCount: 0 });
+      setImpactError(err.message || 'Could not load what this would affect.');
+      setImpact(null);
     } finally {
       if (!impactGuardRef.current.isStale(token)) setImpactLoading(false);
     }
@@ -304,19 +306,20 @@ export default function ProjectsView() {
   const requestStatusChange = useCallback((projectId, status) => {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
-    // Only closing transitions need confirming. Open / In Progress / On Hold
-    // change nothing about the tasks, so they stay instant.
-    if (status !== PROJECT_STATUS.COMPLETED && status !== PROJECT_STATUS.CANCELLED) {
+    // Closing and reopening can move tasks and notes. Changes between active
+    // statuses leave them untouched and can save immediately.
+    const wasClosed = project.status === PROJECT_STATUS.COMPLETED || project.status === PROJECT_STATUS.CANCELLED;
+    if (!wasClosed && status !== PROJECT_STATUS.COMPLETED && status !== PROJECT_STATUS.CANCELLED) {
       handleUpdateProject(projectId, { status });
       return;
     }
-    setPendingStatus({ projectId, name: project.name, status });
+    setPendingStatus({ projectId, name: project.name, status, previousStatus: project.status });
     loadImpact(projectId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, loadImpact]);
 
   const confirmStatusChange = useCallback(async ({ closeoutNote = null, facts = [] } = {}) => {
-    if (!pendingStatus) return;
+    if (!pendingStatus || confirmSubmitting || impactLoading || impactError || impact?.projectId !== pendingStatus.projectId) return;
     setConfirmSubmitting(true);
     setConfirmError(null);
     try {
@@ -338,7 +341,7 @@ export default function ProjectsView() {
     } finally {
       setConfirmSubmitting(false);
     }
-  }, [pendingStatus, loadData]);
+  }, [pendingStatus, loadData, confirmSubmitting, impactLoading, impactError, impact]);
 
   const handleDeleteProject = useCallback((projectId) => {
     const project = projects.find((p) => p.id === projectId);
@@ -348,7 +351,7 @@ export default function ProjectsView() {
   }, [projects, loadImpact]);
 
   const confirmDeleteProject = useCallback(async ({ destroyContent = false } = {}) => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || confirmSubmitting || impactLoading || impactError || impact?.projectId !== pendingDelete.projectId) return;
     setConfirmSubmitting(true);
     setConfirmError(null);
     try {
@@ -362,7 +365,7 @@ export default function ProjectsView() {
       setConfirmSubmitting(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingDelete, loadData, selectedProjectId]);
+  }, [pendingDelete, loadData, selectedProjectId, confirmSubmitting, impactLoading, impactError, impact]);
 
   const handleProjectCreated = useCallback((newProject) => {
     setIsCreateOpen(false);
@@ -646,7 +649,11 @@ export default function ProjectsView() {
         onConfirm={confirmStatusChange}
         projectName={pendingStatus?.name}
         targetStatus={pendingStatus?.status}
+        previousStatus={pendingStatus?.previousStatus}
+        impactError={impactError}
+        onRetry={() => pendingStatus && loadImpact(pendingStatus.projectId)}
         openTasks={impact?.openTasks}
+        reopeningTasks={impact?.reopeningTasks}
         customerName={impact?.customerName || null}
         loading={impactLoading}
         submitting={confirmSubmitting}
@@ -662,6 +669,8 @@ export default function ProjectsView() {
         onClose={() => { setPendingDelete(null); setConfirmError(null); }}
         onConfirm={confirmDeleteProject}
         projectName={pendingDelete?.name}
+        impactError={impactError}
+        onRetry={() => pendingDelete && loadImpact(pendingDelete.projectId)}
         taskCount={impact?.openTasks?.length || 0}
         noteCount={impact?.noteCount || 0}
         customerName={impact?.customerName || null}

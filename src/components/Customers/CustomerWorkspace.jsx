@@ -104,6 +104,7 @@ export default function CustomerWorkspace({
   onDelete,
   onTaskAdded,
   onCompleteTask,
+  onMoveTask,
   onUpdateTask,
   onDeleteTask,
   onTaskClick,
@@ -377,6 +378,7 @@ export default function CustomerWorkspace({
                             key={task.id}
                             task={task}
                             onComplete={onCompleteTask}
+                            onMove={onMoveTask}
                             onUpdate={onUpdateTask}
                             onDelete={onDeleteTask}
                             onClick={onTaskClick}

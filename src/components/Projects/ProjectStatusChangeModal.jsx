@@ -48,16 +48,27 @@ export default function ProjectStatusChangeModal({
   onConfirm,
   projectName,
   targetStatus,
+  previousStatus,
   openTasks,
+  reopeningTasks,
   loading = false,
   submitting = false,
   customerName = null,
   error = null,
+  impactError = null,
+  onRetry,
 }) {
-  const copy = COPY[targetStatus];
-  if (!copy) return null;
+  const isReopening = [PROJECT_STATUS.COMPLETED, PROJECT_STATUS.CANCELLED].includes(previousStatus)
+    && ![PROJECT_STATUS.COMPLETED, PROJECT_STATUS.CANCELLED].includes(targetStatus);
+  const copy = isReopening ? {
+    title: 'Reopen project', verb: 'reopened', Icon: CheckCircleIcon,
+    iconClass: 'text-indigo-600', iconBg: 'bg-indigo-100',
+    confirmClass: 'bg-indigo-600 hover:bg-indigo-500 focus-visible:outline-indigo-600',
+    taskEffect: 'will return to Backlog',
+    confirmLabel: () => 'Reopen project',
+  } : COPY[targetStatus];
 
-  const tasks = openTasks || [];
+  const tasks = (isReopening ? reopeningTasks : openTasks) || [];
 
   // Close-out capture. Asked on EVERY close, Completed or Cancelled, with no
   // setting to turn it off: what you know at the moment you finish something is
@@ -83,6 +94,8 @@ export default function ProjectStatusChangeModal({
       : [];
     onConfirm({ closeoutNote: closeoutNote.trim() || null, facts });
   }
+  if (!copy) return null;
+
   const taskCount = tasks.length;
   const { Icon } = copy;
 
@@ -123,23 +136,30 @@ export default function ProjectStatusChangeModal({
                         but was never said anywhere, and it is not reversible by
                         reopening the project: the list comes back empty of any
                         history the user had added on the Outlook side. */}
-                    <p className="mt-1 text-sm text-gray-500">
-                      Its Microsoft To Do list will be removed from Outlook. Your tasks stay here.
-                    </p>
+                    {!isReopening && (
+                      <p className="mt-1 text-sm text-gray-500">
+                        Its Microsoft To Do list will be removed from Outlook. Your tasks stay here.
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div className="mt-4">
-                  {loading ? (
+                  {impactError ? (
+                    <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                      <p>{impactError}</p>
+                      <button type="button" onClick={onRetry} className="mt-2 underline">Retry impact check</button>
+                    </div>
+                  ) : loading ? (
                     <p className="text-sm text-gray-500">Checking for open tasks...</p>
                   ) : taskCount === 0 ? (
                     <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                      This project has no open tasks.
+                      {isReopening ? 'No tasks will be reopened. Completed tasks stay done.' : 'This project has no open tasks.'}
                     </p>
                   ) : (
                     <>
                       <p className="text-sm font-medium text-gray-900">
-                        {taskCount} open task{taskCount === 1 ? '' : 's'} {copy.taskEffect}:
+                        {taskCount} {isReopening ? 'cancelled' : 'open'} task{taskCount === 1 ? '' : 's'} {copy.taskEffect}:
                       </p>
                       <ul className="mt-2 max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200">
                         {tasks.map((task) => (
@@ -154,7 +174,7 @@ export default function ProjectStatusChangeModal({
                         ))}
                       </ul>
                       <p className="mt-2 text-xs text-gray-500">
-                        They will leave Today, the Plan board and your daily email.
+                        {isReopening ? 'Completed tasks stay done. Project notes return to this project.' : 'They will leave Today, the Plan board and your daily email.'}
                         {targetStatus === PROJECT_STATUS.CANCELLED
                           ? ' Reopening the project returns them to the backlog.'
                           : ''}
@@ -164,7 +184,7 @@ export default function ProjectStatusChangeModal({
                 </div>
 
                 {/* Close-out capture, on every close. */}
-                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                {!isReopening && !loading && !impactError && <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
                   <label
                     htmlFor="closeout-note"
                     className="block text-sm font-medium text-gray-700"
@@ -227,7 +247,7 @@ export default function ProjectStatusChangeModal({
                       one is pinned to it. Set a customer to keep them on a customer record.
                     </p>
                   )}
-                </div>
+                </div>}
 
                 {error && (
                   <div className="mt-3 flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -239,12 +259,12 @@ export default function ProjectStatusChangeModal({
                 <div className="mt-5 gap-2 sm:mt-4 sm:flex sm:flex-row-reverse">
                   <button
                     type="button"
-                    disabled={loading || submitting}
+                    disabled={loading || submitting || Boolean(impactError)}
                     onClick={confirm}
                     className={cn(
                       'inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto',
                       copy.confirmClass,
-                      (loading || submitting) && 'cursor-not-allowed opacity-60'
+                      (loading || submitting || impactError) && 'cursor-not-allowed opacity-60'
                     )}
                   >
                     {submitting ? 'Saving...' : copy.confirmLabel(taskCount)}
