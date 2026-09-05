@@ -42,20 +42,46 @@ export default function AttachmentsPanel({
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
 
-  const load = useCallback(async () => {
-    if (!parentId) return;
-    setLoading(true);
-    try {
-      setAttachments(await apiClient.getAttachments(parentType, parentId));
-      setError(null);
-    } catch (err) {
-      setError(err.message || 'Could not load files.');
-    } finally {
-      setLoading(false);
-    }
-  }, [parentType, parentId]);
+  const parentRef = useRef({ key: null, generation: 0 });
+  const parentKey = `${parentType}:${parentId}`;
+  if (parentRef.current.key !== parentKey) {
+    parentRef.current = { key: parentKey, generation: parentRef.current.generation + 1 };
+  }
+  const generation = parentRef.current.generation;
+  const mountedRef = useRef(true);
+  const requestRef = useRef(0);
+  const uploadIdRef = useRef(0);
+  const isCurrent = useCallback(
+    () => mountedRef.current && parentRef.current.generation === generation,
+    [generation]
+  );
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!parentId || !isCurrent()) return;
+    const request = ++requestRef.current;
+    setLoading(true);
+    try {
+      const data = await apiClient.getAttachments(parentType, parentId);
+      if (!isCurrent() || request !== requestRef.current) return;
+      setAttachments(data);
+      setError(null);
+    } catch (err) {
+      if (isCurrent() && request === requestRef.current) setError(err.message || 'Could not load files.');
+    } finally {
+      if (isCurrent() && request === requestRef.current) setLoading(false);
+    }
+  }, [parentType, parentId, isCurrent]);
+
+  useEffect(() => {
+    setAttachments([]);
+    setUploads([]);
+    setError(null);
+    setDragging(false);
     load();
   }, [load]);
 
@@ -64,29 +90,26 @@ export default function AttachmentsPanel({
     if (list.length === 0 || disabled) return;
 
     for (const file of list) {
-      const key = `${file.name}-${file.size}-${list.indexOf(file)}`;
+      // Finish a file already submitted, but do not start the rest of an old
+      // parent's queue after the user has moved to a different record.
+      if (!isCurrent()) return;
+      const key = `upload-${++uploadIdRef.current}`;
       setUploads((prev) => [...prev, { key, name: file.name, stage: 'signing', error: null }]);
-
       try {
         await apiClient.uploadAttachment(
           { parentType, parentId, file },
-          (stage) =>
-            setUploads((prev) =>
-              prev.map((entry) => (entry.key === key ? { ...entry, stage } : entry))
-            )
+          (stage) => {
+            if (isCurrent()) setUploads((prev) => prev.map((entry) => entry.key === key ? { ...entry, stage } : entry));
+          }
         );
+        if (!isCurrent()) return;
         setUploads((prev) => prev.filter((entry) => entry.key !== key));
         await load();
       } catch (err) {
-        // Left in the list with its reason rather than vanishing, so a rejected
-        // upload is something you can see and retry.
-        setUploads((prev) =>
-          prev.map((entry) =>
-            entry.key === key
-              ? { ...entry, stage: 'failed', error: err.message || 'Upload failed' }
-              : entry
-          )
-        );
+        if (!isCurrent()) return;
+        setUploads((prev) => prev.map((entry) => entry.key === key
+          ? { ...entry, stage: 'failed', error: err.message || 'Upload failed' }
+          : entry));
       }
     }
   }
@@ -94,18 +117,21 @@ export default function AttachmentsPanel({
   async function download(attachment) {
     try {
       const { url } = await apiClient.getAttachmentDownloadUrl(attachment.id);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      if (isCurrent()) window.open(url, '_blank', 'noopener,noreferrer');
     } catch (err) {
-      setError(err.message || 'Could not open that file.');
+      if (isCurrent()) setError(err.message || 'Could not open that file.');
     }
   }
 
   async function remove(attachmentId) {
     try {
       await apiClient.deleteAttachment(attachmentId);
-      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+      if (isCurrent()) {
+        setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+        await load();
+      }
     } catch (err) {
-      setError(err.message || 'Could not delete that file.');
+      if (isCurrent()) setError(err.message || 'Could not delete that file.');
     }
   }
 

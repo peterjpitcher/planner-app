@@ -83,7 +83,7 @@ export async function GET(request) {
       const { data: pNotes, error: pNotesError } = await supabase
         .from('notes')
         .select('*')
-        .in('project_id', projectIds)
+        .or(`project_id.in.(${projectIds.join(',')}),origin_project_id.in.(${projectIds.join(',')})`)
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: true });
         
@@ -102,13 +102,13 @@ export async function GET(request) {
     
     const projectsWithNotes = (projects || []).map(project => ({
       ...project,
-      notes: projectNotes.filter(note => note.project_id === project.id)
+      notes: projectNotes.filter(note => note.project_id === project.id || note.origin_project_id === project.id)
     }));
     
     return NextResponse.json({
       tasks: tasksWithNotes,
       projects: projectsWithNotes,
-      allNotes: [...taskNotes, ...projectNotes]
+      allNotes: [...new Map([...taskNotes, ...projectNotes].map(note => [note.id, note])).values()]
     });
   } catch (error) {
     console.error('GET /api/completed-items error:', error);

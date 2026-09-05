@@ -55,7 +55,7 @@ export async function POST(request) {
     if (hasTaskIds) {
       query = query.in('task_id', taskIds);
     } else if (hasProjectIds) {
-      query = query.in('project_id', projectIds);
+      query = query.or(`project_id.in.(${projectIds.join(',')}),origin_project_id.in.(${projectIds.join(',')})`);
     }
     
     const { data, error } = await query;
@@ -81,8 +81,8 @@ export async function POST(request) {
       projectIds.forEach(id => { result[id] = []; });
       if (data) {
         data.forEach(note => {
-          if (result[note.project_id]) {
-            result[note.project_id].push(note);
+          for (const projectId of new Set([note.project_id, note.origin_project_id])) {
+            if (result[projectId]) result[projectId].push(note);
           }
         });
       }

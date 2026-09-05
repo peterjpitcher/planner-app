@@ -71,6 +71,20 @@ export async function getOpenProjectTasks({ supabase, userId, projectId }) {
   return { data: data || [] };
 }
 
+/** Tasks the cancelled project's reopen would actually restore. */
+export async function getReopeningProjectTasks({ supabase, userId, projectId, status }) {
+  if (status !== PROJECT_STATUS.CANCELLED) return { data: [] };
+  const { data, error } = await supabase.from('tasks')
+    .select('id, name, state, due_date')
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .eq('state', STATE.CANCELLED)
+    .not('lifecycle_move_id', 'is', null)
+    .order('created_at', { ascending: true });
+  if (error) return { error: { status: 500, message: 'Unable to load tasks for reopening' } };
+  return { data: data || [] };
+}
+
 /**
  * Apply a project status change and everything that follows from it.
  *
@@ -148,6 +162,17 @@ export async function changeProjectStatus({
     };
   }
 
+  const { data: updated, error } = await supabase
+    .from('projects')
+    .update({ status: nextStatus, updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .eq('status', previousStatus)
+    .select('id')
+    .maybeSingle();
+
+  if (error) return { error: { status: 500, message: 'Unable to update project status' } };
+  if (!updated) return { error: { status: 409, message: 'Project status changed. Refresh and try again.' } };
   return { data: { tasksChanged: 0, taskState: null, notesMoved: 0 } };
 }
 

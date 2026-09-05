@@ -28,6 +28,8 @@ export default function ProjectDeleteModal({
   loading = false,
   submitting = false,
   error = null,
+  impactError = null,
+  onRetry,
 }) {
   const [destroyContent, setDestroyContent] = useState(false);
 
@@ -71,7 +73,12 @@ export default function ProjectDeleteModal({
                 </div>
 
                 <div className="mt-4 space-y-2 text-sm">
-                  {loading ? (
+                  {impactError ? (
+                    <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                      <p>{impactError}</p>
+                      <button type="button" onClick={onRetry} className="mt-2 underline">Retry impact check</button>
+                    </div>
+                  ) : loading ? (
                     <p className="text-gray-500">Checking what this affects...</p>
                   ) : (
                     <>
@@ -144,11 +151,11 @@ export default function ProjectDeleteModal({
                 <div className="mt-5 gap-2 sm:mt-4 sm:flex sm:flex-row-reverse">
                   <button
                     type="button"
-                    disabled={loading || submitting}
+                    disabled={loading || submitting || Boolean(impactError)}
                     onClick={() => onConfirm({ destroyContent })}
                     className={cn(
                       'inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 sm:w-auto',
-                      (loading || submitting) && 'cursor-not-allowed opacity-60'
+                      (loading || submitting || impactError) && 'cursor-not-allowed opacity-60'
                     )}
                   >
                     {submitting ? 'Deleting...' : 'Delete project'}

@@ -1,0 +1,21 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { test, vi, expect, afterEach } from 'vitest';
+import PlanningSettingsClient from '@/app/settings/planning/PlanningSettingsClient';
+import { apiClient } from '@/lib/apiClient';
+vi.mock('@/lib/apiClient', () => ({ apiClient: { getUserSettings: vi.fn(), updateUserSettings: vi.fn().mockResolvedValue({}) } }));
+vi.mock('@/components/settings/AutomationsPanel', () => ({default:() => null}));
+afterEach(cleanup);
+test('blocks saving when loading fails and restores actual preferences after retry', async () => {
+ apiClient.getUserSettings.mockRejectedValue(new Error('Network unavailable'));
+ render(<PlanningSettingsClient/>);
+ await screen.findByRole('alert');
+ expect(screen.getByText('Network unavailable')).toBeVisible();
+ expect(screen.queryByRole('button',{name:/Save/})).not.toBeInTheDocument();
+ expect(apiClient.updateUserSettings).not.toHaveBeenCalled();
+ apiClient.getUserSettings.mockResolvedValue({autopilot_level:'review',digest_enabled:false,ai_planning_enabled:true});
+ fireEvent.click(screen.getByRole('button',{name:'Retry loading settings'}));
+ const save=await screen.findByRole('button',{name:/Save/});
+ fireEvent.click(save);
+ await waitFor(() => expect(apiClient.updateUserSettings).toHaveBeenCalledWith(expect.objectContaining({autopilot_level:'review',digest_enabled:false,ai_planning_enabled:true})));
+});
