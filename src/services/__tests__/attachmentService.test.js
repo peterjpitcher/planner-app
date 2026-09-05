@@ -13,15 +13,16 @@ import {
 /**
  * Supabase stub covering both the table and the storage client.
  */
-function makeSupabase({ rows = [], info = null, infoError = null, removeError = null } = {}) {
+function makeSupabase({ rows = [], info = null, infoError = null, removeError = null, queryError = null, deleteError = null } = {}) {
   const captured = { updated: null, removed: [], deleted: false, signedUrlArgs: null };
 
   const table = () => {
     let payload = null;
+    let deleting = false;
     const api = {
       select: () => api,
       update(values) { payload = values; captured.updated = values; return api; },
-      delete() { captured.deleted = true; return api; },
+      delete() { captured.deleted = true; deleting = true; return api; },
       eq: () => api,
       lt: () => api,
       limit: () => api,
@@ -29,7 +30,8 @@ function makeSupabase({ rows = [], info = null, infoError = null, removeError = 
       single: async () => ({ data: { ...rows[0], ...payload }, error: null }),
       maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
       then(resolve, reject) {
-        return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+        const error = deleting ? deleteError : queryError;
+        return Promise.resolve({ data: error ? null : rows, error }).then(resolve, reject);
       },
     };
     return api;
@@ -112,6 +114,18 @@ describe('validateUploadRequest', () => {
 });
 
 describe('finaliseUpload', () => {
+  it('keeps a rejected file available for cleanup when Storage removal fails', async () => {
+    const supabase = makeSupabase({
+      rows: [{ ...READY_ROW, status: 'pending', upload_expires_at: null }],
+      info: { size: MAX_FILE_BYTES + 1, contentType: 'application/pdf' },
+      removeError: { message: 'Storage unavailable' },
+    });
+    const { error } = await finaliseUpload({ supabase, userId: USER, attachmentId: 'att-1' });
+    expect(error.status).toBe(422);
+    expect(supabase.captured.updated.status).toBe('deleting');
+    expect(supabase.captured.updated.deleting_at).toBeTruthy();
+    expect(supabase.captured.deleted).toBe(false);
+  });
   it('rejects a file bigger than it claimed, and removes the object', async () => {
     // The whole reason finalisation measures rather than trusts. A signed
     // upload authorises a transfer; it does not promise the object matches the
@@ -240,6 +254,12 @@ describe('createDownloadUrl', () => {
 });
 
 describe('deleteAttachment', () => {
+  it('reports retrying when the metadata delete returns an error', async () => {
+    const supabase = makeSupabase({ rows: [READY_ROW], deleteError: { message: 'Database unavailable' } });
+    const { data } = await deleteAttachment({ supabase, userId: USER, attachmentId: 'att-1' });
+    expect(data).toEqual({ deleted: false, retrying: true });
+    expect(supabase.captured.updated.status).toBe('deleting');
+  });
   it('marks the row deleting before touching the object', async () => {
     // Deleting the object first and the row second is NOT safe: if the object
     // goes and the row delete then fails, the row survives pointing at a file
@@ -278,6 +298,41 @@ describe('deleteAttachment', () => {
 });
 
 describe('reconcileAttachments', () => {
+  it('cleans retained pending uploads and deletes after Storage recovers', async () => {
+    let rows = [
+      { id: 'pending', storage_path: 'user/pending', status: 'pending', upload_expires_at: '2026-09-01T00:00:00Z' },
+      { id: 'deleting', storage_path: 'user/deleting', status: 'deleting', deleting_at: '2026-09-01T00:00:00Z' },
+    ];
+    let storageUnavailable = true;
+    const supabase = {
+      storage: { from: () => ({ remove: async () => ({ error: storageUnavailable ? { message: 'Storage unavailable' } : null }) }) },
+      from() {
+        let deleting = false;
+        const predicates = [];
+        const query = {
+          select() { return query; }, limit() { return query; },
+          eq(key, value) { predicates.push((row) => row[key] === value); return query; },
+          lt(key, value) { predicates.push((row) => row[key] < value); return query; },
+          delete() { deleting = true; return query; },
+          then(resolve, reject) {
+            const selected = rows.filter((row) => predicates.every((predicate) => predicate(row)));
+            if (deleting) rows = rows.filter((row) => !selected.includes(row));
+            return Promise.resolve({ data: selected, error: null }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    };
+    const now = new Date('2026-09-05T10:00:00Z');
+    expect((await reconcileAttachments({ supabase, now })).data)
+      .toEqual({ stalePendingRemoved: 0, stuckDeletesCompleted: 0, failures: 2 });
+    expect(rows).toHaveLength(2);
+    storageUnavailable = false;
+    expect((await reconcileAttachments({ supabase, now })).data)
+      .toEqual({ stalePendingRemoved: 1, stuckDeletesCompleted: 1, failures: 0 });
+    expect(rows).toEqual([]);
+  });
+
   it('sweeps uploads that never finalised', async () => {
     const supabase = makeSupabase({
       rows: [{ id: 'att-9', storage_path: 'user-1/att-9' }],
@@ -293,9 +348,23 @@ describe('reconcileAttachments', () => {
     expect(supabase.captured.removed).toContain('user-1/att-9');
   });
 
-  it('reports failures rather than swallowing them', async () => {
-    const supabase = makeSupabase({ rows: [] });
+  it('preserves retry metadata and reports returned Storage errors', async () => {
+    const supabase = makeSupabase({ rows: [READY_ROW], removeError: { message: 'Storage unavailable' } });
     const { data } = await reconcileAttachments({ supabase });
-    expect(data.failures).toBe(0);
+    expect(data).toEqual({ stalePendingRemoved: 0, stuckDeletesCompleted: 0, failures: 2 });
+    expect(supabase.captured.deleted).toBe(false);
+  });
+
+  it('reports returned metadata deletion errors without counting success', async () => {
+    const supabase = makeSupabase({ rows: [READY_ROW], deleteError: { message: 'Database unavailable' } });
+    const { data } = await reconcileAttachments({ supabase });
+    expect(data).toEqual({ stalePendingRemoved: 0, stuckDeletesCompleted: 0, failures: 2 });
+  });
+
+  it('fails when the candidates cannot be read, without deleting objects', async () => {
+    const supabase = makeSupabase({ queryError: { message: 'Database unavailable' } });
+    await expect(reconcileAttachments({ supabase })).rejects.toThrow('Attachment cleanup query failed');
+    expect(supabase.captured.removed).toEqual([]);
+    expect(supabase.captured.deleted).toBe(false);
   });
 });

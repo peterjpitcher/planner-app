@@ -725,9 +725,11 @@ export async function deleteTask({ supabase, userId, taskId, options = {} }) {
 
   if (!options?.skipOffice365Sync) {
     try {
-      await deleteOffice365Task({ userId, taskId });
+      const remoteResult = await deleteOffice365Task({ userId, taskId });
+      if (remoteResult?.error) return { error: remoteResult.error };
     } catch (err) {
       console.warn('Office365 sync failed for deleted task:', err);
+      return { error: { status: 503, message: 'Outlook could not remove this task. Try deleting it again shortly.' } };
     }
   }
 
