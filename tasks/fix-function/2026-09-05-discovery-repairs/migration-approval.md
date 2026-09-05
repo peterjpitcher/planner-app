@@ -1,6 +1,6 @@
 # Production migration approval packet
 
-Status: drafted and locally validated. Not applied to production. This document records the exact proposed operation; approval is handled in chat.
+Status: approved in chat and applied to production planner-app (hufxwovthhsjmtifvign). Live migration version 20260905164422, atomic_promotion_and_recurrence. The approved SQL and SHA-256 below are unchanged. The original packet is retained as the approval record.
 
 ## Target and exact artefact
 
@@ -342,4 +342,4 @@ The active-status and reporting fixes have no dependency on this migration and c
 
 Keep `src/services/ideaService.js` promotion changes, the recurrence helper changes within `src/services/taskService.js`, their tests, and this migration together in the second release. `taskService.js` also contains independent remote-deletion protection coordinated with the integration agent; that hunk can be released with the corresponding integration-service contract without requiring either new RPC. Stage it separately from the recurrence helper rather than releasing the entire file prematurely. Adding `customer_id` to the service SELECT uses an existing column and can deploy independently.
 
-No production mutation has been performed for this packet. Application of this exact migration and its rollback-only smoke remain pending the main agent's chat approval step.
+Production application completed following the user's explicit approval. Post-apply catalogue checks matched all expected functions, columns, keys, indexes and permissions. The exact rollback-only smoke ran as service_role and returned Workflow smoke passed; all synthetic rows rolled back. Actual anon and authenticated execution/read attempts were denied for both RPCs and the receipt table. Receipt count remained zero. The prepared rollback remains available and was not required.
