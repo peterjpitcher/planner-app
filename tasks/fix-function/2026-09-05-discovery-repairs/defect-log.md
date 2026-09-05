@@ -1,0 +1,20 @@
+# Defect log
+
+- [x] FF-001: Explicit date confirmation across task/project/snooze pickers. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-002: Persist active project status changes. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-003: Block lifecycle confirmation without impact. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-004: Preserve journal edits during saves. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-005 (migration required): Identify recurring occurrences independently. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-006: Retain Outlook deletion retries. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-007: Retain attachment cleanup retry records. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-008: Make cron dry runs read-only. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-009: Allow project reopening. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-010: Preserve confirmation customer context. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-011 (migration required): Preserve recurring customer ownership. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-012: Include origin project notes in reports. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-013 (migration required): Atomic idea promotion. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-014: Guard attachment responses after navigation. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-015: Block saving settings after failed load. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-016: Wire customer task details. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-017: Respect attachment cron claim. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
+- [x] FF-018: Match live cron tracking schema. Status: implemented and locally verified; release pending. Confidence: high. Approval: user approved repairs. Evidence: see verification.md for actual coverage and limits.
