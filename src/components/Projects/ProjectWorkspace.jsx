@@ -17,6 +17,7 @@ import { getStatusClasses, cn } from '@/lib/styleUtils';
 import { getDueDateStatus, formatDate } from '@/lib/dateUtils';
 import { PROJECT_STATUS, STATE } from '@/lib/constants';
 import TaskCard from '@/components/shared/TaskCard';
+import DatePicker from '@/components/shared/DatePicker';
 import QuickTaskInput from '@/components/shared/QuickTaskInput';
 import CustomerPicker from '@/components/shared/CustomerPicker';
 import ProjectNotes from './ProjectNotes';
@@ -156,7 +157,7 @@ export default function ProjectWorkspace({
                 // project cascades to its open tasks, so it has to be confirmed
                 // with the affected task list first.
                 onChange={(e) => onChangeStatus(project.id, e.target.value)}
-                disabled={isReadOnly}
+                aria-label="Project status"
                 className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500', statusClasses)}
               >
                 {Object.values(PROJECT_STATUS).map((s) => (
@@ -203,26 +204,19 @@ export default function ProjectWorkspace({
             {/* Due date */}
             <span className="flex items-center gap-1">
               <span className="text-gray-400">Due:</span>
-              <label className="relative cursor-pointer">
-                <span
-                  className={cn(
-                    'rounded px-1.5 py-0.5 text-xs font-medium',
-                    project.due_date ? [dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text] : 'text-gray-400 hover:text-indigo-600',
-                    !isReadOnly && 'cursor-pointer hover:ring-1 hover:ring-indigo-300'
-                  )}
-                >
-                  {project.due_date ? formatDate(project.due_date, 'MMM d, yyyy') : 'Set date'}
-                </span>
-                {!isReadOnly && (
-                  <input
-                    type="date"
-                    className="date-picker-overlay absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                    tabIndex={-1}
-                    value={project.due_date || ''}
-                    onChange={(e) => onUpdateProject(project.id, { due_date: e.target.value || null })}
-                  />
+              <DatePicker
+                value={project.due_date}
+                title="Change project due date"
+                disabled={isReadOnly}
+                onSave={(value) => onUpdateProject(project.id, { due_date: value })}
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500',
+                  project.due_date ? [dueDateStatus?.styles?.bg, dueDateStatus?.styles?.text] : 'text-gray-400 hover:text-indigo-600',
+                  !isReadOnly && 'cursor-pointer hover:ring-1 hover:ring-indigo-300'
                 )}
-              </label>
+              >
+                {project.due_date ? formatDate(project.due_date, 'MMM d, yyyy') : 'Set date'}
+              </DatePicker>
               {project.due_date && !isReadOnly && (
                 <button
                   type="button"

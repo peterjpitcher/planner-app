@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
@@ -232,22 +232,23 @@ export default function PlanningModal({
   // Determine which tasks to show for the current step
   // When in Sunday combined flow's daily step, use freshly-fetched dailyTasks
   const activeTasks = (isCombinedFlow && step === 'daily' && dailyTasks) ? dailyTasks : tasks;
-  const carriedFromToday = activeTasks?.carriedFromToday || [];
+  const carriedFromToday = useMemo(() => activeTasks?.carriedFromToday || [], [activeTasks]);
   // Carried rows the user has NOT already handled individually this session —
   // the only ones "Keep yesterday's plan" should restore.
   const carriedPending = carriedFromToday.filter((t) => !actionedIds.has(t.id));
   // Review backlog (F4): undated backlog tasks that have aged past the threshold.
   // Rendered as its own lowest-urgency group with a gentle "still needed?" prompt.
   // reviewBacklogTotal is the full server-side count so we can note "+N more".
-  const reviewBacklog = activeTasks?.reviewBacklog || [];
+  const reviewBacklog = useMemo(() => activeTasks?.reviewBacklog || [], [activeTasks]);
   const reviewBacklogTotal = activeTasks?.reviewBacklogTotal || 0;
   // Waiting chase engine (Wave 7): waiting tasks whose follow_up_date has arrived.
   // Surfaced as a "Chase these" group in the daily step and counted toward
   // currentTasks so the empty state / intro copy / Finish inaction guard include them.
-  const chaseDue = activeTasks?.chaseDue || [];
-  const currentTasks = step === 'weekly'
+  const chaseDue = useMemo(() => activeTasks?.chaseDue || [], [activeTasks]);
+  const currentTasks = useMemo(() => step === 'weekly'
     ? [...(tasks?.dueThisWeek || []), ...(tasks?.overdue || [])]
-    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || []), ...chaseDue, ...reviewBacklog];
+    : [...carriedFromToday, ...(activeTasks?.inbox || []), ...(activeTasks?.dueTomorrow || []), ...(activeTasks?.overdue || []), ...(activeTasks?.undatedThisWeek || []), ...chaseDue, ...reviewBacklog],
+  [step, tasks, activeTasks, carriedFromToday, chaseDue, reviewBacklog]);
 
   // Carry-forward (A1): restore every carried task to Today at its remembered
   // section in one tap. Each updateTask fires the server reset (clearing the carry

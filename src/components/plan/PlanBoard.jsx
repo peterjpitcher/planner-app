@@ -429,7 +429,7 @@ export default function PlanBoard() {
       });
       reportError(err.message || 'Could not update the task. Your change was undone.');
     }
-  }, [columns]);
+  }, [columns, reportError]);
 
   const handleMove = useCallback(async (taskId, targetState, targetSection) => {
     // Find and remove from source column
