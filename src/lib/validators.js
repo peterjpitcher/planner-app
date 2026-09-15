@@ -1,6 +1,6 @@
 // Validation Utilities
 
-import { VALIDATION, PROJECT_STATUS, STATE, TODAY_SECTION, TASK_TYPE, CHIP_VALUES, IDEA_STATE, CUSTOMER_STATUS } from './constants';
+import { VALIDATION, PROJECT_STATUS, STATE, TODAY_SECTION, TASK_TYPE, CHIP_VALUES, IDEA_STATE, CUSTOMER_STATUS, FOLLOWUP_MAILBOX, FOLLOWUP_STATE, FOLLOWUP_DRAFT_STATUS, FOLLOWUP_LAST_FROM } from './constants';
 
 // Characters that must never appear in a name: they break display and can
 // make two different rows look identical.
@@ -345,4 +345,65 @@ export function isValidFutureDate(date) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return inputDate >= today;
+}
+
+/**
+ * Validate an email follow-up record (or a partial update merged over an
+ * existing one). Enum fields are only checked when present, so a partial PATCH
+ * that touches one field does not fail on the others.
+ *
+ * @param {Object} followUp
+ * @returns {Object} { isValid: boolean, errors: Object }
+ */
+export function validateEmailFollowUp(followUp = {}) {
+  const errors = {};
+
+  const enumChecks = [
+    ['mailbox', FOLLOWUP_MAILBOX, 'Invalid mailbox'],
+    ['state', FOLLOWUP_STATE, 'Invalid state'],
+    ['draft_status', FOLLOWUP_DRAFT_STATUS, 'Invalid draft status'],
+    ['last_message_from', FOLLOWUP_LAST_FROM, 'Invalid last message sender'],
+  ];
+  for (const [field, values, message] of enumChecks) {
+    const value = followUp[field];
+    if (value !== undefined && value !== null && value !== '') {
+      if (!Object.values(values).includes(value)) errors[field] = message;
+    }
+  }
+
+  const lengthChecks = [
+    ['subject', VALIDATION.FOLLOWUP_SUBJECT_MAX],
+    ['needs', VALIDATION.FOLLOWUP_NEEDS_MAX],
+    ['proposed_draft', VALIDATION.FOLLOWUP_DRAFT_MAX],
+    ['feedback', VALIDATION.FOLLOWUP_FEEDBACK_MAX],
+    ['counterpart_name', VALIDATION.FOLLOWUP_NAME_MAX],
+    ['counterpart_email', VALIDATION.FOLLOWUP_EMAIL_MAX],
+  ];
+  for (const [field, max] of lengthChecks) {
+    const value = followUp[field];
+    if (value !== undefined && value !== null && String(value).length > max) {
+      errors[field] = `${field} must be ${max} characters or fewer`;
+    }
+  }
+
+  if (
+    followUp.counterpart_email !== undefined &&
+    followUp.counterpart_email !== null &&
+    followUp.counterpart_email !== '' &&
+    !errors.counterpart_email &&
+    !isValidEmail(followUp.counterpart_email)
+  ) {
+    errors.counterpart_email = 'Invalid email address';
+  }
+
+  if (followUp.chase_count !== undefined && followUp.chase_count !== null) {
+    if (!Number.isInteger(followUp.chase_count) || followUp.chase_count < 0) {
+      errors.chase_count = 'Chase count must be a non-negative integer';
+    }
+  }
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
 }
