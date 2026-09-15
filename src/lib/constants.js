@@ -105,6 +105,40 @@ export const IDEA_STATE = {
   PROMOTED: 'promoted'
 };
 
+// Email follow-ups (the reply-and-chase tracker). Both brands land in the same
+// Orange Jelly mailbox, so mailbox is a label, not a separate account.
+export const FOLLOWUP_MAILBOX = {
+  ORANGE_JELLY: 'orangejelly',
+  ANCHOR: 'anchor'
+};
+
+// Who is waiting on whom.
+export const FOLLOWUP_STATE = {
+  AWAITING_ME: 'awaiting_me',
+  AWAITING_THEM: 'awaiting_them',
+  CLOSED: 'closed'
+};
+
+// The draft approval loop. 'none' and 'sent' are machine states; the other four
+// are the decisions Peter makes in the UI.
+export const FOLLOWUP_DRAFT_STATUS = {
+  NONE: 'none',
+  READY: 'ready',
+  APPROVED: 'approved',
+  EDIT_REQUESTED: 'edit_requested',
+  HOLD: 'hold',
+  SENT: 'sent'
+};
+
+export const FOLLOWUP_LAST_FROM = {
+  ME: 'me',
+  THEM: 'them'
+};
+
+// The standing rule: never chase in under 3 days unless the thread is urgent.
+// The default next_chase_date is last outbound + this many days.
+export const FOLLOWUP_CHASE_MIN_DAYS = 3;
+
 // Planning Window Types
 export const WINDOW_TYPE = {
   DAILY: 'daily',
@@ -228,5 +262,13 @@ export const VALIDATION = {
   // letting the database raise a 500.
   CUSTOMER_NAME_MAX: 120,
   CUSTOMER_SUMMARY_MAX: 2000,
-  CUSTOMER_WEBSITE_MAX: 500
+  CUSTOMER_WEBSITE_MAX: 500,
+  // Email follow-ups. The draft cap matches NOTE_MAX: a draft can be a full
+  // email, and the column CHECK constraint agrees at 20000.
+  FOLLOWUP_SUBJECT_MAX: 500,
+  FOLLOWUP_NEEDS_MAX: 1000,
+  FOLLOWUP_DRAFT_MAX: 20000,
+  FOLLOWUP_FEEDBACK_MAX: 5000,
+  FOLLOWUP_NAME_MAX: 200,
+  FOLLOWUP_EMAIL_MAX: 320
 };
