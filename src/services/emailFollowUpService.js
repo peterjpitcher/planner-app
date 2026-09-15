@@ -2,7 +2,7 @@ import { validateEmailFollowUp } from '@/lib/validators';
 import { handleSupabaseError } from '@/lib/errorHandler';
 import { getLondonDateKey } from '@/lib/timezone';
 import { addDaysToDateKey } from '@/lib/dateUtils';
-import { FOLLOWUP_STATE, FOLLOWUP_CHASE_MIN_DAYS } from '@/lib/constants';
+import { FOLLOWUP_STATE, FOLLOWUP_DRAFT_STATUS, FOLLOWUP_CHASE_MIN_DAYS } from '@/lib/constants';
 
 // Fields Peter owns through the UI. The sync must never touch feedback or
 // urgent, so a scan can't wipe a note he has just typed.
@@ -233,4 +233,35 @@ export async function deleteEmailFollowUp({ supabase, userId, id }) {
     return { error: { status: 500, message: handleSupabaseError(error, 'delete') } };
   }
   return { data: { success: true } };
+}
+
+// The inbox worker's own update path: it may write the thread-owned fields
+// (state, sent_at, the draft, chase_count) by row id, but never feedback or
+// urgent. Used by the machine bridge to mark a draft sent or advance a chase.
+export async function syncUpdateEmailFollowUp({ supabase, userId, id, updates = {} }) {
+  return applyUpdate({ supabase, userId, id, updates, allowed: SYNC_UPDATE_FIELDS });
+}
+
+// The worklist the inbox worker pulls each run:
+//  - drafts Peter approved, to send;
+//  - redraft requests, to rewrite from his feedback;
+//  - awaiting_them threads whose chase date has arrived with no draft in flight.
+// The dataset is one person's live correspondence, so filtering in JS is both
+// simple and correct; there is no volume argument for a bespoke SQL predicate.
+export async function listPendingForWorker({ supabase, userId, today }) {
+  const { data, error } = await listEmailFollowUps({ supabase, userId, filters: {} });
+  if (error) return { error };
+
+  const pending = (data || []).filter((row) => {
+    if (row.draft_status === FOLLOWUP_DRAFT_STATUS.APPROVED) return true;
+    if (row.draft_status === FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED) return true;
+    if (
+      row.state === FOLLOWUP_STATE.AWAITING_THEM &&
+      row.next_chase_date && today && row.next_chase_date <= today &&
+      (row.draft_status === FOLLOWUP_DRAFT_STATUS.NONE || row.draft_status === FOLLOWUP_DRAFT_STATUS.SENT)
+    ) return true;
+    return false;
+  });
+
+  return { data: pending };
 }

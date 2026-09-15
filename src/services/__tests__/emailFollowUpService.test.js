@@ -4,6 +4,8 @@ import {
   updateEmailFollowUp,
   upsertFollowUpByConversation,
   listEmailFollowUps,
+  listPendingForWorker,
+  syncUpdateEmailFollowUp,
 } from '../emailFollowUpService';
 import { FOLLOWUP_STATE, FOLLOWUP_DRAFT_STATUS } from '@/lib/constants';
 
@@ -188,5 +190,38 @@ describe('listEmailFollowUps', () => {
     const { data, error } = await listEmailFollowUps({ supabase, userId: USER });
     expect(error).toBeUndefined();
     expect(data).toHaveLength(2);
+  });
+});
+
+describe('syncUpdateEmailFollowUp', () => {
+  it('writes sync-owned fields but still refuses feedback', async () => {
+    const supabase = makeSupabase({ email_follow_ups: [ROW] });
+    const { error } = await syncUpdateEmailFollowUp({
+      supabase, userId: USER, id: 'fu-1',
+      updates: { state: FOLLOWUP_STATE.AWAITING_THEM, chase_count: 2, feedback: 'nope' },
+    });
+    expect(error).toBeUndefined();
+    expect(supabase.captured.updated.state).toBe(FOLLOWUP_STATE.AWAITING_THEM);
+    expect(supabase.captured.updated.chase_count).toBe(2);
+    expect(supabase.captured.updated.feedback).toBeUndefined();
+  });
+});
+
+describe('listPendingForWorker', () => {
+  it('picks approvals, redrafts and due chases, and nothing else', async () => {
+    const TODAY = '2026-09-15';
+    const rows = [
+      { ...ROW, id: 'approved', draft_status: FOLLOWUP_DRAFT_STATUS.APPROVED, state: FOLLOWUP_STATE.AWAITING_ME },
+      { ...ROW, id: 'redraft', draft_status: FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED, state: FOLLOWUP_STATE.AWAITING_ME },
+      { ...ROW, id: 'chase-due', state: FOLLOWUP_STATE.AWAITING_THEM, draft_status: FOLLOWUP_DRAFT_STATUS.NONE, next_chase_date: '2026-09-10' },
+      { ...ROW, id: 'chase-future', state: FOLLOWUP_STATE.AWAITING_THEM, draft_status: FOLLOWUP_DRAFT_STATUS.NONE, next_chase_date: '2026-12-01' },
+      { ...ROW, id: 'chase-has-draft', state: FOLLOWUP_STATE.AWAITING_THEM, draft_status: FOLLOWUP_DRAFT_STATUS.READY, next_chase_date: '2026-09-10' },
+      { ...ROW, id: 'quiet', state: FOLLOWUP_STATE.AWAITING_ME, draft_status: FOLLOWUP_DRAFT_STATUS.READY },
+    ];
+    const supabase = makeSupabase({ email_follow_ups: rows });
+
+    const { data } = await listPendingForWorker({ supabase, userId: USER, today: TODAY });
+    const ids = data.map((r) => r.id).sort();
+    expect(ids).toEqual(['approved', 'chase-due', 'redraft']);
   });
 });
