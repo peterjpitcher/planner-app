@@ -18,8 +18,13 @@ const MAILBOX_LABELS = {
   [FOLLOWUP_MAILBOX.ANCHOR]: 'The Anchor',
 };
 
-// What Peter can set. 'sent' and 'none' are machine states, not choices, so the
-// picker offers only the four decisions he actually makes.
+const STATE_LABELS = {
+  [FOLLOWUP_STATE.AWAITING_ME]: 'Waiting on you',
+  [FOLLOWUP_STATE.AWAITING_THEM]: 'Waiting on them',
+  [FOLLOWUP_STATE.CLOSED]: 'Done',
+};
+
+// The decisions Peter makes on a draft. 'none' and 'sent' are machine states.
 const DECISION_OPTIONS = [
   { value: FOLLOWUP_DRAFT_STATUS.READY, label: 'Draft ready to review' },
   { value: FOLLOWUP_DRAFT_STATUS.APPROVED, label: 'Approve and send' },
@@ -28,10 +33,10 @@ const DECISION_OPTIONS = [
 ];
 
 const DRAFT_STATUS_BADGE = {
-  [FOLLOWUP_DRAFT_STATUS.NONE]: { label: 'No draft yet', className: 'bg-gray-100 text-gray-500' },
+  [FOLLOWUP_DRAFT_STATUS.NONE]: { label: 'No draft', className: 'bg-gray-100 text-gray-500' },
   [FOLLOWUP_DRAFT_STATUS.READY]: { label: 'Draft ready', className: 'bg-indigo-100 text-indigo-700' },
-  [FOLLOWUP_DRAFT_STATUS.APPROVED]: { label: 'Approved to send', className: 'bg-emerald-100 text-emerald-700' },
-  [FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED]: { label: 'Redraft requested', className: 'bg-amber-100 text-amber-700' },
+  [FOLLOWUP_DRAFT_STATUS.APPROVED]: { label: 'Approved', className: 'bg-emerald-100 text-emerald-700' },
+  [FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED]: { label: 'Redraft', className: 'bg-amber-100 text-amber-700' },
   [FOLLOWUP_DRAFT_STATUS.HOLD]: { label: 'On hold', className: 'bg-gray-100 text-gray-600' },
   [FOLLOWUP_DRAFT_STATUS.SENT]: { label: 'Sent', className: 'bg-emerald-50 text-emerald-600' },
 };
@@ -40,14 +45,14 @@ function formatWhen(value) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
 // ---------------------------------------------------------------------------
-// One follow-up card
+// Review panel (expanded under a row)
 // ---------------------------------------------------------------------------
 
-function FollowUpCard({ item, onSave }) {
+function ReviewPanel({ item, onSave }) {
   const [draft, setDraft] = useState(item.proposed_draft ?? '');
   const [feedback, setFeedback] = useState(item.feedback ?? '');
   const [decision, setDecision] = useState(
@@ -56,13 +61,10 @@ function FollowUpCard({ item, onSave }) {
   const [urgent, setUrgent] = useState(item.urgent === true);
   const [saving, setSaving] = useState(false);
 
-  // Keep local fields in step when a background refresh brings new data (e.g.
-  // the worker replaced the draft after a redraft request).
   useEffect(() => { setDraft(item.proposed_draft ?? ''); }, [item.proposed_draft]);
   useEffect(() => { setFeedback(item.feedback ?? ''); }, [item.feedback]);
   useEffect(() => { setUrgent(item.urgent === true); }, [item.urgent]);
 
-  const badge = DRAFT_STATUS_BADGE[item.draft_status] ?? DRAFT_STATUS_BADGE.none;
   const dirty =
     draft !== (item.proposed_draft ?? '') ||
     feedback !== (item.feedback ?? '') ||
@@ -74,46 +76,13 @@ function FollowUpCard({ item, onSave }) {
     setSaving(true);
     const updates = { proposed_draft: draft, feedback, urgent };
     if (decision) updates.draft_status = decision;
-    const ok = await onSave(item.id, updates);
+    await onSave(item.id, updates);
     setSaving(false);
-    if (!ok) return;
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-gray-900">
-            {item.subject || '(no subject)'}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-gray-500">
-            {item.counterpart_name || item.counterpart_email || 'Unknown sender'}
-            {item.last_message_at ? ` · last activity ${formatWhen(item.last_message_at)}` : ''}
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-            {MAILBOX_LABELS[item.mailbox] ?? item.mailbox}
-          </span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>
-            {badge.label}
-          </span>
-        </div>
-      </div>
-
-      {item.needs && (
-        <p className="mt-2 text-sm text-gray-700">{item.needs}</p>
-      )}
-
-      {item.state === FOLLOWUP_STATE.AWAITING_THEM && (
-        <p className="mt-2 text-xs text-gray-500">
-          Waiting on them
-          {item.next_chase_date ? ` · chase from ${formatWhen(item.next_chase_date)}` : ''}
-          {item.chase_count > 0 ? ` · chased ${item.chase_count}×` : ''}
-        </p>
-      )}
-
-      <label className="mt-3 block text-xs font-medium text-gray-500" htmlFor={`draft-${item.id}`}>
+    <div className="bg-gray-50 px-4 py-4">
+      <label className="block text-xs font-medium text-gray-500" htmlFor={`draft-${item.id}`}>
         Proposed reply
       </label>
       <textarea
@@ -121,7 +90,7 @@ function FollowUpCard({ item, onSave }) {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         rows={5}
-        placeholder="No draft yet."
+        placeholder="No draft yet. Ask Jordan to draft this, or write one here."
         className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
       />
 
@@ -170,29 +139,30 @@ function FollowUpCard({ item, onSave }) {
         </button>
       </div>
       {decision === FOLLOWUP_DRAFT_STATUS.APPROVED && (
-        <p className="mt-2 text-xs text-emerald-700">
-          Jordan will send this on its next run and mark it sent.
-        </p>
+        <p className="mt-2 text-xs text-emerald-700">Jordan will send this on its next run and mark it sent.</p>
       )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The list
+// The list (table)
 // ---------------------------------------------------------------------------
 
 export default function FollowUpList() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [showDone, setShowDone] = useState(false);
   const loadGuardRef = useRef(createLatestGuard());
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (withDone) => {
     const token = loadGuardRef.current.begin();
     try {
       setError(null);
-      const data = await apiClient.getFollowUps();
+      const data = await apiClient.getFollowUps(withDone ? { includeClosed: 1 } : {});
       if (loadGuardRef.current.isStale(token)) return;
       setItems(data);
     } catch (err) {
@@ -203,7 +173,7 @@ export default function FollowUpList() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(showDone); }, [load, showDone]);
 
   const handleSave = useCallback(async (id, updates) => {
     try {
@@ -216,21 +186,76 @@ export default function FollowUpList() {
     }
   }, []);
 
-  const awaitingMe = items.filter((it) => it.state === FOLLOWUP_STATE.AWAITING_ME);
-  const awaitingThem = items.filter((it) => it.state === FOLLOWUP_STATE.AWAITING_THEM);
+  // Mark a thread done: it moves to the "closed" state and drops off the active
+  // list. Reversible from the "Show done" view.
+  const handleDone = useCallback(async (id) => {
+    setBusyId(id);
+    try {
+      const updated = await apiClient.updateFollowUp(id, { state: FOLLOWUP_STATE.CLOSED });
+      setItems((prev) =>
+        showDone ? prev.map((it) => (it.id === id ? { ...it, ...updated } : it)) : prev.filter((it) => it.id !== id)
+      );
+      if (expandedId === id) setExpandedId(null);
+    } catch (err) {
+      setError(err.message || 'Failed to mark done.');
+    } finally {
+      setBusyId(null);
+    }
+  }, [expandedId, showDone]);
+
+  const handleReopen = useCallback(async (id) => {
+    setBusyId(id);
+    try {
+      const updated = await apiClient.updateFollowUp(id, { state: FOLLOWUP_STATE.AWAITING_ME });
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...updated } : it)));
+    } catch (err) {
+      setError(err.message || 'Failed to reopen.');
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
+  // Urgent first, then waiting-on-you before waiting-on-them, then oldest first
+  // (most overdue at the top). Closed rows sink to the bottom.
+  const order = { [FOLLOWUP_STATE.AWAITING_ME]: 0, [FOLLOWUP_STATE.AWAITING_THEM]: 1, [FOLLOWUP_STATE.CLOSED]: 2 };
+  const sorted = [...items].sort((a, b) => {
+    const ao = order[a.state] ?? 9;
+    const bo = order[b.state] ?? 9;
+    if (ao !== bo) return ao - bo;
+    if ((b.urgent ? 1 : 0) !== (a.urgent ? 1 : 0)) return (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0);
+    return new Date(a.last_message_at || 0) - new Date(b.last_message_at || 0);
+  });
+
+  const awaitingMe = items.filter((i) => i.state === FOLLOWUP_STATE.AWAITING_ME).length;
+  const awaitingThem = items.filter((i) => i.state === FOLLOWUP_STATE.AWAITING_THEM).length;
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Follow-ups</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Everything waiting on a reply, in one place. Review a draft, approve it or leave
-          feedback, and Jordan sends it. Nothing sends without your approval.
-        </p>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Follow-ups</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Everything waiting on a reply. Review a draft, approve it or leave feedback, or mark a
+            thread done. Nothing sends without your approval.
+          </p>
+        </div>
+        <div className="flex items-center gap-4 text-sm text-gray-500">
+          <span><strong className="text-gray-800">{awaitingMe}</strong> waiting on you</span>
+          <span><strong className="text-gray-800">{awaitingThem}</strong> waiting on them</span>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showDone}
+              onChange={(e) => setShowDone(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+            />
+            Show done
+          </label>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 max-w-3xl rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
           <button type="button" onClick={() => setError(null)} className="ml-2 underline hover:no-underline focus:outline-none">
             Dismiss
@@ -239,13 +264,9 @@ export default function FollowUpList() {
       )}
 
       {loading && (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="animate-pulse rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="h-4 w-2/3 rounded bg-gray-200" />
-              <div className="mt-2 h-3 w-1/3 rounded bg-gray-100" />
-              <div className="mt-4 h-20 w-full rounded bg-gray-100" />
-            </div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <div key={n} className="h-11 w-full animate-pulse rounded bg-gray-100" />
           ))}
         </div>
       )}
@@ -260,42 +281,91 @@ export default function FollowUpList() {
       )}
 
       {!loading && items.length > 0 && (
-        <div className="space-y-8">
-          <section>
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
-              Waiting on you
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
-                {awaitingMe.length}
-              </span>
-            </h2>
-            {awaitingMe.length === 0 ? (
-              <p className="text-sm text-gray-400">Nothing needs your reply right now.</p>
-            ) : (
-              <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
-                {awaitingMe.map((it) => (
-                  <FollowUpCard key={it.id} item={it} onSave={handleSave} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
-              Waiting on them
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
-                {awaitingThem.length}
-              </span>
-            </h2>
-            {awaitingThem.length === 0 ? (
-              <p className="text-sm text-gray-400">Nothing outstanding with anyone else.</p>
-            ) : (
-              <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
-                {awaitingThem.map((it) => (
-                  <FollowUpCard key={it.id} item={it} onSave={handleSave} />
-                ))}
-              </div>
-            )}
-          </section>
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="min-w-[900px] w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <th className="px-3 py-2">Mailbox</th>
+                <th className="px-3 py-2">Who</th>
+                <th className="px-3 py-2">Subject</th>
+                <th className="px-3 py-2 whitespace-nowrap">State</th>
+                <th className="px-3 py-2 whitespace-nowrap">Waiting since</th>
+                <th className="px-3 py-2 whitespace-nowrap">Status</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((it) => {
+                const closed = it.state === FOLLOWUP_STATE.CLOSED;
+                const badge = DRAFT_STATUS_BADGE[it.draft_status] ?? DRAFT_STATUS_BADGE.none;
+                const isOpen = expandedId === it.id;
+                return (
+                  <React.Fragment key={it.id}>
+                    <tr className={`border-b border-gray-100 align-top ${closed ? 'opacity-60' : ''} ${it.urgent && !closed ? 'bg-amber-50/40' : ''}`}>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">
+                        {MAILBOX_LABELS[it.mailbox] ?? it.mailbox}
+                      </td>
+                      <td className="px-3 py-2 text-gray-800">
+                        <div className="font-medium">{it.counterpart_name || it.counterpart_email || 'Unknown'}</div>
+                        {it.counterpart_name && it.counterpart_email && (
+                          <div className="text-xs text-gray-400">{it.counterpart_email}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-800">
+                        <div className="font-medium">{it.subject || '(no subject)'}</div>
+                        {it.needs && <div className="mt-0.5 text-xs text-gray-500">{it.needs}</div>}
+                        {it.urgent && !closed && (
+                          <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">Urgent</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">{STATE_LABELS[it.state] ?? it.state}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">{formatWhen(it.last_message_at)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(isOpen ? null : it.id)}
+                            className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            {isOpen ? 'Close' : 'Review'}
+                          </button>
+                          {closed ? (
+                            <button
+                              type="button"
+                              onClick={() => handleReopen(it.id)}
+                              disabled={busyId === it.id}
+                              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              Reopen
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleDone(it.id)}
+                              disabled={busyId === it.id}
+                              className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {busyId === it.id ? '…' : 'Done'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={7} className="border-b border-gray-200 p-0">
+                          <ReviewPanel item={it} onSave={handleSave} />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
