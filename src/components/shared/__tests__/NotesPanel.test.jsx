@@ -7,6 +7,8 @@ const api = vi.hoisted(() => ({
   createNote: vi.fn(),
   updateNote: vi.fn(),
   deleteNote: vi.fn(),
+  createTask: vi.fn(),
+  deleteTask: vi.fn(),
 }));
 
 vi.mock('@/lib/apiClient', () => ({ apiClient: api }));
@@ -153,5 +155,157 @@ describe('NotesPanel composer', () => {
     render(<NotesPanel projectId="project-1" disabled />);
     await waitFor(() => expect(api.getNotes).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: 'Write full screen' })).not.toBeInTheDocument();
+  });
+});
+
+describe('NotesPanel picking up tasks as notes are written', () => {
+  const onTaskPickedUp = vi.fn();
+  const onTaskUndone = vi.fn();
+
+  async function renderWithPickup(props = {}) {
+    render(
+      <NotesPanel
+        projectId="project-1"
+        autoTasks
+        onTaskPickedUp={onTaskPickedUp}
+        onTaskUndone={onTaskUndone}
+        {...props}
+      />
+    );
+    await waitFor(() => expect(api.getNotes).toHaveBeenCalled());
+    return screen.getByRole('textbox', { name: 'New note' });
+  }
+
+  async function finishLine(box, text) {
+    fireEvent.change(box, { target: { value: text } });
+    box.setSelectionRange(box.value.length, box.value.length);
+    await act(async () => {
+      fireEvent.keyDown(box, { key: 'Enter' });
+    });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    api.getNotes.mockResolvedValue({ data: [] });
+    api.createNote.mockResolvedValue({});
+    api.createTask.mockResolvedValue({ id: 'task-9', name: 'Send the menu' });
+    api.deleteTask.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('creates a task when a finished line reads like one', async () => {
+    const box = await renderWithPickup();
+    await finishLine(box, "I'll send the menu");
+
+    expect(api.createTask).toHaveBeenCalledWith({
+      name: 'Send the menu',
+      projectId: 'project-1',
+      dueDate: '2026-09-17',
+      state: 'backlog',
+    });
+    await waitFor(() => expect(onTaskPickedUp).toHaveBeenCalledWith({ id: 'task-9', name: 'Send the menu' }));
+    expect(screen.getByText('Tasks picked up from this note')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo task Send the menu' })).toBeInTheDocument();
+  });
+
+  it('leaves ordinary lines alone', async () => {
+    const box = await renderWithPickup();
+    await finishLine(box, 'Called Sam about the menu');
+    expect(api.createTask).not.toHaveBeenCalled();
+  });
+
+  it('does nothing unless the page asks for it', async () => {
+    render(<NotesPanel projectId="project-1" />);
+    await waitFor(() => expect(api.getNotes).toHaveBeenCalled());
+    const box = screen.getByRole('textbox', { name: 'New note' });
+
+    await finishLine(box, "I'll send the menu");
+    expect(api.createTask).not.toHaveBeenCalled();
+  });
+
+  it('does not read half a line when Enter splits it', async () => {
+    const box = await renderWithPickup();
+    fireEvent.change(box, { target: { value: "I'll send the menu to Sam" } });
+    box.setSelectionRange(STAMP.length + 10, STAMP.length + 10);
+    await act(async () => {
+      fireEvent.keyDown(box, { key: 'Enter' });
+    });
+    expect(api.createTask).not.toHaveBeenCalled();
+  });
+
+  it('makes one task however often the same line is finished', async () => {
+    const box = await renderWithPickup();
+    await finishLine(box, "I'll send the menu");
+
+    const firstLineEnd = `${STAMP}I'll send the menu`.length;
+    box.setSelectionRange(firstLineEnd, firstLineEnd);
+    await act(async () => {
+      fireEvent.keyDown(box, { key: 'Enter' });
+    });
+
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the last line when the note is saved, without a second copy', async () => {
+    const box = await renderWithPickup();
+    fireEvent.change(box, { target: { value: 'Need to book the photographer' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    });
+
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+    expect(api.createTask).toHaveBeenCalledWith(expect.objectContaining({ name: 'Book the photographer' }));
+    expect(api.createNote).toHaveBeenCalled();
+  });
+
+  it('undoes a picked-up task', async () => {
+    const box = await renderWithPickup();
+    await finishLine(box, "I'll send the menu");
+    const undo = await screen.findByRole('button', { name: 'Undo task Send the menu' });
+
+    await act(async () => {
+      fireEvent.click(undo);
+    });
+
+    expect(api.deleteTask).toHaveBeenCalledWith('task-9');
+    expect(onTaskUndone).toHaveBeenCalledWith('task-9');
+    expect(screen.queryByText('Send the menu')).not.toBeInTheDocument();
+  });
+
+  it('shows a task that could not be added, and adds it on retry', async () => {
+    api.createTask.mockRejectedValueOnce(new Error('Network down'));
+    const box = await renderWithPickup();
+    await finishLine(box, "I'll send the menu");
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not added: Network down');
+    expect(onTaskPickedUp).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retry task Send the menu' }));
+    });
+
+    expect(api.createTask).toHaveBeenCalledTimes(2);
+    expect(onTaskPickedUp).toHaveBeenCalledWith({ id: 'task-9', name: 'Send the menu' });
+    expect(screen.getByRole('button', { name: 'Undo task Send the menu' })).toBeInTheDocument();
+  });
+
+  it('keeps the task when undo fails, and says so', async () => {
+    api.deleteTask.mockRejectedValueOnce(new Error('Network down'));
+    const box = await renderWithPickup();
+    await finishLine(box, "I'll send the menu");
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Undo task Send the menu' }));
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Network down');
+    expect(onTaskUndone).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Undo task Send the menu' })).toBeInTheDocument();
   });
 });

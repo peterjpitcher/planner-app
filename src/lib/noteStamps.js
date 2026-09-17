@@ -38,6 +38,13 @@ export function withoutTrailingEmptyStamps(value) {
   return lines.join('\n');
 }
 
+const LEADING_STAMP = /^(?:\[\d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}\]\s*)+/;
+
+/** A line's text without the stamp (or a pasted run of stamps) in front of it. */
+export function stripLineStamp(line) {
+  return String(line || '').replace(LEADING_STAMP, '');
+}
+
 const LONE_STAMP = /^\[\d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}\] $/;
 
 /** True when the draft is one stamp and nothing else: a line not yet started. */
