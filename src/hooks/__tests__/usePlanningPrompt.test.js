@@ -55,6 +55,16 @@ describe('usePlanningPrompt', () => {
     vi.clearAllMocks();
   });
 
+  it('fetches nothing when switched off, as on the shared project screen', async () => {
+    const { result } = renderHook(() => usePlanningPrompt({ enabled: false }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(getUserSettings).not.toHaveBeenCalled();
+    expect(getPlanningSession).not.toHaveBeenCalled();
+    expect(getPlanningCandidates).not.toHaveBeenCalled();
+    expect(result.current.isActive).toBe(false);
+  });
+
   it('targets the current day once the evening window has rolled over', async () => {
     getPlanningSession.mockResolvedValue(null);
     getPlanningCandidates.mockResolvedValue(candidates({ leftovers: 3 }));

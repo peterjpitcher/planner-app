@@ -169,6 +169,12 @@ export default function NotesPanel({
   title = 'Notes',
   disabled = false,
   onChanged,
+  // Full screen: by default the icon opens the composer over the page.
+  // onFullScreen replaces that (the project page opens its project screen);
+  // allowFullScreen={false} hides the icon where the panel is already full size.
+  onFullScreen,
+  allowFullScreen = true,
+  composerRows = 3,
 }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -358,7 +364,7 @@ export default function NotesPanel({
           onKeyDown={handleKeyDown}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          rows={inDialog ? undefined : 3}
+          rows={inDialog ? undefined : composerRows}
           maxLength={VALIDATION.NOTE_MAX}
           placeholder="Add a note. Every line gets a date and time. Shift plus Enter for a line without one. Cmd or Ctrl plus Enter to save."
           aria-label="New note"
@@ -440,10 +446,10 @@ export default function NotesPanel({
         <h3 className="text-sm font-semibold text-gray-700">
           {title} ({notes.length})
         </h3>
-        {!disabled && (
+        {!disabled && allowFullScreen && (
           <button
             type="button"
-            onClick={() => toggleFullScreen(true)}
+            onClick={() => (onFullScreen ? onFullScreen() : toggleFullScreen(true))}
             aria-label="Write full screen"
             title="Write full screen"
             className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"

@@ -23,7 +23,7 @@ import CustomerPicker from '@/components/shared/CustomerPicker';
 import ProjectNotes from './ProjectNotes';
 import AttachmentsPanel from '@/components/shared/AttachmentsPanel';
 
-const STATE_GROUPS = [
+export const STATE_GROUPS = [
   { key: 'today', label: 'Today', labelClass: 'text-red-600' },
   { key: 'this_week', label: 'This Week', labelClass: 'text-blue-600' },
   { key: 'backlog', label: 'Backlog', labelClass: 'text-gray-500' },

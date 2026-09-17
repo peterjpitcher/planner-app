@@ -16,6 +16,11 @@ const PLANNING_BANNER_ROUTES = ['/today', '/plan', '/calendar'];
 export default function AppShell({ children }) {
   const pathname = usePathname();
   const isAuthRoute = pathname === '/login';
+  // /focus/* screens are shown to other people over a screen share, so they get
+  // no app chrome at all: no navigation, header, quick capture or planning
+  // prompt, nothing that names or links to any other work.
+  const isScreenShareRoute = pathname?.startsWith('/focus/') ?? false;
+  const isBareRoute = isAuthRoute || isScreenShareRoute;
   const isTabRoute = TAB_ROUTES.some(
     (route) => pathname === route || pathname?.startsWith(route + '/')
   );
@@ -23,7 +28,7 @@ export default function AppShell({ children }) {
     (route) => pathname === route || pathname?.startsWith(route + '/')
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const planning = usePlanningPrompt();
+  const planning = usePlanningPrompt({ enabled: !isScreenShareRoute });
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -50,7 +55,7 @@ export default function AppShell({ children }) {
     };
   }, [isMobileMenuOpen]);
 
-  if (isAuthRoute) {
+  if (isBareRoute) {
     return (
       <div className="min-h-screen bg-background text-foreground font-sans antialiased">
         {children}
