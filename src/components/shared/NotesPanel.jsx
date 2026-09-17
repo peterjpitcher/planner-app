@@ -328,6 +328,22 @@ export default function NotesPanel({
 
   const canCreate = withoutTrailingEmptyStamps(draft).trim() !== '';
 
+  // Stamp the first line the moment the empty box is focused, so it is there
+  // before anything is typed. Typing renews it (stampFirstLine), so the time
+  // is when writing started, not when the box was clicked.
+  function handleFocus() {
+    if (draft !== '' || disabled) return;
+    const stamp = noteLineStamp();
+    pendingCaretRef.current = stamp.length;
+    setDraft(stamp);
+  }
+
+  // Leaving a box that holds only stamps empties it again, so a note never
+  // looks started when it is not.
+  function handleBlur() {
+    if (draft !== '' && !canCreate) setDraft('');
+  }
+
   function renderComposer(inDialog) {
     return (
       <div className={inDialog ? 'flex min-h-0 flex-1 flex-col' : 'mb-3'}>
@@ -340,9 +356,11 @@ export default function NotesPanel({
             if (createError) setCreateError(null);
           }}
           onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
           rows={inDialog ? undefined : 3}
           maxLength={VALIDATION.NOTE_MAX}
-          placeholder="Add a note. Each new line gets a date and time. Shift plus Enter for a line without one. Cmd or Ctrl plus Enter to save."
+          placeholder="Add a note. Every line gets a date and time. Shift plus Enter for a line without one. Cmd or Ctrl plus Enter to save."
           aria-label="New note"
           disabled={creating}
           data-autofocus={inDialog ? true : undefined}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   insertStampedLine,
+  isLoneStamp,
   noteLineStamp,
   stampFirstLine,
   withoutTrailingEmptyStamps,
@@ -63,6 +64,35 @@ describe('stampFirstLine', () => {
 
   it('does not stamp a cleared draft', () => {
     expect(stampFirstLine('abc', '', stamp)).toBe('');
+  });
+
+  it('renews a stamp put in on focus when typing starts', () => {
+    expect(stampFirstLine('[17 Sep 2026 14:29] ', '[17 Sep 2026 14:29] C', stamp)).toBe(
+      '[17 Sep 2026 14:32] C'
+    );
+  });
+
+  it('leaves an older stamp alone once its line has text', () => {
+    expect(stampFirstLine('[17 Sep 2026 14:29] C', '[17 Sep 2026 14:29] Ca', stamp)).toBe(
+      '[17 Sep 2026 14:29] Ca'
+    );
+  });
+
+  it('does not renew a stamp when the typing is not after it', () => {
+    expect(stampFirstLine('[17 Sep 2026 14:29] ', 'X[17 Sep 2026 14:29] ', stamp)).toBe(
+      'X[17 Sep 2026 14:29] '
+    );
+  });
+});
+
+describe('isLoneStamp', () => {
+  it('matches a single stamp with its space', () => {
+    expect(isLoneStamp('[17 Sep 2026 14:32] ')).toBe(true);
+  });
+
+  it('rejects a stamp with text, or more than one line', () => {
+    expect(isLoneStamp('[17 Sep 2026 14:32] a')).toBe(false);
+    expect(isLoneStamp('[17 Sep 2026 14:32] \n[17 Sep 2026 14:33] ')).toBe(false);
   });
 });
 
