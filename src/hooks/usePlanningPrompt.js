@@ -12,7 +12,7 @@ import { AUTOPILOT_LEVEL, WINDOW_TYPE } from '@/lib/constants';
  * Central orchestrator for planning prompts.
  * Mounted in AppShell — checks London time, fetches candidates, manages modal/banner state.
  */
-export function usePlanningPrompt() {
+export function usePlanningPrompt({ enabled = true } = {}) {
   const pathname = usePathname();
   const [isLoading, setIsLoading] = useState(true);
   const [windowState, setWindowState] = useState({
@@ -33,6 +33,10 @@ export function usePlanningPrompt() {
 
   const checkPlanningState = useCallback(async () => {
     try {
+      // Off on screens shared with other people: the candidates it fetches are
+      // tasks from every project, which have no business in that browser tab.
+      if (!enabled) return;
+
       // Skip auto-check while a manual planning session is active
       if (manualOverrideRef.current) {
         return;
@@ -142,7 +146,7 @@ export function usePlanningPrompt() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   // Run on mount and pathname changes
   useEffect(() => {

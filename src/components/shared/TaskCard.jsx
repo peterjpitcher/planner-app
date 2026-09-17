@@ -130,7 +130,10 @@ function NoDueDatePicker({ onChangeDueDate }) {
  *   onSnooze?: (taskId: string, until: string | null) => void,
  * }} props
  */
-export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze }) {
+export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdate, onClick, onDelete, onSnooze, showProject = true }) {
+  // Off on the project screen: it is shared with other people, and the project
+  // name is a link into the planner, where the project list would be on show.
+  const projectName = showProject ? task.project_name : null;
   const [dateEditor, setDateEditor] = useState(null);
   const {
     attributes,
@@ -251,22 +254,22 @@ export default function TaskCard({ task, isDragging, onComplete, onMove, onUpdat
         )}
 
         {/* Project + area labels */}
-        {(task.project_name || task.area) && (
+        {(projectName || task.area) && (
           <p className="mt-0.5 text-xs text-gray-400">
-            {task.project_name && (
+            {projectName && (
               task.project_id ? (
                 <Link
                   href={`/projects?id=${task.project_id}`}
                   onClick={(e) => e.stopPropagation()}
                   className="hover:text-indigo-600 hover:underline focus:outline-none focus-visible:underline"
                 >
-                  {task.project_name}
+                  {projectName}
                 </Link>
               ) : (
-                <span>{task.project_name}</span>
+                <span>{projectName}</span>
               )
             )}
-            {task.project_name && task.area && <span> · </span>}
+            {projectName && task.area && <span> · </span>}
             {task.area && <span>{task.area}</span>}
           </p>
         )}
