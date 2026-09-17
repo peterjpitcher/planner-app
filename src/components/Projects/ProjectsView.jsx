@@ -386,6 +386,20 @@ export default function ProjectsView() {
     }
   }, []);
 
+  // Undoing a task picked up from a note: the notes panel has already deleted
+  // it on the server, so only the lists on this page change.
+  const handleTaskRemoved = useCallback((taskId) => {
+    setTasksByProject((prev) => {
+      const next = {};
+      for (const [pid, tasks] of Object.entries(prev)) {
+        next[pid] = tasks.filter((t) => t.id !== taskId);
+      }
+      return next;
+    });
+    setUnassignedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    setSelectedTask((prev) => (prev && prev.id === taskId ? null : prev));
+  }, []);
+
   const handleCompleteTask = useCallback(async (taskId) => {
     // Toggle completion from state, not a dropped column. Completing removes the
     // task from the visible (non-done) lists; un-completing restores it to
@@ -608,6 +622,7 @@ export default function ProjectsView() {
             onChangeStatus={requestStatusChange}
             onDeleteProject={handleDeleteProject}
             onTaskAdded={handleTaskAdded}
+            onTaskRemoved={handleTaskRemoved}
             onCompleteTask={handleCompleteTask}
             onMoveTask={handleMoveTask}
             onUpdateTask={handleUpdateTask}

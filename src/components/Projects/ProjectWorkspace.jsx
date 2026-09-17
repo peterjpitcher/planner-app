@@ -114,6 +114,7 @@ export default function ProjectWorkspace({
   onChangeStatus,
   onDeleteProject,
   onTaskAdded,
+  onTaskRemoved,
   onCompleteTask,
   onMoveTask,
   onUpdateTask,
@@ -376,6 +377,8 @@ export default function ProjectWorkspace({
               projectId={project.id}
               disabled={isReadOnly}
               onFullScreen={() => openProjectScreen(project.id)}
+              onTaskPickedUp={(task) => onTaskAdded?.(task, project.id)}
+              onTaskUndone={onTaskRemoved}
             />
             <AttachmentsPanel
               parentType="project"

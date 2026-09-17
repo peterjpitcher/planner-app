@@ -4,10 +4,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 vi.mock('@/components/shared/QuickTaskInput', () => ({ default: () => null }));
 vi.mock('@/components/shared/CustomerPicker', () => ({ default: () => null }));
 vi.mock('@/components/shared/AttachmentsPanel', () => ({ default: () => null }));
+const notesProps = vi.hoisted(() => ({ current: null }));
 vi.mock('@/components/shared/NotesPanel', () => ({
-  default: ({ onFullScreen }) => (
-    <button type="button" onClick={onFullScreen}>Notes full screen</button>
-  ),
+  default: (props) => {
+    notesProps.current = props;
+    return <button type="button" onClick={props.onFullScreen}>Notes full screen</button>;
+  },
 }));
 
 vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -15,6 +17,9 @@ vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect()
 import ProjectWorkspace from '../ProjectWorkspace';
 
 const PROJECT = { id: 'p1', name: 'Menu refresh', status: 'In Progress', customer_id: null };
+
+const onTaskAdded = vi.fn();
+const onTaskRemoved = vi.fn();
 
 function renderWorkspace() {
   render(
@@ -24,7 +29,8 @@ function renderWorkspace() {
       onUpdateProject={vi.fn()}
       onChangeStatus={vi.fn()}
       onDeleteProject={vi.fn()}
-      onTaskAdded={vi.fn()}
+      onTaskAdded={onTaskAdded}
+      onTaskRemoved={onTaskRemoved}
       onCompleteTask={vi.fn()}
       onMoveTask={vi.fn()}
       onUpdateTask={vi.fn()}
@@ -62,5 +68,24 @@ describe('Opening the project screen from the project page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Notes full screen' }));
 
     expect(open).toHaveBeenCalledWith('/focus/project/p1', '_blank');
+  });
+});
+
+describe('Tasks picked up from project notes', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('switches pick-up on and keeps the project task list in step', () => {
+    renderWorkspace();
+    expect(notesProps.current.autoTasks).toBe(true);
+
+    const task = { id: 't9', name: 'Send the tasting menu' };
+    notesProps.current.onTaskPickedUp(task);
+    expect(onTaskAdded).toHaveBeenCalledWith(task, 'p1');
+
+    notesProps.current.onTaskUndone('t9');
+    expect(onTaskRemoved).toHaveBeenCalledWith('t9');
   });
 });

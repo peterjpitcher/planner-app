@@ -113,6 +113,22 @@ describe('ProjectScreen', () => {
     expect(notesProps.current.composerRows).toBeGreaterThan(3);
   });
 
+  it('picks up tasks from notes and shows them in the task list, and drops them on undo', async () => {
+    await renderScreen();
+    expect(notesProps.current.autoTasks).toBe(true);
+
+    act(() => {
+      notesProps.current.onTaskPickedUp({ id: 't9', name: 'Send the tasting menu', state: 'backlog', project_id: 'p1' });
+    });
+    expect(screen.getByText('Send the tasting menu')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tasks (3)' })).toBeInTheDocument();
+
+    act(() => {
+      notesProps.current.onTaskUndone('t9');
+    });
+    expect(screen.queryByText('Send the tasting menu')).not.toBeInTheDocument();
+  });
+
   it('completes a task straight away', async () => {
     await renderScreen();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Price the new menu" complete' }));
