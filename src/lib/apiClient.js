@@ -67,6 +67,15 @@ class APIClient {
     return allProjects;
   }
 
+  /**
+   * One project, with customer_name. For the project screen, which is shared
+   * with other people, so it must not load the whole project list.
+   */
+  async getProject(projectId) {
+    const response = await this.fetchWithAuth(`/api/projects/${encodeURIComponent(projectId)}`);
+    return response.data;
+  }
+
   async createProject(projectData) {
     const result = await this.fetchWithAuth('/api/projects', {
       method: 'POST',

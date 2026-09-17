@@ -39,6 +39,80 @@ function stripUndefined(payload) {
   );
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// GET /api/projects/[id] - One project, with its customer's name
+//
+// For the project screen, which is shown to other people over a screen share.
+// It loads this project alone, so the browser never holds the rest of the
+// list. Ownership is part of the query, and anything not found or not owned is
+// the same 404, so the response does not confirm that someone else's id exists.
+export async function GET(request, { params }) {
+  try {
+    const { session } = await getAuthContext(request);
+    const clientId = getClientIdentifier(request, session?.user?.id);
+    const rateLimitResult = checkRateLimit(`projects-get-one-${clientId}`, 120, 60000);
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests', retryAfter: rateLimitResult.retryAfter },
+        {
+          status: 429,
+          headers: { 'Retry-After': rateLimitResult.retryAfter.toString() }
+        }
+      );
+    }
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    if (!UUID_PATTERN.test(id || '')) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    const supabase = getSupabaseServiceRole();
+    const { data: project, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+
+    if (error) {
+      const errorMessage = handleSupabaseError(error, 'fetch');
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    // Looked up separately for the same reason as the list route: PostgREST
+    // cannot embed across the composite (customer_id, user_id) foreign key.
+    let customerName = null;
+    if (project.customer_id) {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('name')
+        .eq('id', project.customer_id)
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      if (customerError) {
+        const errorMessage = handleSupabaseError(customerError, 'fetch');
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
+      }
+      customerName = customer?.name || null;
+    }
+
+    return NextResponse.json({ data: { ...project, customer_name: customerName } });
+  } catch (error) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 // PATCH /api/projects/[id] - Update a project
 export async function PATCH(request, { params }) {
   try {
