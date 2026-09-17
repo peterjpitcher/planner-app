@@ -38,13 +38,29 @@ export function withoutTrailingEmptyStamps(value) {
   return lines.join('\n');
 }
 
+const LONE_STAMP = /^\[\d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}\] $/;
+
+/** True when the draft is one stamp and nothing else: a line not yet started. */
+export function isLoneStamp(value) {
+  return LONE_STAMP.test(value);
+}
+
 /**
- * Stamp the first line: when an empty draft gains text (typed or pasted), put
- * the stamp in front of it. Anything else passes through untouched.
+ * Stamp the first line as writing starts.
+ *
+ * An empty draft that gains text (typed or pasted) gets the stamp in front of
+ * it. The composer also puts a stamp in as soon as it is focused, so the first
+ * line is visibly stamped before anything is typed; if that stamp is still on
+ * its own when typing starts, it is renewed, so it records when the line was
+ * written rather than when the box was clicked. Anything else passes through.
  */
 export function stampFirstLine(previous, next, stamp) {
-  if (previous !== '' || next === '') return next;
-  return `${stamp}${next}`;
+  if (next === '') return next;
+  if (previous === '') return `${stamp}${next}`;
+  if (isLoneStamp(previous) && next.length > previous.length && next.startsWith(previous)) {
+    return `${stamp}${next.slice(previous.length)}`;
+  }
+  return next;
 }
 
 /**

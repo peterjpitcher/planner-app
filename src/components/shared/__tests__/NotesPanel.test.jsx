@@ -36,6 +36,38 @@ describe('NotesPanel composer', () => {
     vi.clearAllMocks();
   });
 
+  it('shows the first stamp as soon as the empty box is focused, without Enter', async () => {
+    const box = await renderPanel();
+    act(() => box.focus());
+    expect(box).toHaveValue(STAMP);
+    expect(box.selectionStart).toBe(STAMP.length);
+  });
+
+  it('renews that stamp when typing starts, so it shows when the line was written', async () => {
+    const box = await renderPanel();
+    act(() => box.focus());
+
+    vi.setSystemTime(new Date('2026-09-17T13:35:00Z'));
+    fireEvent.change(box, { target: { value: `${STAMP}C` } });
+
+    expect(box).toHaveValue('[17 Sep 2026 14:35] C');
+  });
+
+  it('empties a box holding only a stamp when it loses focus', async () => {
+    const box = await renderPanel();
+    act(() => box.focus());
+    act(() => box.blur());
+    expect(box).toHaveValue('');
+  });
+
+  it('keeps real text when the box loses focus', async () => {
+    const box = await renderPanel();
+    act(() => box.focus());
+    fireEvent.change(box, { target: { value: `${STAMP}Called Sam` } });
+    act(() => box.blur());
+    expect(box).toHaveValue(`${STAMP}Called Sam`);
+  });
+
   it('stamps the first line as soon as it gets text', async () => {
     const box = await renderPanel();
     fireEvent.change(box, { target: { value: 'C' } });
