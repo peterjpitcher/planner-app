@@ -5,7 +5,7 @@ Ask: the first note stamp should not need Enter; a full-screen screen for one pr
 Complexity 4 (about 9 files), so three PRs, each deployable on its own:
 
 - [x] PR A: stamp appears as soon as the empty note box is focused; renewed on the first keystroke so the time is when writing started; a stamp left alone is cleared on blur.
-- [ ] PR B: `GET /api/projects/[id]` (session plus user_id ownership, 404 otherwise) and `apiClient.getProject`, so the screen loads one project and never the full list.
+- [x] PR B: `GET /api/projects/[id]` (session plus user_id ownership, 404 otherwise) and `apiClient.getProject`, so the screen loads one project and never the full list.
 - [ ] PR C: `/focus/project/[id]` with no app shell (no sidebar, header, tab bar, quick capture or planning prompt). Notes (large composer), quick task add, task list without the project link, files. No link anywhere into the rest of the app; Close closes the tab. Opened in a new tab from the project page (header button and the notes full-screen icon) so only that tab is shared.
 - [ ] Gates per PR: London and UTC tests, eslint, build; real-browser check; merge, verify deployment, tidy.
 
