@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid';
 import { apiClient } from '@/lib/apiClient';
 import { createLatestGuard } from '@/lib/requestCache';
+import { outlookMessageLink } from '@/lib/outlookWebLink';
 import {
   FOLLOWUP_STATE,
   FOLLOWUP_DRAFT_STATUS,
@@ -24,22 +26,77 @@ const STATE_LABELS = {
   [FOLLOWUP_STATE.CLOSED]: 'Done',
 };
 
+// Asking Jordan to write a draft uses 'edit_requested', the status Jordan
+// already picks up each run and answers with a draft marked 'ready'. With no
+// draft on the row it is a first draft; with one it is a redraft. No new status
+// was needed, so neither the table nor Jordan's worklist had to change.
+function hasDraft(item) {
+  return Boolean(item.proposed_draft && item.proposed_draft.trim());
+}
+
 // The decisions Peter makes on a draft. 'none' and 'sent' are machine states.
-const DECISION_OPTIONS = [
-  { value: FOLLOWUP_DRAFT_STATUS.READY, label: 'Draft ready to review' },
-  { value: FOLLOWUP_DRAFT_STATUS.APPROVED, label: 'Approve and send' },
-  { value: FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED, label: 'Redraft with my feedback' },
-  { value: FOLLOWUP_DRAFT_STATUS.HOLD, label: 'Hold' },
-];
+function decisionOptions(item) {
+  return [
+    { value: FOLLOWUP_DRAFT_STATUS.READY, label: 'Draft ready to review' },
+    { value: FOLLOWUP_DRAFT_STATUS.APPROVED, label: 'Approve and send' },
+    {
+      value: FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED,
+      label: hasDraft(item) ? 'Ask Jordan to redraft with my feedback' : 'Ask Jordan to write a draft',
+    },
+    { value: FOLLOWUP_DRAFT_STATUS.HOLD, label: 'Hold' },
+  ];
+}
+
+const DECISION_VALUES = new Set([
+  FOLLOWUP_DRAFT_STATUS.READY,
+  FOLLOWUP_DRAFT_STATUS.APPROVED,
+  FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED,
+  FOLLOWUP_DRAFT_STATUS.HOLD,
+]);
 
 const DRAFT_STATUS_BADGE = {
   [FOLLOWUP_DRAFT_STATUS.NONE]: { label: 'No draft', className: 'bg-gray-100 text-gray-500' },
   [FOLLOWUP_DRAFT_STATUS.READY]: { label: 'Draft ready', className: 'bg-indigo-100 text-indigo-700' },
   [FOLLOWUP_DRAFT_STATUS.APPROVED]: { label: 'Approved', className: 'bg-emerald-100 text-emerald-700' },
-  [FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED]: { label: 'Redraft', className: 'bg-amber-100 text-amber-700' },
+  [FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED]: { label: 'Redraft requested', className: 'bg-amber-100 text-amber-700' },
   [FOLLOWUP_DRAFT_STATUS.HOLD]: { label: 'On hold', className: 'bg-gray-100 text-gray-600' },
   [FOLLOWUP_DRAFT_STATUS.SENT]: { label: 'Sent', className: 'bg-emerald-50 text-emerald-600' },
 };
+
+function draftBadge(item) {
+  if (item.draft_status === FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED && !hasDraft(item)) {
+    return { label: 'Draft requested', className: 'bg-amber-100 text-amber-700' };
+  }
+  return DRAFT_STATUS_BADGE[item.draft_status] ?? DRAFT_STATUS_BADGE[FOLLOWUP_DRAFT_STATUS.NONE];
+}
+
+// A row can be sent to Jordan for a draft when it is still open, has no draft
+// text, and is not already asked for or approved.
+function canRequestDraft(item) {
+  return (
+    item.state !== FOLLOWUP_STATE.CLOSED &&
+    !hasDraft(item) &&
+    item.draft_status !== FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED &&
+    item.draft_status !== FOLLOWUP_DRAFT_STATUS.APPROVED
+  );
+}
+
+function OpenEmailLink({ item, className = '' }) {
+  const href = outlookMessageLink(item.message_id);
+  if (!href) return null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open the email${item.subject ? ` "${item.subject}"` : ''} in Outlook`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline ${className}`}
+    >
+      Open email
+      <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden="true" />
+    </a>
+  );
+}
 
 function formatWhen(value) {
   if (!value) return '';
@@ -56,7 +113,7 @@ function ReviewPanel({ item, onSave }) {
   const [draft, setDraft] = useState(item.proposed_draft ?? '');
   const [feedback, setFeedback] = useState(item.feedback ?? '');
   const [decision, setDecision] = useState(
-    DECISION_OPTIONS.some((o) => o.value === item.draft_status) ? item.draft_status : ''
+    DECISION_VALUES.has(item.draft_status) ? item.draft_status : ''
   );
   const [urgent, setUrgent] = useState(item.urgent === true);
   const [saving, setSaving] = useState(false);
@@ -82,15 +139,18 @@ function ReviewPanel({ item, onSave }) {
 
   return (
     <div className="bg-gray-50 px-4 py-4">
-      <label className="block text-xs font-medium text-gray-500" htmlFor={`draft-${item.id}`}>
-        Proposed reply
-      </label>
+      <div className="flex items-center justify-between gap-3">
+        <label className="block text-xs font-medium text-gray-500" htmlFor={`draft-${item.id}`}>
+          Proposed reply
+        </label>
+        <OpenEmailLink item={item} />
+      </div>
       <textarea
         id={`draft-${item.id}`}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         rows={5}
-        placeholder="No draft yet. Ask Jordan to draft this, or write one here."
+        placeholder="No draft yet. Choose 'Ask Jordan to write a draft' below, or write one here and approve it."
         className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
       />
 
@@ -114,7 +174,7 @@ function ReviewPanel({ item, onSave }) {
           className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
         >
           <option value="">No change</option>
-          {DECISION_OPTIONS.map((o) => (
+          {decisionOptions(item).map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
@@ -140,6 +200,12 @@ function ReviewPanel({ item, onSave }) {
       </div>
       {decision === FOLLOWUP_DRAFT_STATUS.APPROVED && (
         <p className="mt-2 text-xs text-emerald-700">Jordan will send this on its next run and mark it sent.</p>
+      )}
+      {decision === FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED && (
+        <p className="mt-2 text-xs text-amber-700">
+          Jordan writes it on its next run (weekday mornings), using your feedback if you gave any. It
+          comes back here as Draft ready for you to approve. Nothing is sent until you do.
+        </p>
       )}
     </div>
   );
@@ -203,6 +269,20 @@ export default function FollowUpList() {
     }
   }, [expandedId, showDone]);
 
+  // Ask Jordan for a draft (or, when waiting on them, a chase). It is written on
+  // Jordan's next run and comes back as 'ready'; nothing sends without approval.
+  const handleRequestDraft = useCallback(async (id) => {
+    setBusyId(id);
+    try {
+      const updated = await apiClient.updateFollowUp(id, { draft_status: FOLLOWUP_DRAFT_STATUS.EDIT_REQUESTED });
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...updated } : it)));
+    } catch (err) {
+      setError(err.message || 'Failed to request a draft.');
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
   const handleReopen = useCallback(async (id) => {
     setBusyId(id);
     try {
@@ -235,8 +315,9 @@ export default function FollowUpList() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Follow-ups</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Everything waiting on a reply. Review a draft, approve it or leave feedback, or mark a
-            thread done. Nothing sends without your approval.
+            Everything waiting on a reply. Open email shows the thread in Outlook. Request draft asks
+            Jordan to write a reply (or a chase) on its next weekday run; review it, approve it or
+            leave feedback. Nothing sends without your approval.
           </p>
         </div>
         <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -297,7 +378,7 @@ export default function FollowUpList() {
             <tbody>
               {sorted.map((it) => {
                 const closed = it.state === FOLLOWUP_STATE.CLOSED;
-                const badge = DRAFT_STATUS_BADGE[it.draft_status] ?? DRAFT_STATUS_BADGE.none;
+                const badge = draftBadge(it);
                 const isOpen = expandedId === it.id;
                 return (
                   <React.Fragment key={it.id}>
@@ -314,6 +395,7 @@ export default function FollowUpList() {
                       <td className="px-3 py-2 text-gray-800">
                         <div className="font-medium">{it.subject || '(no subject)'}</div>
                         {it.needs && <div className="mt-0.5 text-xs text-gray-500">{it.needs}</div>}
+                        <OpenEmailLink item={it} className="mt-1" />
                         {it.urgent && !closed && (
                           <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">Urgent</span>
                         )}
@@ -325,6 +407,16 @@ export default function FollowUpList() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-right">
                         <div className="flex justify-end gap-2">
+                          {canRequestDraft(it) && (
+                            <button
+                              type="button"
+                              onClick={() => handleRequestDraft(it.id)}
+                              disabled={busyId === it.id}
+                              className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                            >
+                              {it.state === FOLLOWUP_STATE.AWAITING_THEM ? 'Request chase' : 'Request draft'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setExpandedId(isOpen ? null : it.id)}
