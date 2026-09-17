@@ -15,7 +15,24 @@
 
 import NotesPanel from '@/components/shared/NotesPanel';
 
-export default function ProjectNotes({ projectId, disabled = false, onFullScreen }) {
+export default function ProjectNotes({
+  projectId,
+  disabled = false,
+  onFullScreen,
+  onTaskPickedUp,
+  onTaskUndone,
+}) {
   if (!projectId) return null;
-  return <NotesPanel projectId={projectId} disabled={disabled} onFullScreen={onFullScreen} />;
+  // Lines that read like tasks become tasks on this project as they are
+  // written (see lib/noteTasks).
+  return (
+    <NotesPanel
+      projectId={projectId}
+      disabled={disabled}
+      onFullScreen={onFullScreen}
+      autoTasks
+      onTaskPickedUp={onTaskPickedUp}
+      onTaskUndone={onTaskUndone}
+    />
+  );
 }

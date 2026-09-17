@@ -222,6 +222,9 @@ export default function ProjectScreen({ projectId }) {
               disabled={isReadOnly}
               allowFullScreen={false}
               composerRows={14}
+              autoTasks
+              onTaskPickedUp={handleTaskAdded}
+              onTaskUndone={removeTask}
             />
           </section>
 

@@ -1,3 +1,11 @@
+# Project screen: tab title and tasks from notes (17 Sep 2026)
+
+- [x] Tab title is the project name on the project screen (#38). `useDocumentTitle` re-applies it, because Next.js streamed its metadata title in after load and overwrote a one-off `document.title` (and a React `<title>`).
+- [x] Rules and notes panel support for picking tasks out of notes, off by default (#39).
+- [x] Switched on for project notes, on the project screen and the project page, with lists kept in step on pick-up and undo.
+
+Results: 863 tests in London and UTC. Real browser on a local harness with a faked API: tab title held after Next's rewrite; task lines created tasks with the right due dates, ordinary lines ignored, undo removed the task, saving created no duplicate. Signed-in live check still needs Peter.
+
 # Project screen for screen sharing (17 Sep 2026)
 
 Ask: the first note stamp should not need Enter; a full-screen screen for one project with notes, quick task add and files, showing nothing about any other project.
