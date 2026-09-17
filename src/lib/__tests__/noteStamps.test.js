@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   insertStampedLine,
+  stripLineStamp,
   isLoneStamp,
   noteLineStamp,
   stampFirstLine,
@@ -123,5 +124,19 @@ describe('insertStampedLine', () => {
 
   it('refuses to pass the length cap', () => {
     expect(insertStampedLine('abc', 3, 3, stamp, 10)).toBeNull();
+  });
+});
+
+describe('stripLineStamp', () => {
+  it('removes the stamp from the front of a line', () => {
+    expect(stripLineStamp('[17 Sep 2026 14:32] Called Sam')).toBe('Called Sam');
+  });
+
+  it('removes a pasted run of stamps', () => {
+    expect(stripLineStamp('[17 Sep 2026 14:32] [17 Sep 2026 14:30] Called Sam')).toBe('Called Sam');
+  });
+
+  it('leaves a line without a stamp alone', () => {
+    expect(stripLineStamp('Called Sam')).toBe('Called Sam');
   });
 });

@@ -12,6 +12,8 @@ import {
 
 import { apiClient } from '@/lib/apiClient';
 import { formatDate } from '@/lib/dateUtils';
+import { taskFromNoteLine } from '@/lib/noteTasks';
+import { formatDueDate } from '@/components/shared/QuickTaskInput';
 import {
   insertStampedLine,
   noteLineStamp,
@@ -175,6 +177,12 @@ export default function NotesPanel({
   onFullScreen,
   allowFullScreen = true,
   composerRows = 3,
+  // Tasks picked out of project notes as they are written (see lib/noteTasks).
+  // Off unless asked for. The panel creates and undoes the tasks itself; the
+  // callbacks only keep the page's own task list in step.
+  autoTasks = false,
+  onTaskPickedUp,
+  onTaskUndone,
 }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +195,9 @@ export default function NotesPanel({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [fullScreen, setFullScreen] = useState(false);
+  const [pickedUp, setPickedUp] = useState([]);
+  const pickedKeysRef = useRef(new Set());
+  const pickingUp = autoTasks && Boolean(projectId) && !disabled;
 
   const abortRef = useRef(null);
   // One ref per textarea. A shared ref broke focus on leaving full screen: the
@@ -255,9 +266,62 @@ export default function NotesPanel({
     return () => abortRef.current?.abort();
   }, [load]);
 
+  function updatePickedUp(key, changes) {
+    setPickedUp((prev) => prev.map((item) => (item.key === key ? { ...item, ...changes } : item)));
+  }
+
+  async function addPickedUpTask(item) {
+    updatePickedUp(item.key, { status: 'adding' });
+    try {
+      const task = await apiClient.createTask({
+        name: item.name,
+        projectId,
+        dueDate: item.dueDate,
+        state: 'backlog',
+      });
+      updatePickedUp(item.key, { status: 'added', taskId: task?.id ?? null });
+      onTaskPickedUp?.(task);
+    } catch (err) {
+      // Shown beside the task with a retry, never dropped quietly.
+      updatePickedUp(item.key, { status: 'failed', error: err?.message || 'Could not add the task.' });
+    }
+  }
+
+  // A finished line that reads like a task becomes one straight away. Each
+  // task name is picked up once per writing session, so pressing Enter on the
+  // same line again, or saving after it, does not make a second copy.
+  function pickUpTask(line) {
+    if (!pickingUp) return;
+    const found = taskFromNoteLine(line);
+    if (!found) return;
+
+    const key = found.name.toLowerCase();
+    if (pickedKeysRef.current.has(key)) return;
+    pickedKeysRef.current.add(key);
+
+    const item = { key, name: found.name, dueDate: found.dueDate, status: 'adding', taskId: null };
+    setPickedUp((prev) => [item, ...prev]);
+    addPickedUpTask(item);
+  }
+
+  async function undoPickedUpTask(item) {
+    if (!item.taskId) return;
+    updatePickedUp(item.key, { status: 'undoing' });
+    try {
+      await apiClient.deleteTask(item.taskId);
+      setPickedUp((prev) => prev.filter((entry) => entry.key !== item.key));
+      onTaskUndone?.(item.taskId);
+    } catch (err) {
+      updatePickedUp(item.key, { status: 'added', error: err?.message || 'Could not undo. The task is still there.' });
+    }
+  }
+
   async function create() {
     const content = withoutTrailingEmptyStamps(draft).trim();
     if (!content || creating || disabled) return;
+
+    // The last line has had no Enter after it, so it has not been read yet.
+    pickUpTask(content.split('\n').pop());
 
     setCreating(true);
     setCreateError(null);
@@ -277,6 +341,10 @@ export default function NotesPanel({
 
       setDraft('');
       setSource('note');
+      // The next note starts a fresh writing session. Its tasks are already in
+      // the task list, which is where they are changed from now on.
+      setPickedUp([]);
+      pickedKeysRef.current = new Set();
       setOccurredOn(getLondonDateKey());
       setShowDetail(false);
       // Back to the page, where the saved note now shows in the list.
@@ -320,6 +388,16 @@ export default function NotesPanel({
 
     event.preventDefault();
     const el = event.currentTarget;
+
+    // Enter at the end of a line finishes it, so read it for a task. Splitting
+    // a line in the middle does not: its first half is not a finished thought.
+    if (el.selectionStart === el.selectionEnd) {
+      const lineStart = el.value.lastIndexOf('\n', el.selectionStart - 1) + 1;
+      const nextBreak = el.value.indexOf('\n', el.selectionStart);
+      const restOfLine = el.value.slice(el.selectionStart, nextBreak === -1 ? undefined : nextBreak);
+      if (restOfLine.trim() === '') pickUpTask(el.value.slice(lineStart, el.selectionStart));
+    }
+
     const result = insertStampedLine(
       el.value,
       el.selectionStart,
@@ -435,6 +513,60 @@ export default function NotesPanel({
           <p role="alert" className="mt-1 text-xs text-red-600">
             {createError}
           </p>
+        )}
+
+        {pickingUp && (
+          <p className="mt-1.5 text-xs text-gray-400">
+            Lines starting &ldquo;I&rsquo;ll&rdquo;, &ldquo;Need to&rdquo;, &ldquo;Todo&rdquo; or &ldquo;Action:&rdquo;, or ending #task, become tasks.
+          </p>
+        )}
+
+        {pickingUp && pickedUp.length > 0 && (
+          <div className="mt-2 rounded-md border border-indigo-100 bg-indigo-50 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Tasks picked up from this note
+            </p>
+            <ul className="mt-1 space-y-1" aria-live="polite">
+              {pickedUp.map((item) => (
+                <li key={item.key} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate text-gray-700">
+                    {item.name}
+                    <span className="text-xs text-gray-500"> · due {formatDueDate(item.dueDate, { short: true })}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs">
+                    {item.status === 'adding' && <span className="text-gray-400">Adding…</span>}
+                    {item.status === 'undoing' && <span className="text-gray-400">Undoing…</span>}
+                    {item.status === 'added' && item.error && (
+                      <span role="alert" className="text-red-600">{item.error}</span>
+                    )}
+                    {item.status === 'added' && (
+                      <button
+                        type="button"
+                        onClick={() => undoPickedUpTask(item)}
+                        aria-label={`Undo task ${item.name}`}
+                        className="font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        Undo
+                      </button>
+                    )}
+                    {item.status === 'failed' && (
+                      <>
+                        <span role="alert" className="text-red-600">Not added: {item.error}</span>
+                        <button
+                          type="button"
+                          onClick={() => addPickedUpTask(item)}
+                          aria-label={`Retry task ${item.name}`}
+                          className="font-medium text-indigo-600 underline hover:text-indigo-800"
+                        >
+                          Retry
+                        </button>
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     );
