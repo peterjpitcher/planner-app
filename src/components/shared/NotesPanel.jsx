@@ -183,7 +183,10 @@ export default function NotesPanel({
   const [fullScreen, setFullScreen] = useState(false);
 
   const abortRef = useRef(null);
-  const textareaRef = useRef(null);
+  // One ref per textarea. A shared ref broke focus on leaving full screen: the
+  // dialog's textarea unmounts a render after the page one mounts, and nulls it.
+  const pageTextareaRef = useRef(null);
+  const dialogTextareaRef = useRef(null);
   // Where the cursor goes once React has written a programmatic edit; setting
   // the value from code otherwise drops it at the end of the text.
   const pendingCaretRef = useRef(null);
@@ -192,12 +195,12 @@ export default function NotesPanel({
 
   useLayoutEffect(() => {
     const caret = pendingCaretRef.current;
-    const el = textareaRef.current;
+    const el = (fullScreen ? dialogTextareaRef : pageTextareaRef).current;
     if (caret === null || !el) return;
     pendingCaretRef.current = null;
     el.setSelectionRange(caret, caret);
     if (caret === el.value.length) el.scrollTop = el.scrollHeight;
-  }, [draft]);
+  }, [draft, fullScreen]);
 
   // The composer textarea swaps between the page and the full-screen dialog,
   // so the one that has just mounted takes focus with the cursor at the end.
@@ -205,7 +208,7 @@ export default function NotesPanel({
     if (!focusRequestRef.current) return undefined;
     focusRequestRef.current = false;
     const frame = requestAnimationFrame(() => {
-      const el = textareaRef.current;
+      const el = (fullScreen ? dialogTextareaRef : pageTextareaRef).current;
       if (!el) return;
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
@@ -329,7 +332,7 @@ export default function NotesPanel({
     return (
       <div className={inDialog ? 'flex min-h-0 flex-1 flex-col' : 'mb-3'}>
         <textarea
-          ref={textareaRef}
+          ref={inDialog ? dialogTextareaRef : pageTextareaRef}
           value={draft}
           onChange={(event) => {
             // The first line is stamped as soon as it gets any text, typed or pasted.
