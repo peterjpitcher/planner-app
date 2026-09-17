@@ -77,6 +77,24 @@ describe('ProjectScreen', () => {
     expect(api.getAllTasks).toHaveBeenCalledWith('p1', { states: 'today,this_week,backlog,waiting' });
   });
 
+  it('shows the project name as the browser tab title', async () => {
+    document.title = 'Project';
+    const { unmount } = await renderScreen();
+    expect(document.title).toBe('Menu refresh');
+
+    unmount();
+    expect(document.title).toBe('Project');
+  });
+
+  it('keeps the plain title when the project cannot be loaded', async () => {
+    document.title = 'Project';
+    api.getProject.mockRejectedValue(new Error('Project not found'));
+    render(<ProjectScreen projectId="p1" />);
+
+    await screen.findByRole('alert');
+    expect(document.title).toBe('Project');
+  });
+
   it('never loads the project list', async () => {
     await renderScreen();
     expect(api.getProject).toHaveBeenCalledWith('p1');

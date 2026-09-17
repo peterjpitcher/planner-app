@@ -9,6 +9,7 @@ import { ArrowsPointingInIcon, ArrowsPointingOutIcon } from '@heroicons/react/20
 import { apiClient } from '@/lib/apiClient';
 import { ACTIVE_STATES, CLOSED_STATES, PROJECT_STATUS, STATE } from '@/lib/constants';
 import { cn } from '@/lib/styleUtils';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import TaskCard from '@/components/shared/TaskCard';
 import QuickTaskInput from '@/components/shared/QuickTaskInput';
 import NotesPanel from '@/components/shared/NotesPanel';
@@ -57,6 +58,11 @@ export default function ProjectScreen({ projectId }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // The browser tab shows the project's name, so the shared tab is easy to
+  // find in a call's share picker. Until it loads, or if it cannot, the page's
+  // plain "Project" title stays.
+  useDocumentTitle(loadState === 'ready' ? project?.name : null);
 
   useEffect(() => {
     setCanFillScreen(Boolean(document.fullscreenEnabled));
