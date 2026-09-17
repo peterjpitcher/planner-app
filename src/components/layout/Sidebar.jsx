@@ -19,6 +19,7 @@ import {
     X
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import { clearAllNoteDrafts } from '@/lib/noteDrafts';
 
 const navigation = [
     { name: 'Today', href: '/today', icon: CalendarCheck },
@@ -129,6 +130,9 @@ export function Sidebar({ isMobileMenuOpen = false, onCloseMobileMenu }) {
                 <button
                     onClick={() => {
                         onCloseMobileMenu?.();
+                        // Unsaved notes are kept in this browser; signing out
+                        // removes them so they do not outlive the session.
+                        clearAllNoteDrafts();
                         signOut();
                     }}
                     // --danger is not defined anywhere, so this rendered in the inherited

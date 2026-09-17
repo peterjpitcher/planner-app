@@ -15,6 +15,24 @@ vi.mock('@/lib/apiClient', () => ({ apiClient: api }));
 
 import NotesPanel from '../NotesPanel';
 
+// This jsdom has no localStorage, and the panel keeps unsaved notes there, so
+// every test gets a fresh in-memory one.
+function memoryStorage() {
+  const entries = new Map();
+  return {
+    get length() { return entries.size; },
+    key: (index) => [...entries.keys()][index] ?? null,
+    getItem: (key) => (entries.has(key) ? entries.get(key) : null),
+    setItem: (key, value) => { entries.set(key, String(value)); },
+    removeItem: (key) => { entries.delete(key); },
+    clear: () => entries.clear(),
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal('localStorage', memoryStorage());
+});
+
 // 13:32 UTC is 14:32 in London (British Summer Time).
 const NOW = new Date('2026-09-17T13:32:00Z');
 const STAMP = '[17 Sep 2026 14:32] ';
@@ -307,5 +325,155 @@ describe('NotesPanel picking up tasks as notes are written', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Network down');
     expect(onTaskUndone).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Undo task Send the menu' })).toBeInTheDocument();
+  });
+});
+
+describe('NotesPanel keeping unsaved notes in this browser', () => {
+  const KEY = 'planner.noteDraft.v1:project:project-1';
+
+  const stored = () => JSON.parse(window.localStorage.getItem(KEY))?.text ?? null;
+
+  async function renderPanel(props = {}) {
+    render(<NotesPanel projectId="project-1" {...props} />);
+    await waitFor(() => expect(api.getNotes).toHaveBeenCalled());
+    return screen.getByRole('textbox', { name: 'New note' });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    api.getNotes.mockResolvedValue({ data: [] });
+    api.createNote.mockResolvedValue({});
+    api.createTask.mockResolvedValue({ id: 'task-9' });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('keeps the note as it is written', async () => {
+    const box = await renderPanel();
+    fireEvent.change(box, { target: { value: 'Called Sam' } });
+    expect(stored()).toBe(`${STAMP}Called Sam`);
+  });
+
+  it('brings the note back when the page is opened again, and says so', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ text: `${STAMP}Called Sam`, savedAt: '2026-09-17T13:30:00.000Z' }));
+    const box = await renderPanel();
+
+    expect(box).toHaveValue(`${STAMP}Called Sam`);
+    expect(screen.getByText('Unsaved note from 17 Sept, 14:30 restored.')).toBeInTheDocument();
+  });
+
+  it('forgets the kept copy once the note is saved', async () => {
+    const box = await renderPanel();
+    fireEvent.change(box, { target: { value: 'Called Sam' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    });
+
+    expect(api.createNote).toHaveBeenCalled();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('keeps the copy when saving fails', async () => {
+    api.createNote.mockRejectedValue(new Error('Network down'));
+    const box = await renderPanel();
+    fireEvent.change(box, { target: { value: 'Called Sam' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    });
+
+    expect(stored()).toBe(`${STAMP}Called Sam`);
+  });
+
+  it('discards a restored note only after confirming', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ text: `${STAMP}Called Sam`, savedAt: '2026-09-17T13:30:00.000Z' }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const box = await renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(box).toHaveValue(`${STAMP}Called Sam`);
+    expect(stored()).toBe(`${STAMP}Called Sam`);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(box).toHaveValue('');
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    confirm.mockRestore();
+  });
+
+  it('removes the copy when the text is deleted here', async () => {
+    const box = await renderPanel();
+    fireEvent.change(box, { target: { value: 'Called Sam' } });
+    fireEvent.change(box, { target: { value: '' } });
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('never deletes a note being written in another tab', async () => {
+    const box = await renderPanel();
+
+    // The project screen, open in another tab, keeps its draft.
+    window.localStorage.setItem(KEY, JSON.stringify({ text: `${STAMP}Written on the screen`, savedAt: null }));
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+
+    // This tab's empty box is clicked into and left.
+    act(() => box.focus());
+    act(() => box.blur());
+
+    expect(stored()).toBe(`${STAMP}Written on the screen`);
+  });
+
+  it('gives up its copy to another tab, then deleting here leaves theirs alone', async () => {
+    const box = await renderPanel();
+    fireEvent.change(box, { target: { value: 'Mine' } });
+
+    window.localStorage.setItem(KEY, JSON.stringify({ text: `${STAMP}Theirs`, savedAt: null }));
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+
+    fireEvent.change(box, { target: { value: '' } });
+    expect(stored()).toBe(`${STAMP}Theirs`);
+  });
+
+  it('does not create tasks again from lines finished before the tab closed', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({
+      text: `${STAMP}I'll send the menu\n${STAMP}`,
+      savedAt: '2026-09-17T13:30:00.000Z',
+    }));
+    const box = await renderPanel({ autoTasks: true });
+
+    const firstLineEnd = `${STAMP}I'll send the menu`.length;
+    box.setSelectionRange(firstLineEnd, firstLineEnd);
+    await act(async () => {
+      fireEvent.keyDown(box, { key: 'Enter' });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    });
+
+    expect(api.createNote).toHaveBeenCalled();
+    expect(api.createTask).not.toHaveBeenCalled();
+  });
+
+  it('says so when the browser will not keep a copy', async () => {
+    window.localStorage.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    const box = await renderPanel();
+    fireEvent.change(box, { target: { value: 'Called Sam' } });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('This browser is not keeping a copy of this note.');
+  });
+
+  it('keeps nothing, and restores nothing, for a read-only panel', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ text: `${STAMP}Called Sam`, savedAt: null }));
+    render(<NotesPanel projectId="project-1" disabled />);
+    await waitFor(() => expect(api.getNotes).toHaveBeenCalled());
+
+    expect(screen.queryByRole('textbox', { name: 'New note' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unsaved note/)).not.toBeInTheDocument();
+    expect(window.localStorage.length).toBe(1);
   });
 });
