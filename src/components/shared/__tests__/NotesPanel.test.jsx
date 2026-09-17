@@ -111,7 +111,10 @@ describe('NotesPanel composer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(screen.getByRole('textbox', { name: 'New note' })).toHaveValue(`${STAMP}Called Sam`);
+    const pageBox = screen.getByRole('textbox', { name: 'New note' });
+    expect(pageBox).toHaveValue(`${STAMP}Called Sam`);
+    // Writing carries on without clicking back into the box.
+    await waitFor(() => expect(pageBox).toHaveFocus());
   });
 
   it('offers no full screen on a read-only panel', async () => {
