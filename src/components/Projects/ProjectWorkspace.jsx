@@ -3,7 +3,7 @@
 
 import { useCallback, useRef, useState, useMemo } from 'react';
 import { Menu } from '@headlessui/react';
-import { EllipsisVerticalIcon, TrashIcon } from '@heroicons/react/20/solid';
+import { ArrowsPointingOutIcon, EllipsisVerticalIcon, TrashIcon } from '@heroicons/react/20/solid';
 import {
   DndContext,
   closestCenter,
@@ -29,6 +29,24 @@ export const STATE_GROUPS = [
   { key: 'backlog', label: 'Backlog', labelClass: 'text-gray-500' },
   { key: 'waiting', label: 'Waiting', labelClass: 'text-amber-600' },
 ];
+
+/**
+ * Open the project screen (/focus/project/[id]) for screen sharing.
+ *
+ * It opens in its own tab so that tab alone can be shared, with the planner
+ * left out of view in this one, and so the screen's Close button is allowed to
+ * close it (browsers only let a page close a tab a script opened). If the tab
+ * is blocked, go there in this tab instead rather than silently doing nothing.
+ */
+export function openProjectScreen(projectId) {
+  const url = `/focus/project/${encodeURIComponent(projectId)}`;
+  const screenTab = window.open(url, '_blank');
+  if (screenTab) {
+    screenTab.opener = null;
+  } else {
+    window.location.assign(url);
+  }
+}
 
 function InlineEdit({ value, onSave, as: Tag = 'span', className = '', inputClassName = '', placeholder = '', maxLength, multiline = false, disabled = false }) {
   const [editing, setEditing] = useState(false);
@@ -166,37 +184,49 @@ export default function ProjectWorkspace({
               </select>
             </div>
 
-            {/* Project actions menu */}
-            <Menu as="div" className="relative shrink-0">
-              <Menu.Button className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Project actions">
-                <EllipsisVerticalIcon className="h-5 w-5" />
-              </Menu.Button>
-              <Menu.Items anchor="bottom end" className="z-50 w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
-                <Menu.Item>
-                  {({ active }) => (
-                    <a href="/plan" className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm', active ? 'bg-gray-50 text-gray-900' : 'text-gray-700')}>
-                      View in Plan board
-                    </a>
-                  )}
-                </Menu.Item>
-                <div className="my-1 border-t border-gray-100" />
-                <Menu.Item>
-                  {({ active }) => (
-                    <button
-                      type="button"
-                      // Confirmation lives in ProjectDeleteModal, which states
-                      // that notes are destroyed permanently. The old
-                      // window.confirm mentioned only the tasks.
-                      onClick={() => onDeleteProject(project.id)}
-                      className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600', active && 'bg-red-50')}
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                      Delete project
-                    </button>
-                  )}
-                </Menu.Item>
-              </Menu.Items>
-            </Menu>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => openProjectScreen(project.id)}
+                title="Open this project on its own, full screen, for sharing"
+                className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                <ArrowsPointingOutIcon className="h-4 w-4" aria-hidden="true" />
+                Full screen
+              </button>
+
+              {/* Project actions menu */}
+              <Menu as="div" className="relative shrink-0">
+                <Menu.Button className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Project actions">
+                  <EllipsisVerticalIcon className="h-5 w-5" />
+                </Menu.Button>
+                <Menu.Items anchor="bottom end" className="z-50 w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg focus:outline-none">
+                  <Menu.Item>
+                    {({ active }) => (
+                      <a href="/plan" className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm', active ? 'bg-gray-50 text-gray-900' : 'text-gray-700')}>
+                        View in Plan board
+                      </a>
+                    )}
+                  </Menu.Item>
+                  <div className="my-1 border-t border-gray-100" />
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        type="button"
+                        // Confirmation lives in ProjectDeleteModal, which states
+                        // that notes are destroyed permanently. The old
+                        // window.confirm mentioned only the tasks.
+                        onClick={() => onDeleteProject(project.id)}
+                        className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600', active && 'bg-red-50')}
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                        Delete project
+                      </button>
+                    )}
+                  </Menu.Item>
+                </Menu.Items>
+              </Menu>
+            </div>
           </div>
 
           {/* Metadata row */}
@@ -342,7 +372,11 @@ export default function ProjectWorkspace({
             either off, so the whole column is skipped there. */}
         {!isUnassigned && (
           <div className="min-w-0 space-y-6 overflow-y-auto md:flex-[2]">
-            <ProjectNotes projectId={project.id} disabled={isReadOnly} />
+            <ProjectNotes
+              projectId={project.id}
+              disabled={isReadOnly}
+              onFullScreen={() => openProjectScreen(project.id)}
+            />
             <AttachmentsPanel
               parentType="project"
               parentId={project.id}

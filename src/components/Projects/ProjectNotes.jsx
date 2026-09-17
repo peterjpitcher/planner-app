@@ -15,7 +15,7 @@
 
 import NotesPanel from '@/components/shared/NotesPanel';
 
-export default function ProjectNotes({ projectId, disabled = false }) {
+export default function ProjectNotes({ projectId, disabled = false, onFullScreen }) {
   if (!projectId) return null;
-  return <NotesPanel projectId={projectId} disabled={disabled} />;
+  return <NotesPanel projectId={projectId} disabled={disabled} onFullScreen={onFullScreen} />;
 }

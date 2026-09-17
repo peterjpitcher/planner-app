@@ -6,8 +6,10 @@ Complexity 4 (about 9 files), so three PRs, each deployable on its own:
 
 - [x] PR A: stamp appears as soon as the empty note box is focused; renewed on the first keystroke so the time is when writing started; a stamp left alone is cleared on blur.
 - [x] PR B: `GET /api/projects/[id]` (session plus user_id ownership, 404 otherwise) and `apiClient.getProject`, so the screen loads one project and never the full list.
-- [ ] PR C: `/focus/project/[id]` with no app shell (no sidebar, header, tab bar, quick capture or planning prompt). Notes (large composer), quick task add, task list without the project link, files. No link anywhere into the rest of the app; Close closes the tab. Opened in a new tab from the project page (header button and the notes full-screen icon) so only that tab is shared.
-- [ ] Gates per PR: London and UTC tests, eslint, build; real-browser check; merge, verify deployment, tidy.
+- [x] PR C: `/focus/project/[id]` with no app shell (no sidebar, header, tab bar, quick capture or planning prompt). Notes (large composer), quick task add, task list without the project link, files. No link anywhere into the rest of the app; Close closes the tab. Opened in a new tab from the project page (header button and the notes full-screen icon) so only that tab is shared.
+- [x] Gates per PR: London and UTC tests, eslint, build; real-browser check; merge, verify deployment, tidy.
+
+Results: shipped as #34 (stamp on focus), #35 (single project GET), #36 (screen, split 3a) and 3b (project page button). 796 tests in both zones. Real-browser checks ran on local harness pages with a faked API, because the in-app browser has no session; the signed-in live screen still needs Peter to try it.
 
 # Discovery repair plan
 
