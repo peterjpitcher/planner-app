@@ -13,6 +13,7 @@ import {
 import { apiClient } from '@/lib/apiClient';
 import { formatDate } from '@/lib/dateUtils';
 import { taskFromNoteLine } from '@/lib/noteTasks';
+import { noteDraftKey, readNoteDraft, removeNoteDraft, writeNoteDraft } from '@/lib/noteDrafts';
 import { formatDueDate } from '@/components/shared/QuickTaskInput';
 import {
   insertStampedLine,
@@ -48,6 +49,14 @@ const SOURCES = [
 ];
 
 const SOURCE_LABEL = Object.fromEntries(SOURCES.map((s) => [s.value, s.label]));
+
+const DRAFT_TIME = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/London',
+});
 
 function NoteRow({ note, onEdit, onDelete, disabled }) {
   const [editing, setEditing] = useState(false);
@@ -199,6 +208,18 @@ export default function NotesPanel({
   const pickedKeysRef = useRef(new Set());
   const pickingUp = autoTasks && Boolean(projectId) && !disabled;
 
+  // The unsaved draft is kept in this browser (lib/noteDrafts) so closing the
+  // tab does not lose it.
+  const draftKey = disabled ? null : noteDraftKey({ projectId, taskId, customerId });
+  const [restoredDraft, setRestoredDraft] = useState(null);
+  const [draftNotKept, setDraftNotKept] = useState(false);
+  // Whether the stored draft is this panel's to change. A panel only removes a
+  // draft it wrote or restored itself, and gives it up as soon as another tab
+  // writes one, so the project page open in one tab can never delete what is
+  // being written on the project screen in another.
+  const ownsStoredDraftRef = useRef(false);
+  const lastStoredTextRef = useRef(null);
+
   const abortRef = useRef(null);
   // One ref per textarea. A shared ref broke focus on leaving full screen: the
   // dialog's textarea unmounts a render after the page one mounts, and nulls it.
@@ -345,6 +366,7 @@ export default function NotesPanel({
       // the task list, which is where they are changed from now on.
       setPickedUp([]);
       pickedKeysRef.current = new Set();
+      forgetStoredDraft();
       setOccurredOn(getLondonDateKey());
       setShowDetail(false);
       // Back to the page, where the saved note now shows in the list.
@@ -411,6 +433,71 @@ export default function NotesPanel({
   }
 
   const canCreate = withoutTrailingEmptyStamps(draft).trim() !== '';
+
+  useEffect(() => {
+    if (!draftKey) return;
+    const stored = readNoteDraft(draftKey);
+    if (!stored) return;
+
+    setDraft((current) => (current === '' ? stored.text : current));
+    setRestoredDraft(stored);
+    ownsStoredDraftRef.current = true;
+    lastStoredTextRef.current = stored.text;
+
+    // Every line with another after it was finished before the tab closed, so
+    // any task in it has already been picked up. Without this, pressing Enter
+    // on it again or saving would create the task a second time.
+    stored.text.split('\n').slice(0, -1).forEach((line) => {
+      const found = taskFromNoteLine(line);
+      if (found) pickedKeysRef.current.add(found.name.toLowerCase());
+    });
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    if (canCreate) {
+      if (draft === lastStoredTextRef.current) return;
+      const kept = writeNoteDraft(draftKey, draft);
+      setDraftNotKept(!kept);
+      if (kept) {
+        ownsStoredDraftRef.current = true;
+        lastStoredTextRef.current = draft;
+      }
+    } else if (ownsStoredDraftRef.current) {
+      // The text was deleted here, so the kept copy goes too.
+      removeNoteDraft(draftKey);
+      ownsStoredDraftRef.current = false;
+      lastStoredTextRef.current = null;
+      setDraftNotKept(false);
+    }
+  }, [draft, draftKey, canCreate]);
+
+  useEffect(() => {
+    if (!draftKey) return undefined;
+    const onStorage = (event) => {
+      if (event.key !== draftKey) return;
+      // Another tab wrote, saved or discarded this draft: it is theirs now.
+      // Nothing here is cleared, so no typing in this tab is lost.
+      ownsStoredDraftRef.current = false;
+      lastStoredTextRef.current = null;
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [draftKey]);
+
+  function forgetStoredDraft() {
+    removeNoteDraft(draftKey);
+    ownsStoredDraftRef.current = false;
+    lastStoredTextRef.current = null;
+    setRestoredDraft(null);
+    setDraftNotKept(false);
+  }
+
+  function discardRestoredDraft() {
+    if (!window.confirm('Discard this unsaved note? It cannot be got back.')) return;
+    forgetStoredDraft();
+    setDraft('');
+  }
 
   // Stamp the first line the moment the empty box is focused, so it is there
   // before anything is typed. Typing renews it (stampFirstLine), so the time
@@ -512,6 +599,27 @@ export default function NotesPanel({
         {createError && (
           <p role="alert" className="mt-1 text-xs text-red-600">
             {createError}
+          </p>
+        )}
+
+        {restoredDraft && draft === restoredDraft.text && (
+          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-amber-700">
+            <span>
+              Unsaved note{restoredDraft.savedAt ? ` from ${DRAFT_TIME.format(new Date(restoredDraft.savedAt))}` : ''} restored.
+            </span>
+            <button
+              type="button"
+              onClick={discardRestoredDraft}
+              className="font-medium underline hover:text-amber-900"
+            >
+              Discard
+            </button>
+          </p>
+        )}
+
+        {draftNotKept && canCreate && (
+          <p role="alert" className="mt-1.5 text-xs text-red-600">
+            This browser is not keeping a copy of this note. Save it before closing the tab.
           </p>
         )}
 

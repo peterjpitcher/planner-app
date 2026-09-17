@@ -1,3 +1,13 @@
+# Keep unsaved notes in the browser (17 Sep 2026)
+
+Peter's answers: tasks from notes stay due today unless a date is written (no change); the normal project page keeps its usual tab title (no change); keep unsaved notes on the device (yes, approved storing note text in the browser).
+
+- [x] `lib/noteDrafts`: one draft per project, task or customer in localStorage; tolerant of storage being unavailable.
+- [x] NotesPanel: keep on change, restore with "Unsaved note from ... restored" and Discard (confirmed), remove on save, keep on failed save, warn when the browser will not keep it. A panel only removes a draft it wrote or restored, and gives it up when another tab writes, so a second tab cannot delete it. Lines finished before the tab closed are not picked up as tasks again.
+- [x] Sidebar sign-out wipes every note draft.
+
+Results: 881 tests in London and UTC. Real browser on a local harness: draft kept while typing, survived another tab clicking in and out of its empty box, restored after reload with the banner, failed save kept it, good save removed it, no duplicate task.
+
 # Project screen: tab title and tasks from notes (17 Sep 2026)
 
 - [x] Tab title is the project name on the project screen (#38). `useDocumentTitle` re-applies it, because Next.js streamed its metadata title in after load and overwrote a one-off `document.title` (and a React `<title>`).
