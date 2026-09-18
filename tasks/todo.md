@@ -1,3 +1,17 @@
+# Migration history drift (18 Sep 2026)
+
+Found: 446c4ba (anon drift check) and 677e50b (two applied migrations) never reached main; live history records the atomic promotion migration as 20260905164422 while the repo file was 20260905162045; 20260901000012 backfill is in the repo but not in live history.
+
+- [x] Branch `fix/migration-history-drift` from origin/main; cherry-pick 446c4ba and 677e50b (no conflicts).
+- [x] Rename the atomic promotion file to 20260905164422 (byte-identical to the live statement, md5 5bc32668...), and update the `\ir` in `supabase/__tests__/workflow-repairs.sql`.
+- [x] Confirm the two 5 Sep files carry the same SQL as live (comments differ only).
+- [x] Read-only live checks: anon catalogue matches the allowlist (6 stale trigger-function entries); no function missing a search_path; the 20260901000012 backfill has 207 links, all written 1 Sep 19:02 UTC, 0 left to insert.
+- [x] Lint, `npm test`, `npm run test:utc`, build; open PR.
+- [ ] Peter: approve `supabase migration repair --status applied 20260901000012` (history write only, no SQL runs).
+- [ ] Peter: approve merge.
+
+Results: lint clean; 906 tests pass and 2 skip (the live anon checks, which need SUPABASE_DB_URL) in London and in UTC; build passes. `supabase migration list --linked` now differs only on 20260901000012, and `db push --dry-run` lists only that file (behind `--include-all`). Parked: the 6 trigger-function entries in `supabase/anon-access-allowlist.js` are stale since 677e50b; b3002eb (AGENTS.md symlink, docs/codebase-map.md) is also only on local branches.
+
 # Keep unsaved notes in the browser (17 Sep 2026)
 
 Peter's answers: tasks from notes stay due today unless a date is written (no change); the normal project page keeps its usual tab title (no change); keep unsaved notes on the device (yes, approved storing note text in the browser).
