@@ -69,7 +69,6 @@ Route, service, key-file, cron and table reference: **`docs/codebase-map.md`**. 
 - **Cron.** Vercel cron runs in UTC, so each job is listed twice in `vercel.json` an hour apart and the route checks the London hour or send window; `claimCronRun` (unique `cron_runs(operation, run_date)`) makes the second firing a no-op.
 - **Attachments.** Private Storage bucket `attachments`. `auth.uid()` is NULL under NextAuth, so storage policies cannot help: the server mints a signed upload URL, the browser uploads with `src/lib/supabaseBrowser.js`, then `finalise` confirms the object. That is the only client-side Supabase use; never add another (the unused `src/contexts/SupabaseContext.js` must not become one).
 - **OpenAI** powers the AI day-planner draft, journal summaries and journal cleanup.
-- **Email follow-ups** (`/email-follow-ups`, `email_follow_ups`). The inbox worker ("Jordan") runs outside this app and calls `/api/cron/email-follow-ups` on demand with the cron secret; it is not on a Vercel schedule. The worker owns the thread fields and proposed draft; `feedback` and `urgent` are Peter's, and a sync must never write them.
 
 ## Environment variables
 
@@ -85,7 +84,6 @@ OPENAI_API_KEY, JOURNAL_CLEANUP_MODEL
 EMAIL_ACTION_SECRET
 MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID, MICROSOFT_USER_EMAIL, OFFICE365_AUTO_SYNC_MINUTES
 DAILY_TASK_EMAIL_FROM / TO / HOUR / MINUTE / WINDOW_MINUTES / TIME_ZONE, DIGEST_USER_EMAIL, DIGEST_USER_ID, DIGEST_DASHBOARD_URL
-EMAIL_FOLLOWUPS_USER_ID, EMAIL_FOLLOWUPS_USER_EMAIL   # fall back to DIGEST_USER_*, then MICROSOFT_USER_EMAIL
 ```
 
 ## Security rules

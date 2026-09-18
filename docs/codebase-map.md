@@ -10,7 +10,6 @@ Reference material moved out of `CLAUDE.md` on 2026-09-04 so that file holds onl
 | `/plan` | Kanban board across task states |
 | `/projects` | Project list, workspace and radar |
 | `/customers`, `/customers/setup` | Customer records, contacts and facts; `setup` is the stakeholder triage screen |
-| `/email-follow-ups` | Follow-ups: email threads awaiting a reply from Peter or a chase, with proposed drafts |
 | `/focus/project/[id]` | One project full-window for screen sharing (notes, quick task add, files), no app chrome and no links out |
 | `/calendar` | Month calendar with drag-to-reschedule |
 | `/ideas` | Idea vault, promotes to tasks |
@@ -22,7 +21,7 @@ Reference material moved out of `CLAUDE.md` on 2026-09-04 so that file holds onl
 
 ## API route groups (`src/app/api/`)
 
-- Data: `tasks` (+ `batch`, `sort-order`), `projects` (+ `[id]`, `radar`, `[id]/impact`), `customers` (+ `triage`, `[id]/overview`, `timeline`, `impact`, `facts`), `contacts`, `notes` (+ `batch`), `ideas` (+ `[id]/promote`), `journal/entries` (+ `cleanup`), `journal/summary`, `email-follow-ups` (+ `[id]`), `attachments` (`upload-url`, `[id]/finalise`, `[id]/url`), `search`, `unfiled`, `areas`, `completed-items`, `user-settings`, `automations`, `autopilot/clear`, `planning-candidates`, `planning-sessions`, `planning/ai-draft`.
+- Data: `tasks` (+ `batch`, `sort-order`), `projects` (+ `[id]`, `radar`, `[id]/impact`), `customers` (+ `triage`, `[id]/overview`, `timeline`, `impact`, `facts`), `contacts`, `notes` (+ `batch`), `ideas` (+ `[id]/promote`), `journal/entries` (+ `cleanup`), `journal/summary`, `attachments` (`upload-url`, `[id]/finalise`, `[id]/url`), `search`, `unfiled`, `areas`, `completed-items`, `user-settings`, `automations`, `autopilot/clear`, `planning-candidates`, `planning-sessions`, `planning/ai-draft`.
 - Auth: `auth/[...nextauth]`, plus the development/admin-gated `auth/debug-session`, `auth/session-test`, `auth/verify-config`, `debug-env` and `admin/migrate`.
 - Public by design (see `src/middleware.js`): `actions/[token]`, `cron/*`, `health/app`, `health/supabase`, `integrations/office365/callback`.
 - Office 365: `integrations/office365/connect`, `callback`, `status`, `sync`, `disconnect`.
@@ -40,11 +39,9 @@ Reference material moved out of `CLAUDE.md` on 2026-09-04 so that file holds onl
 
 Each job appears twice because Vercel cron runs in UTC and the app works in Europe/London; the route decides which firing is the real one.
 
-`/api/cron/email-follow-ups` is deliberately not scheduled. It is the bridge for the inbox worker ("Jordan"), which runs outside this app and calls it on demand with the cron secret: `GET` returns the worklist, `POST` upserts scanned threads, records sends and updates sync-owned fields.
-
 ## Services (`src/services/`)
 
-`taskService`, `projectLifecycleService`, `projectRadarService`, `customerService`, `contactService`, `noteService`, `ideaService`, `journalService`, `attachmentService`, `searchService`, `autopilotService`, `aiPlannerService`, `dailyTaskEmailService`, `emailFollowUpService`, `automationStatusService`, `office365SyncService`, `office365ConnectionService`.
+`taskService`, `projectLifecycleService`, `projectRadarService`, `customerService`, `contactService`, `noteService`, `ideaService`, `journalService`, `attachmentService`, `searchService`, `autopilotService`, `aiPlannerService`, `dailyTaskEmailService`, `automationStatusService`, `office365SyncService`, `office365ConnectionService`.
 
 ## Key files
 
@@ -80,7 +77,6 @@ Each job appears twice because Vercel cron runs in UTC and the app works in Euro
 - Customers (September 2026): `customers`, `customer_facts`, `contacts`, `project_contacts`, `stakeholder_resolutions`, `projects_stakeholders_archive`.
 - Files: `attachments` rows plus the private Storage bucket `attachments` (25 MB per file, 2 GB per user, reconciled weekly by cron).
 - Office 365: `office365_connections`, `office365_project_lists`, `office365_task_items`.
-- Follow-ups: `email_follow_ups` (one row per thread; the worker never writes Peter's `feedback` or `urgent`).
 - Recurrence: `task_recurrence_spawns`, a receipt per completed recurring task written by `spawn_task_recurrence`, so its next occurrence is created once; service role only.
 - `event_reminder_runs` exists but nothing in `src/` reads or writes it.
 - Users are `auth.users`; there is no application users table.
