@@ -132,7 +132,7 @@ INSERT INTO auth.users SELECT owner_id FROM fixture_ids UNION ALL SELECT other_i
 INSERT INTO public.tasks(user_id,name,state,recurrence,due_date)
   SELECT owner_id,'Legacy completed recurrence','done','daily','2030-03-10' FROM fixture_ids;
 
-\ir ../migrations/20260905162045_atomic_promotion_and_recurrence.sql
+\ir ../migrations/20260905164422_atomic_promotion_and_recurrence.sql
 
 DO $$
 DECLARE
