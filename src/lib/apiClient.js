@@ -764,39 +764,6 @@ class APIClient {
     clearCache('projects-false');
     return result?.data ?? result;
   }
-
-  // Email follow-ups (reply-and-chase tracker). No client cache: the list is a
-  // live worklist and every read should reflect the latest scan.
-
-  async getFollowUps(filters = {}) {
-    const params = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) params.append(key, String(value));
-    });
-    const query = params.toString();
-    const response = await this.fetchWithAuth(`/api/email-follow-ups${query ? `?${query}` : ''}`);
-    return response.data || [];
-  }
-
-  async createFollowUp(payload) {
-    const result = await this.fetchWithAuth('/api/email-follow-ups', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    return result?.data ?? result;
-  }
-
-  async updateFollowUp(id, updates) {
-    const result = await this.fetchWithAuth(`/api/email-follow-ups/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(updates),
-    });
-    return result?.data ?? result;
-  }
-
-  async deleteFollowUp(id) {
-    return this.fetchWithAuth(`/api/email-follow-ups/${id}`, { method: 'DELETE' });
-  }
 }
 
 /**
