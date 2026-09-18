@@ -202,8 +202,9 @@ describe('the allowlist itself', () => {
 
     expect(
       callable,
-      'Every allowlisted function must either return `trigger`, and so be impossible to '
-      + 'invoke directly, or belong to the pg_trgm extension. These do neither: '
+      'Every allowlisted function must either be named in TRIGGER_ONLY_FUNCTIONS (empty '
+      + 'since the trigger functions were revoked on 5 September 2026) or belong to the '
+      + 'pg_trgm extension. These are neither: '
       + `${callable.join(', ')}. A callable RPC reachable by anon is drift, not a `
       + 'configuration choice. Revoke it in a migration.',
     ).toEqual([]);

@@ -7,10 +7,12 @@ Found: 446c4ba (anon drift check) and 677e50b (two applied migrations) never rea
 - [x] Confirm the two 5 Sep files carry the same SQL as live (comments differ only).
 - [x] Read-only live checks: anon catalogue matches the allowlist (6 stale trigger-function entries); no function missing a search_path; the 20260901000012 backfill has 207 links, all written 1 Sep 19:02 UTC, 0 left to insert.
 - [x] Lint, `npm test`, `npm run test:utc`, build; open PR.
-- [ ] Peter: approve `supabase migration repair --status applied 20260901000012` (history write only, no SQL runs).
-- [ ] Peter: approve merge.
+- [x] Trim the 6 stale trigger-function entries from the anon allowlist.
+- [ ] `supabase migration repair --status applied 20260901000012` (history write only, no SQL runs).
+- [ ] Merge #43, verify the deployment, tidy the branch.
+- [ ] b3002eb (AGENTS.md symlink, docs/codebase-map.md) in its own PR, without overwriting main's CLAUDE.md.
 
-Results: lint clean; 906 tests pass and 2 skip (the live anon checks, which need SUPABASE_DB_URL) in London and in UTC; build passes. `supabase migration list --linked` now differs only on 20260901000012, and `db push --dry-run` lists only that file (behind `--include-all`). Parked: the 6 trigger-function entries in `supabase/anon-access-allowlist.js` are stale since 677e50b; b3002eb (AGENTS.md symlink, docs/codebase-map.md) is also only on local branches.
+Results: lint clean; 906 tests pass and 2 skip (the live anon checks, which need SUPABASE_DB_URL) in London and in UTC; build passes. `supabase migration list --linked` now differs only on 20260901000012, and `db push --dry-run` lists only that file (behind `--include-all`). Peter approved all four follow-ups on 18 Sep: the history repair, the merge, trimming the 6 stale trigger-function entries from `supabase/anon-access-allowlist.js` (done: 52 entries, matches live, a re-grant is caught), and bringing b3002eb over in a separate PR.
 
 # Keep unsaved notes in the browser (17 Sep 2026)
 
