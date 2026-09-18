@@ -8,9 +8,9 @@ Found: 446c4ba (anon drift check) and 677e50b (two applied migrations) never rea
 - [x] Read-only live checks: anon catalogue matches the allowlist (6 stale trigger-function entries); no function missing a search_path; the 20260901000012 backfill has 207 links, all written 1 Sep 19:02 UTC, 0 left to insert.
 - [x] Lint, `npm test`, `npm run test:utc`, build; open PR.
 - [x] Trim the 6 stale trigger-function entries from the anon allowlist.
-- [ ] `supabase migration repair --status applied 20260901000012` (history write only, no SQL runs).
-- [ ] Merge #43, verify the deployment, tidy the branch.
-- [ ] b3002eb (AGENTS.md symlink, docs/codebase-map.md) in its own PR, without overwriting main's CLAUDE.md.
+- [x] `supabase migration repair --status applied 20260901000012` (history write only, no SQL runs). `migration list --linked` matches on all 47 versions; `db push --dry-run` says the remote is up to date.
+- [x] Merge #43 (36a8087), Production deployment succeeded, branch deleted.
+- [x] b3002eb (AGENTS.md symlink, CLAUDE.md rewrite, docs/codebase-map.md) cherry-picked cleanly: main's CLAUDE.md had not changed since 1 Sep. Every claim re-checked against the repo; added what arrived after 4 Sep (email follow-ups, focus screen, `test:utc`, anon drift check, migration naming).
 
 Results: lint clean; 906 tests pass and 2 skip (the live anon checks, which need SUPABASE_DB_URL) in London and in UTC; build passes. `supabase migration list --linked` now differs only on 20260901000012, and `db push --dry-run` lists only that file (behind `--include-all`). Peter approved all four follow-ups on 18 Sep: the history repair, the merge, trimming the 6 stale trigger-function entries from `supabase/anon-access-allowlist.js` (done: 52 entries, matches live, a re-grant is caught), and bringing b3002eb over in a separate PR.
 
