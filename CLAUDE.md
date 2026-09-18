@@ -16,8 +16,10 @@ Workspace standards live in `/Users/peterpitcher/Cursor/CLAUDE.md`; read that fi
 ```bash
 npm run dev / build / start
 npm run lint          # next lint: deprecated, breaks on Next.js 16, migration pending
-npm test              # vitest run; test:watch to watch
+npm test              # vitest run pinned to Europe/London; test:watch to watch
+npm run test:utc      # the same suite in UTC, the serverless runtime's zone; keep both green
 npx supabase db push  # migrations live in supabase/migrations/
+npx supabase migration list --linked   # must match the repo after every migration
 ```
 
 ## Architecture
@@ -67,6 +69,7 @@ Route, service, key-file, cron and table reference: **`docs/codebase-map.md`**. 
 - **Cron.** Vercel cron runs in UTC, so each job is listed twice in `vercel.json` an hour apart and the route checks the London hour or send window; `claimCronRun` (unique `cron_runs(operation, run_date)`) makes the second firing a no-op.
 - **Attachments.** Private Storage bucket `attachments`. `auth.uid()` is NULL under NextAuth, so storage policies cannot help: the server mints a signed upload URL, the browser uploads with `src/lib/supabaseBrowser.js`, then `finalise` confirms the object. That is the only client-side Supabase use; never add another (the unused `src/contexts/SupabaseContext.js` must not become one).
 - **OpenAI** powers the AI day-planner draft, journal summaries and journal cleanup.
+- **Email follow-ups** (`/email-follow-ups`, `email_follow_ups`). The inbox worker ("Jordan") runs outside this app and calls `/api/cron/email-follow-ups` on demand with the cron secret; it is not on a Vercel schedule. The worker owns the thread fields and proposed draft; `feedback` and `urgent` are Peter's, and a sync must never write them.
 
 ## Environment variables
 
@@ -82,13 +85,16 @@ OPENAI_API_KEY, JOURNAL_CLEANUP_MODEL
 EMAIL_ACTION_SECRET
 MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID, MICROSOFT_USER_EMAIL, OFFICE365_AUTO_SYNC_MINUTES
 DAILY_TASK_EMAIL_FROM / TO / HOUR / MINUTE / WINDOW_MINUTES / TIME_ZONE, DIGEST_USER_EMAIL, DIGEST_USER_ID, DIGEST_DASHBOARD_URL
+EMAIL_FOLLOWUPS_USER_ID, EMAIL_FOLLOWUPS_USER_EMAIL   # fall back to DIGEST_USER_*, then MICROSOFT_USER_EMAIL
 ```
 
 ## Security rules
 
 - **Never reintroduce a `USING (true)` policy**: it silently disables every other policy on the table. `projects` and `tasks` carried one for `authenticated`; permissive policies OR together, so any Supabase-authenticated JWT could read and write every row through PostgREST with the public anon key. `20260901000001_phase0_foundations.sql` dropped both (applied live 2026-09-01, verified: zero permissive policies remain). Every table since is per-user only.
+- **Anon grants.** Since 5 September 2026 objects created by migrations no longer inherit anon rights (`20260905053043`), but still state grants explicitly in every migration. `supabase/__tests__/anon-access.test.js` compares the live catalogue with `supabase/anon-access-allowlist.js`; after a migration that creates or changes grants, run it with `SUPABASE_DB_URL` set. It skips without one.
 - Security headers live in `next.config.mjs`. There is deliberately no Content-Security-Policy: App Router inline bootstrap scripts need per-request nonces, and a broken CSP is worse than none. Add one only as its own piece of work.
 
 ## Gotchas
 
+- **A migration file must carry the version live history recorded.** Apply with `npx supabase db push` so the two agree. The Supabase MCP `apply_migration` takes no version and records the time it ran, and `execute_sql` records nothing. That is how live history came to hold `20260905164422` for a file named `20260905162045`, and how `20260901000012` ran without being recorded (both fixed 18 September 2026). If a migration is applied any other way, rename the file to the recorded version or, once Peter approves, `supabase migration repair`, then check `migration list --linked`.
 - Vitest excludes `**/.claude/**` so git worktrees under `.claude/worktrees/` do not get their duplicate test files discovered. Keep that exclusion.
