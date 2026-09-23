@@ -1,3 +1,12 @@
+# Jordan drafts in Outlook; Follow-ups retired from Planner (18 Sep 2026)
+
+Spec: `docs/superpowers/specs/2026-09-18-jordan-outlook-drafts-design.md`. Plans in `docs/superpowers/plans/2026-09-18-jordan-plan-*.md`: A is Jordan's runtime (in `/Users/peterpitcher/Cursor/1 My Agents`), B removes Follow-ups from Planner, C archives and drops the table.
+
+- [x] Plan B: the Follow-ups page, API, inbox bridge and helpers removed (PR #45, deployment `5v8wF6wiUdcxHMzFA3hfQmcFEmq6`); the cron route returns 404.
+- [x] Plan C: `email_follow_ups` archived to `email_follow_ups_archive` (84 rows, service_role SELECT only) and dropped (PR #46, migration 20260918105144 applied and verified on live).
+- [ ] Plan A: Jordan's handover of the 67 open tracker rows, the cutover to the hourly task and two clean hand-started runs.
+- [ ] Review the email_follow_ups_archive (90 days after the drop, around 17 Dec 2026): keep it, export it, or drop it with Peter's yes.
+
 # Migration history drift (18 Sep 2026)
 
 Found: 446c4ba (anon drift check) and 677e50b (two applied migrations) never reached main; live history records the atomic promotion migration as 20260905164422 while the repo file was 20260905162045; 20260901000012 backfill is in the repo but not in live history.

@@ -42,18 +42,27 @@
   - `CLAUDE.md` (lines 72 and 88)
   - `docs/codebase-map.md` (lines 13, 25, 43 and 83)
 
-- [ ] Delete the ten files. Remove each block, and remove the imports that only those blocks used (keep `isValidEmail`).
-- [ ] Run a case-sensitive `git grep -n -E 'email_follow_ups|email-follow-ups|EMAIL_FOLLOWUPS|emailFollowUp|FOLLOWUP_|FollowUpList|outlookWebLink|Follow-ups' -- src supabase CLAUDE.md docs/codebase-map.md`. The only allowed hits are `supabase/migrations/20260915000001_email_follow_ups.sql` and `src/lib/noteTasks.js:21`.
-- [ ] Run the four gates. The build route list must not include `/email-follow-ups`, `/api/email-follow-ups`, `/api/email-follow-ups/[id]` or `/api/cron/email-follow-ups`.
-- [ ] Commit:
+- [x] Delete the ten files. Remove each block, and remove the imports that only those blocks used (keep `isValidEmail`).
+- [x] Run a case-sensitive `git grep -n -E 'email_follow_ups|email-follow-ups|EMAIL_FOLLOWUPS|emailFollowUp|FOLLOWUP_|FollowUpList|outlookWebLink|Follow-ups' -- src supabase CLAUDE.md docs/codebase-map.md`. The only allowed hits are `supabase/migrations/20260915000001_email_follow_ups.sql` and `src/lib/noteTasks.js:21`.
+- [x] Run the four gates. The build route list must not include `/email-follow-ups`, `/api/email-follow-ups`, `/api/email-follow-ups/[id]` or `/api/cron/email-follow-ups`.
+- [x] Commit:
   - the spec, the review and the three plans, as `docs:`;
   - the removal, as `chore: remove the email Follow-ups feature from Planner`.
 
 ### Task B2: Pull request, merge, deploy and verify
 
-- [ ] **Precondition:** every Jordan run since the cutover has logged the new prompt's hash (Plan A13).
-- [ ] Push, then open a pull request that records the assumptions and the paired-repository note (none: the website does not use this feature).
-- [ ] Merge to main (Vercel deploys), then record the deployment.
-- [ ] Verify: `GET` and `POST /api/cron/email-follow-ups` with no credentials return 404 (previously 401). `/email-follow-ups` signed out still returns 307 to `/login`.
-- [ ] Tidy: delete the local branches `feat/follow-ups-tracker`, `feat/followups-table` and `chore/remove-email-follow-ups` (after the merge). Never delete `feat/email-follow-ups` or `chore/agent-instruction-files`.
+- [ ] **Precondition:** every Jordan run since the cutover has logged the new prompt's hash (Plan A13). *Not met when merged: see Results.*
+- [x] Push, then open a pull request that records the assumptions and the paired-repository note (none: the website does not use this feature).
+- [x] Merge to main (Vercel deploys), then record the deployment.
+- [x] Verify: `GET` and `POST /api/cron/email-follow-ups` with no credentials return 404 (previously 401). `/email-follow-ups` signed out still returns 307 to `/login`.
+- [x] Tidy: delete the local branches `feat/follow-ups-tracker`, `feat/followups-table` and `chore/remove-email-follow-ups` (after the merge). Never delete `feat/email-follow-ups` or `chore/agent-instruction-files`.
 - [ ] Peter's actions: remove `EMAIL_FOLLOWUPS_USER_ID` and `EMAIL_FOLLOWUPS_USER_EMAIL` in all three Vercel environments, and confirm there is no Follow-ups link in the sidebar when he is signed in.
+
+## Results
+
+- **Merged and live:** PR #45 (merge 65f4148), production deployment `5v8wF6wiUdcxHMzFA3hfQmcFEmq6`.
+- **Checked in production:** `GET` and `POST /api/cron/email-follow-ups` with no credentials return 404 (previously 401). `/email-follow-ups` signed out returns 307 to `/login`.
+- **References:** the case-sensitive grep finds only the allowed hits in `src` (`src/lib/noteTasks.js:21`) plus the migrations, restore and tests for the table.
+- **Order changed:** on 18 September Peter asked for the work to be finished without further stops, so this plan was merged after G1 (the P9 send block) and a partial G2 dry run (7 of 67 rows, stopped because it was slow), before the handover and the two hand-started hourly runs of A13. Nothing in Jordan's new loop reads Planner, so this changed only the rollback: reverting PR #45 and running `supabase/restore/restore_email_follow_ups.sql` brings the old tracker back.
+- **Tidied:** the local branches `feat/follow-ups-tracker`, `feat/followups-table` and `chore/remove-email-follow-ups` and the remote `chore/remove-email-follow-ups` are deleted (all fully merged); the worktree is removed.
+- **Still Peter's:** remove `EMAIL_FOLLOWUPS_USER_ID` and `EMAIL_FOLLOWUPS_USER_EMAIL` from all three Vercel environments, and confirm there is no Follow-ups link in the sidebar when signed in.

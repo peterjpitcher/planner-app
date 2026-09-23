@@ -30,16 +30,16 @@
   - `supabase/__tests__/retire-email-follow-ups.sql`
   - `supabase/__tests__/run-retire-email-follow-ups.sh`
 
-- [ ] Capture the live catalogue with read-only SQL: the table's grants, indexes, trigger, policy and RLS flag. Save it as a comment block in the restore SQL, and write the grants explicitly.
-- [ ] Write the migration exactly as spec Part C, steps 1 to 6.
+- [x] Capture the live catalogue with read-only SQL: the table's grants, indexes, trigger, policy and RLS flag. Save it as a comment block in the restore SQL, and write the grants explicitly.
+- [x] Write the migration exactly as spec Part C, steps 1 to 6.
   - The function guard searches `pg_proc.prosrc` in every schema except `pg_catalog` and `information_schema`.
   - `pg_depend` covers views, materialised views, rules and policies.
   - The trigger guard uses `NOT tgisinternal`.
   - It also checks foreign keys that point to the table, and publications.
-- [ ] Write the restore SQL:
+- [x] Write the restore SQL:
   - recreate the table as `20260915000001` did, plus the captured grants;
   - copy the rows back, setting `customer_id` to null where the customer is gone, and skipping and listing any row whose user is gone.
-- [ ] Write the test harness.
+- [x] Write the test harness.
   - **The script** starts the local PostgreSQL 17 cluster if needed (port 55432, as in `tasks/fix-function/2026-09-05-discovery-repairs/migration-approval.md`), creates a throwaway database, runs the SQL test with `ON_ERROR_STOP`, and always drops the database.
   - **The SQL test:**
     - sets up the live default privileges and stubs `auth.users`, `customers` and `update_updated_at_column`;
@@ -47,16 +47,27 @@
     - applies the retirement migration, and asserts archive equality, exact grants and that the source is gone;
     - runs the restore, and asserts the catalogue and rows equal the originals;
     - runs two negative tests (a view, and a plpgsql function reading the table), each of which must abort the migration with nothing changed.
-- [ ] Run the harness until it passes. Also run `npm run lint`, `npm test`, `npm run test:utc` and `npm run build`.
-- [ ] Commit as `chore: archive and drop the retired email_follow_ups table`.
+- [x] Run the harness until it passes. Also run `npm run lint`, `npm test`, `npm run test:utc` and `npm run build`.
+- [x] Commit as `chore: archive and drop the retired email_follow_ups table`.
 
 ### Task C2: Apply and verify
 
-- [ ] **Preconditions:** Plan B has been verified in production, and the bridge route returns 404.
-- [ ] Open a pull request and merge it. Apply the migration with `npx supabase db push` (history matches since PR #43).
-- [ ] Verify with read-only SQL:
+- [x] **Preconditions:** Plan B has been verified in production, and the bridge route returns 404.
+- [x] Open a pull request and merge it. Apply the migration with `npx supabase db push` (history matches since PR #43).
+- [x] Verify with read-only SQL:
   - the archive row count equals the final count (84 unless changed);
   - the source table is gone;
   - `information_schema.role_table_grants` shows `service_role` with SELECT only, and nothing for `anon` or `authenticated`.
-- [ ] Confirm the anon drift test still passes.
-- [ ] Add "Review the email_follow_ups_archive (90 days after the drop)" to `tasks/todo.md` as an unticked item.
+- [x] Confirm the anon drift test still passes.
+- [x] Add "Review the email_follow_ups_archive (90 days after the drop)" to `tasks/todo.md` as an unticked item.
+
+## Results
+
+- **Tests:** the throwaway-database harness passed all 54 assertions on PostgreSQL 17, including the restore and the two negative tests.
+- **Main after both merges (2e85c16):** lint clean; 886 tests pass and 2 skip (the live anon checks) in London and in UTC; the build passes and lists no Follow-ups routes.
+- **Merged:** PR #46 (merge 2e85c16), production deployment `HMupThzvRE5vPcWCfyAJbd8bQX9M` (SQL and tests only; the app did not change). After the deploy, `/login` returns 200 and `/api/cron/email-follow-ups` returns 404.
+- **Applied:** `npx supabase db push` on 18 September at about 19:21 London time. Just before it, the live table held 84 rows, last written at 06:37:44 UTC, and no archive existed. The migration reported "Archived 84 email_follow_ups row(s); every column matches in both directions".
+- **Verified with read-only SQL:** `public.email_follow_ups` is gone; `email_follow_ups_archive` holds 84 rows with 84 distinct ids and the same last update; RLS is on with no policies; the only grant is `service_role:SELECT`, with nothing for `anon` or `authenticated`; the table comment carries the snapshot date; `20260918105144` is recorded in live history and `migration list --linked` matches.
+- **Anon check:** `SUPABASE_DB_URL` is not set locally, so the live test would skip. The same `ANON_CATALOGUE_QUERY` was run read-only through the Supabase connector and compared with `diffAnonAccess`: 52 entries, no findings, nothing stale.
+- **Order changed:** this ran while Jordan's live handover was still going, before A13 (see Plan B's Results). The handover works from a frozen export, not the table, so it was unaffected.
+- **Follow-up:** "Review the email_follow_ups_archive" is in `tasks/todo.md` for mid-December 2026.
