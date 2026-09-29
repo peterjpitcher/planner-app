@@ -27,8 +27,11 @@
  *   picked anon up with nobody having written a grant.
  *
  *   `20260905053043_default_privileges_stop_anon_inheriting.sql` removed the
- *   `postgres` entries' anon grants (and PUBLIC's EXECUTE on functions) on
- *   5 September 2026, so objects created by migrations no longer inherit anon.
+ *   `postgres` entries' anon grants on 5 September 2026. Its revoke of PUBLIC's
+ *   EXECUTE on functions did nothing: a per-schema default cannot remove the
+ *   built-in global grant, and anon is a member of PUBLIC, so new functions
+ *   still reached anon until `20260929112357` revoked it globally for postgres.
+ *   From then, objects created by migrations no longer inherit anon.
  *   The `supabase_admin` entries still grant it and are not ours to change, and
  *   every object created before that date keeps the grant it was born with.
  *   This allowlist is the detection for both.
