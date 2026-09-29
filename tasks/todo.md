@@ -8,7 +8,7 @@ Peter asked to stop the end-of-day and end-of-week emails and make the morning e
 - [x] Rewrite the digest tests; add tests that the tidy jobs send no email.
 - [x] Lint, `npm test`, `npm run test:utc`, build; render a preview with fixture data.
 - [x] Overdue newest first (Peter's yes, 29 Sep), so the five shown are what has just slipped.
-- [ ] Ship on Peter's yes (given 29 Sep): PR, merge, verify the deployment.
+- [x] Shipped on Peter's yes: PR #48 merged (db39fdb), production deployment `dpl_71iPqouRdcTsRiBVnzcFGUVS3VCN` Ready and serving planner.orangejelly.co.uk. The 29 Sep evening tidy ran at 19:55, before the deploy, so that night's Daily Review still went out. First runs on the new code: morning email Wed 30 Sep 08:00, evening tidy Wed 30 Sep 19:55, Sunday tidy 4 Oct.
 
 Result: lint clean, 878 tests pass in London and UTC, build clean. Preview rendered from live tasks (5 Must Do, 19 overdue). Left in place: `/api/actions/[token]` and `emailActionToken.js` still verify old links but nothing signs new ones; removal is a separate change.
 
