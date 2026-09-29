@@ -1,113 +1,20 @@
-import { LONDON_TIME_ZONE, getLondonDateKey, getTimeZoneParts } from '@/lib/timezone';
+import { LONDON_TIME_ZONE, getLondonDateKey } from '@/lib/timezone';
 import { sortTasksByPriority } from '@/lib/taskSort';
-import { SOFT_CAPS, TODAY_SECTION_ORDER, CARRY_NUDGE_THRESHOLD, STATE, closedStatesFilter } from '@/lib/constants';
-import { listIdeasDueForReview } from '@/services/ideaService';
-import { fetchProjectRadar } from '@/services/projectRadarService';
-import { signActionToken } from '@/lib/emailActionToken';
+import { STATE, TODAY_SECTION, closedStatesFilter } from '@/lib/constants';
 
-// Wave 8 — tap-to-confirm email actions. When EMAIL_ACTION_SECRET is set the
-// digest carries freshly-signed, single-use tokens (a "Confirm today's plan"
-// button + a per-task "Done" link on overdue items, capped). When it is unset no
-// tokens are generated and the digest renders exactly as before (feature off).
-const ACTION_TOKEN_TTL_MINUTES = 2880; // 48h — see emailActionToken.js
-const DONE_LINK_CAP = 5; // never sign more than this many per-task Done links
+// The morning email, cut back on 29 Sep 2026 to be simple and to the point:
+// today's plan (Must Do first, then the rest of Today) and what has slipped past
+// its due date. Everything else Planner tracks (inbox, snoozes, chases, ideas,
+// stalled projects) stays in the app. The one-tap action buttons went too; they
+// had never been used.
 
-// Build the app origin used for absolute action URLs. DIGEST_DASHBOARD_URL /
-// NEXTAUTH_URL may include a path (e.g. .../dashboard); we only want the origin,
-// then append /api/actions/<token>.
-function actionsBaseUrl() {
-  const raw =
-    process.env.DIGEST_DASHBOARD_URL || process.env.NEXTAUTH_URL || 'https://planner.orangejelly.co.uk';
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return raw.replace(/\/+$/, '');
-  }
-}
+// Overdue rows shown before the list collapses to "and N more in Planner".
+const OVERDUE_CAP = 5;
 
-// Assemble the signed action URLs for a digest, or null when the feature is off.
-// Never throws — a signing problem simply yields no buttons.
-function buildDigestActions({ userId, overdue, inbox, snoozedToday }) {
-  if (!process.env.EMAIL_ACTION_SECRET) return null;
-  try {
-    const base = actionsBaseUrl();
-    const confirmToken = signActionToken({
-      userId,
-      action: 'confirm_plan',
-      ttlMinutes: ACTION_TOKEN_TTL_MINUTES,
-    });
-    const confirmPlanUrl = confirmToken ? `${base}/api/actions/${confirmToken}` : null;
-
-    // Sign Done links only for the overdue tasks the digest will actually SHOW.
-    // buildDigestEmail dedups the decision lists in precedence order (inbox and
-    // snoozedToday before overdue), so an overdue task also claimed by one of
-    // those is not rendered in the overdue group — mirror that here so the signed
-    // set matches the displayed set (otherwise a shown row could lack its link).
-    const claimedIds = new Set();
-    for (const t of (Array.isArray(inbox) ? inbox : [])) if (t?.id) claimedIds.add(t.id);
-    for (const t of (Array.isArray(snoozedToday) ? snoozedToday : [])) if (t?.id) claimedIds.add(t.id);
-    const displayedOverdue = (Array.isArray(overdue) ? overdue : [])
-      .filter((t) => t?.id && !claimedIds.has(t.id))
-      .slice(0, DONE_LINK_CAP);
-
-    const doneUrls = {};
-    for (const task of displayedOverdue) {
-      const taskId = task?.id;
-      if (!taskId) continue;
-      const token = signActionToken({
-        userId,
-        action: 'task_done',
-        taskId,
-        ttlMinutes: ACTION_TOKEN_TTL_MINUTES,
-      });
-      if (token) doneUrls[taskId] = `${base}/api/actions/${token}`;
-    }
-
-    if (!confirmPlanUrl && Object.keys(doneUrls).length === 0) return null;
-    return { confirmPlanUrl, doneUrls };
-  } catch {
-    return null;
-  }
-}
-
-// A4 — proposal-style morning digest. The email is a picture of the whole
-// planned day (all three Today sections, incl. undated tasks) plus what needs a
-// decision, not just already-dated Today tasks. It is READ-ONLY this wave: a
-// single app link, no per-task action links.
-
-// Number of rows shown per "Needs a decision" sub-list before it collapses to
-// "+N more"; keeps a rich email from getting long.
-const DECISION_LIST_CAP = 5;
-// Same idea for the ideas-to-revisit list.
-const IDEAS_CAP = 5;
-// Same idea for the stalled-projects list ("Projects needing a next action").
-const STALLED_PROJECTS_CAP = 5;
-// A 'waiting' task with no follow_up_date is stale once it has sat in state for
-// more than this many days (spec: "> 7 days in state with no follow_up_date").
-const WAITING_STALE_DAYS = 7;
-
-// Sentence-case chip labels, mirroring the UI's ChipBadge so the email reads the
-// same as the app.
-const CHIP_LABELS = {
-  high_impact: 'High impact',
-  urgent: 'Urgent',
-  blocks_others: 'Blocks others',
-  stress_relief: 'Stress relief',
-  only_i_can: 'Only I can',
-};
-
-// Section headers for "Your day" (plural "Quick Wins" for the header).
-const SECTION_HEADER_LABELS = {
-  must_do: 'Must Do',
-  good_to_do: 'Good to Do',
-  quick_wins: 'Quick Wins',
-};
-
-const SOFT_CAP_BY_SECTION = {
-  must_do: SOFT_CAPS.MUST_DO,
-  good_to_do: SOFT_CAPS.GOOD_TO_DO,
-  quick_wins: SOFT_CAPS.QUICK_WINS,
-};
+// Enough for the F1 priority comparator (chips, due_date, entered_state_at,
+// sort_order, created_at, name, id) plus what the email prints.
+const TASK_SELECT =
+  'id, name, due_date, state, today_section, chips, entered_state_at, sort_order, created_at, projects(name)';
 
 function normalizeDueDate(value) {
   if (!value) return null;
@@ -125,65 +32,25 @@ function escapeHtml(text) {
     .replaceAll("'", '&#039;');
 }
 
-// Add whole days to a YYYY-MM-DD key using UTC arithmetic (handles rollover).
-function addDaysToDateKey(dateKey, days) {
-  if (!dateKey) return null;
-  const [year, month, day] = String(dateKey).slice(0, 10).split('-').map(Number);
-  if (!year || !month || !day) return null;
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  if (Number.isNaN(dt.getTime())) return null;
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-}
-
-function formatDateLabel(dateKey, timeZone) {
+// "Fri 4 Sept" for a YYYY-MM-DD key. Noon UTC keeps the key on the same calendar
+// day in any zone.
+function formatShortDate(dateKey, timeZone) {
   const safeDate = new Date(`${dateKey}T12:00:00Z`);
   return new Intl.DateTimeFormat('en-GB', {
     timeZone,
     weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(safeDate);
-}
-
-function formatDueDateLabel(dateKey, timeZone) {
-  const safeDate = new Date(`${dateKey}T12:00:00Z`);
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    weekday: 'short',
-    day: '2-digit',
+    day: 'numeric',
     month: 'short',
   }).format(safeDate);
 }
 
 function getProjectName(task) {
-  if (!task?.projects) return 'Unassigned';
-  if (Array.isArray(task.projects)) {
-    return task.projects[0]?.name || 'Unassigned';
-  }
-  return task.projects.name || 'Unassigned';
-}
-
-function getChipLabels(chips) {
-  if (!Array.isArray(chips)) return [];
-  return chips.map((chip) => CHIP_LABELS[chip]).filter(Boolean);
+  const project = Array.isArray(task?.projects) ? task.projects[0] : task?.projects;
+  return project?.name || null;
 }
 
 function pluralise(count, singular, plural) {
   return count === 1 ? singular : (plural || `${singular}s`);
-}
-
-// Split a flat list of Today-state tasks into the three section buckets. Any row
-// with an unexpected section is dropped from "Your day" (Today rows always carry
-// a valid section via the DB constraint, so this only guards bad data).
-function groupTodayBySection(tasks = []) {
-  const grouped = { must_do: [], good_to_do: [], quick_wins: [] };
-  for (const task of tasks) {
-    const section = task?.today_section;
-    if (grouped[section]) grouped[section].push(task);
-  }
-  return grouped;
 }
 
 export async function resolveDigestUserId({ supabase, email }) {
@@ -218,600 +85,151 @@ export async function resolveDigestUserId({ supabase, email }) {
   throw new Error(`Unable to find Supabase user for email ${targetEmail}`);
 }
 
-// The columns the digest needs: enough for the F1 comparator (chips, due_date,
-// entered_state_at, sort_order, created_at, name, id) plus the fields the
-// decision/carried lenses read.
-const DIGEST_SELECT =
-  'id, name, due_date, state, today_section, project_id, chips, carried_count, carried_section, snooze_count, snoozed_until, follow_up_date, chase_count, entered_state_at, sort_order, created_at, projects(name)';
-
-// Run a select and degrade to [] on any error/throw. Auxiliary decision queries
-// must never take the whole digest down — a richer email has more failure
-// surface, so one failing lens simply renders as empty. No secrets are logged.
-async function safeRows(queryFn) {
-  try {
-    const { data, error } = await queryFn();
-    if (error) return [];
-    return data || [];
-  } catch {
-    return [];
-  }
-}
-
-async function safeCount(queryFn) {
-  try {
-    const { count, error } = await queryFn();
-    if (error) return 0;
-    return count || 0;
-  } catch {
-    return 0;
-  }
-}
-
 /**
- * Fetch and assemble every piece of the morning brief.
+ * Fetch what the morning email needs: every Today task (dated or not) and every
+ * overdue task outside Today. Both are the email's whole content, so a failed
+ * query throws rather than sending a silently incomplete email.
  *
- * Returns { dueToday, overdue, inboxCount, digest }: dueToday/overdue are real
- * task arrays (so the route's run-tracking counts stay correct), inboxCount is a
- * number, and digest is the assembled brief data passed straight to the builder.
+ * Returns { dueToday, overdue }, the raw task arrays.
  */
 export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) {
   if (!supabase) throw new Error('fetchOutstandingTasks: supabase is required');
   if (!userId) throw new Error('fetchOutstandingTasks: userId is required');
 
   const today = todayDateKey || getLondonDateKey();
-  // Strictly more than WAITING_STALE_DAYS in state → entered before this key.
-  const waitingStaleCutoff = addDaysToDateKey(today, -WAITING_STALE_DAYS);
 
-  // Primary query: every Today-state task (dated AND undated). The digest cannot
-  // render "Your day" without this, so a failure here throws (unlike the
-  // auxiliary lenses below, which degrade to empty).
-  const { data: todayRows, error: todayError } = await supabase
-    .from('tasks')
-    .select(DIGEST_SELECT)
-    .eq('user_id', userId)
-    .eq('state', 'today');
-
-  if (todayError) {
-    throw new Error(`Unable to fetch today tasks: ${todayError.message || todayError.toString()}`);
-  }
-
-  const todayTasks = todayRows || [];
-  const todayBySection = groupTodayBySection(todayTasks);
-
-  // Over-cap sections (a "Needs a decision" exception) — derived, not queried.
-  const overCapSections = [];
-  for (const section of TODAY_SECTION_ORDER) {
-    const count = todayBySection[section].length;
-    const cap = SOFT_CAP_BY_SECTION[section];
-    if (cap && count > cap) overCapSections.push({ section, count, cap });
-  }
-
-  // Carried-forward summary: Must Do carried from yesterday are Today tasks with
-  // carried_count > 0 (A1 only carries Must Do forward inside Today).
-  const mustDoCarried = todayTasks.filter((t) => (t.carried_count || 0) > 0).length;
-  // Carried-3-days exception: Today tasks that have been carried the threshold
-  // number of consecutive days.
-  const carried3Days = todayTasks.filter((t) => (t.carried_count || 0) >= CARRY_NUDGE_THRESHOLD);
-
-  const [
-    overdue,
-    inbox,
-    snoozedToday,
-    thriceSnoozed,
-    waitingRows,
-    thisWeekCarried,
-    ideasResult,
-    radarResult,
-  ] = await Promise.all([
-    // Overdue exceptions: due before today, not already in Today (surfaced in
-    // "Your day") and not done.
-    safeRows(() =>
-      supabase
-        .from('tasks')
-        .select(DIGEST_SELECT)
-        .eq('user_id', userId)
-        .lt('due_date', today)
-        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
-        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
-        .order('due_date', { ascending: true })
-        .order('created_at', { ascending: true })
-    ),
-    // Inbox awaiting triage (F3): captured/promoted/pulled items not yet triaged.
-    // Snooze-aware and excluding done (triage clears inbox, so the guard is
-    // defensive).
-    safeRows(() =>
-      supabase
-        .from('tasks')
-        .select(DIGEST_SELECT)
-        .eq('user_id', userId)
-        .eq('inbox', true)
-        .not('state', 'in', closedStatesFilter())
-        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
-        .order('created_at', { ascending: true })
-    ),
-    // Snooze returns today (F2): the task chose to reappear now, so it needs a
-    // decision this morning.
-    safeRows(() =>
-      supabase
-        .from('tasks')
-        .select(DIGEST_SELECT)
-        .eq('user_id', userId)
-        .eq('snoozed_until', today)
-        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
-        .order('created_at', { ascending: true })
-    ),
-    // Snoozed 3+ times (F2): a repeatedly-deferred item that should be decided.
-    safeRows(() =>
-      supabase
-        .from('tasks')
-        .select(DIGEST_SELECT)
-        .eq('user_id', userId)
-        .gte('snooze_count', 3)
-        .not('state', 'in', closedStatesFilter([STATE.TODAY]))
-        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
-        .order('snooze_count', { ascending: false })
-        .order('created_at', { ascending: true })
-    ),
-    // All 'waiting' tasks — stale ones are filtered in JS below (two rules that
-    // are awkward to express as one PostgREST predicate).
-    safeRows(() =>
-      supabase
-        .from('tasks')
-        .select(DIGEST_SELECT)
-        .eq('user_id', userId)
-        .eq('state', 'waiting')
-        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
-    ),
-    // Count of items now in This Week that were carried there (A1 demotion).
-    safeCount(() =>
-      supabase
-        .from('tasks')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('state', 'this_week')
-        .not('carried_section', 'is', null)
-    ),
-    // Ideas due for review (F4) — reuse the shared service.
-    listIdeasDueForReview({ supabase, userId }).catch(() => ({ data: [] })),
-    // Stalled open projects (Wave 5) — reuse the radar fetcher. It is internally
-    // resilient (returns an empty radar on a failed sub-query), and the extra
-    // catch guards any unexpected throw so a radar problem never takes the
-    // digest down. The morning nudge to un-stall a project.
-    fetchProjectRadar({ supabase, userId, nowMs: Date.now() }).catch(() => ({ projects: [], stalledCount: 0 })),
+  const [todayResult, overdueResult] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select(TASK_SELECT)
+      .eq('user_id', userId)
+      .eq('state', STATE.TODAY),
+    // Overdue: due before today, not already in Today (those are in the plan),
+    // not finished, and not snoozed beyond today.
+    supabase
+      .from('tasks')
+      .select(TASK_SELECT)
+      .eq('user_id', userId)
+      .lt('due_date', today)
+      .not('state', 'in', closedStatesFilter([STATE.TODAY]))
+      .or(`snoozed_until.is.null,snoozed_until.lte.${today}`),
   ]);
 
-  // Stale waiting follow-ups: follow_up_date is due (on or before today), OR no
-  // follow_up_date and the task has sat in 'waiting' for more than
-  // WAITING_STALE_DAYS. Uses <= today so a chase due exactly today is surfaced in
-  // the morning digest too, matching the evening plan's chaseDue bucket.
-  const staleWaiting = (waitingRows || []).filter((task) => {
-    const followUp = normalizeDueDate(task?.follow_up_date);
-    if (followUp) return followUp <= today;
-    if (!waitingStaleCutoff) return false;
-    const enteredKey = task?.entered_state_at ? getLondonDateKey(new Date(task.entered_state_at)) : null;
-    return enteredKey !== null && enteredKey < waitingStaleCutoff;
-  });
-
-  const ideas = ideasResult?.data || [];
-
-  // Only the stalled open projects reach the digest — the daily nudge is
-  // "these have no next action". The builder caps the visible list with
-  // "+N more", so the full stalled set is passed through.
-  const stalledProjects = (radarResult?.projects || []).filter((project) => project?.stalled);
-
-  const digest = {
-    todayDateKey: today,
-    todayBySection,
-    carried: {
-      mustDoCarried,
-      thisWeekCarried,
-    },
-    decisions: {
-      inbox,
-      snoozedToday,
-      overdue,
-      overCapSections,
-      staleWaiting,
-      thriceSnoozed,
-      carried3Days,
-    },
-    ideas,
-    stalledProjects,
-    // Signed tap-to-confirm action URLs (Wave 8), or null when the feature is off.
-    actions: buildDigestActions({ userId, overdue, inbox, snoozedToday }),
-  };
-
-  return { dueToday: todayTasks, overdue, inboxCount: inbox.length, digest };
-}
-
-// --- Rendering helpers (pure) ---------------------------------------------
-
-function renderTodayTaskText(task) {
-  const name = task?.name || '(Untitled task)';
-  const project = getProjectName(task);
-  const chips = getChipLabels(task?.chips);
-  const chipSuffix = chips.length ? ` — ${chips.join(', ')}` : '';
-  return `- ${name} (${project})${chipSuffix}`;
-}
-
-function renderTodayTaskHtml(task) {
-  const name = escapeHtml(task?.name || '(Untitled task)');
-  const project = escapeHtml(getProjectName(task));
-  const chips = getChipLabels(task?.chips);
-  const chipSuffix = chips.length
-    ? ` <span style="color:#888;font-size:12px;">[${escapeHtml(chips.join(', '))}]</span>`
-    : '';
-  return `<li>${name} <span style="color:#555;">(${project})</span>${chipSuffix}</li>`;
-}
-
-function renderDecisionTaskText(task, { timeZone, withDue, withChase, doneUrl } = {}) {
-  const name = task?.name || '(Untitled task)';
-  const project = getProjectName(task);
-  const due = withDue ? normalizeDueDate(task?.due_date) : null;
-  const dueSuffix = due ? ` — due ${formatDueDateLabel(due, timeZone)}` : '';
-  // Waiting chase engine (Wave 7): show how many times this waiting task has
-  // already been chased, so a repeatedly re-armed item reads its own history.
-  const chaseCount = withChase ? (Number(task?.chase_count) || 0) : 0;
-  const chaseSuffix = chaseCount > 0 ? ` — chased ${chaseCount}×` : '';
-  // Wave 8: signed one-tap "Done" link (overdue items only). The URL is safe.
-  const doneSuffix = doneUrl ? ` — Done: ${doneUrl}` : '';
-  return `- ${name} (${project})${dueSuffix}${chaseSuffix}${doneSuffix}`;
-}
-
-function renderDecisionTaskHtml(task, { timeZone, withDue, withChase, doneUrl } = {}) {
-  const name = escapeHtml(task?.name || '(Untitled task)');
-  const project = escapeHtml(getProjectName(task));
-  const due = withDue ? normalizeDueDate(task?.due_date) : null;
-  const dueSuffix = due ? ` <span style="color:#555;">— due ${escapeHtml(formatDueDateLabel(due, timeZone))}</span>` : '';
-  const chaseCount = withChase ? (Number(task?.chase_count) || 0) : 0;
-  const chaseSuffix = chaseCount > 0
-    ? ` <span style="color:#555;">— chased ${escapeHtml(String(chaseCount))}×</span>`
-    : '';
-  // Wave 8: signed one-tap "Done" link (overdue items only). The token is signed,
-  // so the URL is trusted; escape it defensively all the same.
-  const doneSuffix = doneUrl
-    ? ` <a href="${escapeHtml(doneUrl)}" style="color:#2563eb;text-decoration:none;font-size:12px;">[Done]</a>`
-    : '';
-  return `<li>${name} <span style="color:#555;">(${project})</span>${dueSuffix}${chaseSuffix}${doneSuffix}</li>`;
-}
-
-// Whole-day difference between two YYYY-MM-DD keys (toKey − fromKey), or null
-// when either key is malformed.
-function diffDaysBetweenKeys(fromKey, toKey) {
-  const [fy, fm, fd] = String(fromKey).slice(0, 10).split('-').map(Number);
-  const [ty, tm, td] = String(toKey).slice(0, 10).split('-').map(Number);
-  if (!fy || !fm || !fd || !ty || !tm || !td) return null;
-  const fromMs = Date.UTC(fy, fm - 1, fd);
-  const toMs = Date.UTC(ty, tm - 1, td);
-  return Math.round((toMs - fromMs) / 86400000);
-}
-
-// "last touched" phrasing for a stalled project, relative to today's London
-// date. Recent activity reads relatively (today / yesterday / N days ago); older
-// activity falls back to a plain date so the nudge never becomes vague.
-function formatLastTouched(lastActivityAt, todayDateKey, timeZone) {
-  if (!lastActivityAt) return 'not touched yet';
-  const activityDate = new Date(lastActivityAt);
-  if (Number.isNaN(activityDate.getTime())) return 'not touched yet';
-  let activityKey;
-  try {
-    activityKey = getTimeZoneParts(activityDate, timeZone).dateKey;
-  } catch {
-    return 'not touched yet';
+  if (todayResult.error) {
+    throw new Error(`Unable to fetch today tasks: ${todayResult.error.message || todayResult.error.toString()}`);
   }
-  const diff = diffDaysBetweenKeys(activityKey, todayDateKey);
-  if (diff === null) return `on ${formatDueDateLabel(activityKey, timeZone)}`;
-  if (diff <= 0) return 'today';
-  if (diff === 1) return 'yesterday';
-  if (diff < 7) return `${diff} days ago`;
-  return `on ${formatDueDateLabel(activityKey, timeZone)}`;
+  if (overdueResult.error) {
+    throw new Error(`Unable to fetch overdue tasks: ${overdueResult.error.message || overdueResult.error.toString()}`);
+  }
+
+  return { dueToday: todayResult.data || [], overdue: overdueResult.data || [] };
 }
 
-function renderStalledProjectText(project, { timeZone, todayDateKey } = {}) {
-  const name = project?.name || '(Untitled project)';
-  const area = project?.area ? ` (${project.area})` : '';
-  const touched = formatLastTouched(project?.lastActivityAt, todayDateKey, timeZone);
-  return `- ${name}${area} — last touched ${touched}`;
+// --- Rendering (pure) ------------------------------------------------------
+
+function renderTaskText(task, dueLabel) {
+  const name = task?.name || '(Untitled task)';
+  const project = getProjectName(task);
+  const projectSuffix = project ? ` (${project})` : '';
+  const dueSuffix = dueLabel ? `, due ${dueLabel}` : '';
+  return `- ${name}${projectSuffix}${dueSuffix}`;
 }
 
-function renderStalledProjectHtml(project, { timeZone, todayDateKey } = {}) {
-  const name = escapeHtml(project?.name || '(Untitled project)');
-  const areaHtml = project?.area ? ` <span style="color:#555;">(${escapeHtml(project.area)})</span>` : '';
-  const touched = escapeHtml(formatLastTouched(project?.lastActivityAt, todayDateKey, timeZone));
-  return `<li>${name}${areaHtml} <span style="color:#555;">— last touched ${touched}</span></li>`;
+function renderTaskHtml(task, dueLabel) {
+  const name = escapeHtml(task?.name || '(Untitled task)');
+  const project = getProjectName(task);
+  const projectSuffix = project ? ` <span style="color:#555;">(${escapeHtml(project)})</span>` : '';
+  const dueSuffix = dueLabel ? `<span style="color:#555;">, due ${escapeHtml(dueLabel)}</span>` : '';
+  return `<li>${name}${projectSuffix}${dueSuffix}</li>`;
 }
-
-// --- Pure builder ----------------------------------------------------------
 
 /**
- * Build the morning-brief email from plain data structures — no Supabase, no
- * Graph — so it is fully unit-testable. Returns { subject, html, text }, or null
- * when there is nothing to send.
+ * Build the morning email from plain task arrays, with no Supabase and no Graph,
+ * so it is fully unit-testable. Returns { subject, html, text }, or null when
+ * there is nothing planned and nothing overdue.
  *
  * @param {object} data
- * @param {string} data.todayDateKey
- * @param {object} [data.todayBySection] { must_do, good_to_do, quick_wins } arrays
- * @param {object} [data.carried] { mustDoCarried, thisWeekCarried }
- * @param {object} [data.decisions] { inbox, snoozedToday, overdue, overCapSections, staleWaiting, thriceSnoozed, carried3Days }
- * @param {object[]} [data.ideas] { title, area }
- * @param {object[]} [data.stalledProjects] stalled open projects { name, area, lastActivityAt }
- * @param {object} [data.actions] Wave 8 tap-to-confirm URLs { confirmPlanUrl, doneUrls: { [taskId]: url } }; absent = feature off
+ * @param {string} [data.todayDateKey] London date, YYYY-MM-DD
+ * @param {object[]} [data.dueToday] every Today-state task
+ * @param {object[]} [data.overdue] overdue tasks outside Today, in any order
  * @param {string} [data.dashboardUrl]
  * @param {string} [data.timeZone]
  */
-export function buildDigestEmail(data = {}) {
-  const timeZone = data.timeZone || LONDON_TIME_ZONE;
-  const today = data.todayDateKey || getLondonDateKey();
-  const dateLabel = formatDateLabel(today, timeZone);
+export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboardUrl, timeZone } = {}) {
+  const zone = timeZone || LONDON_TIME_ZONE;
+  const today = todayDateKey || getLondonDateKey();
+  const todayTasks = Array.isArray(dueToday) ? dueToday : [];
+  // Newest overdue first, so the capped list shows what has just slipped rather
+  // than the same long-ignored tasks every morning. Same due date: oldest
+  // created first.
+  const overdueTasks = (Array.isArray(overdue) ? [...overdue] : []).sort((a, b) => {
+    const dueA = normalizeDueDate(a?.due_date) || '';
+    const dueB = normalizeDueDate(b?.due_date) || '';
+    if (dueA !== dueB) return dueA < dueB ? 1 : -1;
+    return String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+  });
 
-  const rawSections = data.todayBySection || {};
-  // Sort each Today section by the F1 comparator (todayKey = today's London date)
-  // so "Your day" is pre-ranked. Done here (not in the fetch) so the pure builder
-  // owns ordering and tests can pass unsorted input.
-  const todayBySection = {};
-  let todayCount = 0;
-  for (const section of TODAY_SECTION_ORDER) {
-    const list = Array.isArray(rawSections[section]) ? rawSections[section] : [];
-    todayBySection[section] = sortTasksByPriority(list, { todayKey: today });
-    todayCount += list.length;
-  }
+  // Must Do first, then Good to Do, then Quick Wins, each ranked by the F1
+  // comparator so the email matches the order the app would suggest.
+  const rank = (list) => sortTasksByPriority(list, { todayKey: today });
+  const mustDo = rank(todayTasks.filter((t) => t?.today_section === TODAY_SECTION.MUST_DO));
+  const rest = [
+    ...rank(todayTasks.filter((t) => t?.today_section === TODAY_SECTION.GOOD_TO_DO)),
+    ...rank(todayTasks.filter((t) => t?.today_section === TODAY_SECTION.QUICK_WINS)),
+  ];
+  const todayCount = mustDo.length + rest.length;
 
-  const carried = data.carried || {};
-  const mustDoCarried = carried.mustDoCarried || 0;
-  const thisWeekCarried = carried.thisWeekCarried || 0;
-  const hasCarried = mustDoCarried > 0 || thisWeekCarried > 0;
+  if (todayCount === 0 && overdueTasks.length === 0) return null;
 
-  const decisions = data.decisions || {};
-  const overCapSections = decisions.overCapSections || [];
+  const baseUrl = dashboardUrl || process.env.NEXTAUTH_URL || 'https://planner.orangejelly.co.uk';
+  const dashboardLink = baseUrl.endsWith('/dashboard')
+    ? baseUrl
+    : `${baseUrl.replace(/\/$/, '')}/dashboard`;
 
-  // Dedup the task-based decision lists by id in precedence order, so a task that
-  // matches several lenses (e.g. overdue AND snoozed-returns-today) is listed and
-  // counted in only its highest-precedence group. overCapSections is section-based
-  // and not deduped.
-  const seenDecision = new Set();
-  const dedupeDecision = (list) => {
-    const out = [];
-    for (const t of (list || [])) {
-      const id = t && t.id != null ? t.id : null;
-      if (id != null) {
-        if (seenDecision.has(id)) continue;
-        seenDecision.add(id);
-      }
-      out.push(t);
-    }
-    return out;
-  };
-  const inbox = dedupeDecision(decisions.inbox);
-  const snoozedToday = dedupeDecision(decisions.snoozedToday);
-  const overdue = dedupeDecision(decisions.overdue);
-  const staleWaiting = dedupeDecision(decisions.staleWaiting);
-  const thriceSnoozed = dedupeDecision(decisions.thriceSnoozed);
-  const carried3Days = dedupeDecision(decisions.carried3Days);
-
-  const decisionCount =
-    inbox.length +
-    snoozedToday.length +
-    overdue.length +
-    overCapSections.length +
-    staleWaiting.length +
-    thriceSnoozed.length +
-    carried3Days.length;
-
-  const ideas = Array.isArray(data.ideas) ? data.ideas : [];
-  const stalledProjects = Array.isArray(data.stalledProjects) ? data.stalledProjects : [];
-
-  // Wave 8 tap-to-confirm actions. Absent (feature off) → no buttons rendered,
-  // digest identical to before.
-  const actions = (data.actions && typeof data.actions === 'object') ? data.actions : {};
-  const confirmPlanUrl = typeof actions.confirmPlanUrl === 'string' ? actions.confirmPlanUrl : null;
-  const doneUrls = (actions.doneUrls && typeof actions.doneUrls === 'object') ? actions.doneUrls : {};
-
-  // Nothing to say → no email (preserves the route's "no_outstanding_tasks").
-  // A digest whose only content is stalled projects still sends — the point of
-  // Wave 5 is that a silently-stalling project gets its morning nudge.
-  if (
-    todayCount === 0 &&
-    decisionCount === 0 &&
-    ideas.length === 0 &&
-    !hasCarried &&
-    stalledProjects.length === 0
-  ) {
-    return null;
-  }
-
-  const safeDashboardUrl = data.dashboardUrl || process.env.NEXTAUTH_URL || 'https://planner.orangejelly.co.uk';
-  const dashboardLink = safeDashboardUrl.endsWith('/dashboard')
-    ? safeDashboardUrl
-    : `${safeDashboardUrl.replace(/\/$/, '')}/dashboard`;
-
-  // --- Subject ---
+  // The date stays in the subject so Outlook does not thread each morning's
+  // email into one conversation.
   const subjectBits = [];
   if (todayCount) subjectBits.push(`${todayCount} ${pluralise(todayCount, 'task')} today`);
-  if (decisionCount) subjectBits.push(`${decisionCount} to decide`);
-  if (!todayCount && !decisionCount && ideas.length) {
-    subjectBits.push(`${ideas.length} ${pluralise(ideas.length, 'idea')} to revisit`);
-  }
-  if (!subjectBits.length) subjectBits.push('your morning brief');
-  const subject = `Planner: ${subjectBits.join(', ')} (${dateLabel})`;
+  if (overdueTasks.length) subjectBits.push(`${overdueTasks.length} overdue`);
+  const subject = `Planner: ${subjectBits.join(', ')} (${formatShortDate(today, zone)})`;
 
   const textParts = [];
   const htmlParts = [];
 
-  textParts.push(`Planner — morning brief for ${dateLabel}`);
-  textParts.push('');
-  htmlParts.push(`<h2 style="margin:0 0 12px 0;">Planner — morning brief</h2>`);
-  htmlParts.push(`<p style="margin:0 0 16px 0;color:#555;">${escapeHtml(dateLabel)}</p>`);
-
-  // --- 1. Your day ---
-  if (todayCount) {
-    textParts.push(`YOUR DAY (${todayCount})`);
-    htmlParts.push(`<h3 style="margin:18px 0 8px 0;">Your day (${todayCount})</h3>`);
-    for (const section of TODAY_SECTION_ORDER) {
-      const list = todayBySection[section];
-      if (!list.length) continue;
-      const header = SECTION_HEADER_LABELS[section];
-      textParts.push(`${header} (${list.length})`);
-      textParts.push(...list.map((t) => renderTodayTaskText(t)));
-      textParts.push('');
-      htmlParts.push(`<p style="margin:12px 0 4px 0;"><strong>${escapeHtml(header)}</strong> (${list.length})</p>`);
-      htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-      htmlParts.push(...list.map((t) => renderTodayTaskHtml(t)));
-      htmlParts.push('</ul>');
-    }
-  }
-
-  // --- 1b. Confirm today's plan (Wave 8, feature-flagged) ---
-  // A single tap-to-confirm button; the signed token URL is safe.
-  if (confirmPlanUrl) {
-    textParts.push(`Confirm today's plan: ${confirmPlanUrl}`);
+  const addSection = (title, rows, { dueDates = false, extra = 0 } = {}) => {
+    const dueLabelFor = (task) => {
+      if (!dueDates) return null;
+      const due = normalizeDueDate(task?.due_date);
+      return due ? formatShortDate(due, zone) : null;
+    };
+    textParts.push(title.toUpperCase());
+    textParts.push(...rows.map((t) => renderTaskText(t, dueLabelFor(t))));
+    if (extra > 0) textParts.push(`- and ${extra} more in Planner`);
     textParts.push('');
-    htmlParts.push(
-      `<p style="margin:12px 0 16px 0;"><a href="${escapeHtml(confirmPlanUrl)}" ` +
-      `style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 18px;` +
-      `border-radius:6px;text-decoration:none;font-weight:600;">Confirm today's plan</a></p>`
-    );
-  }
 
-  // --- 2. Carried forward ---
-  if (hasCarried) {
-    const bits = [];
-    if (mustDoCarried) bits.push(`${mustDoCarried} Must Do carried from yesterday`);
-    if (thisWeekCarried) bits.push(`${thisWeekCarried} ${pluralise(thisWeekCarried, 'item')} currently carried in This Week`);
-    const line = `Carried forward: ${bits.join('; ')}.`;
-    textParts.push(line);
-    textParts.push('');
-    htmlParts.push(`<p style="margin:18px 0 8px 0;color:#555;"><strong>Carried forward:</strong> ${escapeHtml(bits.join('; '))}.</p>`);
-  }
-
-  // --- 3. Needs a decision ---
-  const decisionGroups = [
-    { key: 'inbox', label: 'Inbox — awaiting triage', list: inbox, withDue: false },
-    { key: 'snoozedToday', label: 'Snooze returns today', list: snoozedToday, withDue: false },
-    { key: 'overdue', label: 'Overdue', list: overdue, withDue: true, doneUrls },
-    { key: 'staleWaiting', label: 'Waiting — needs a chase', list: staleWaiting, withDue: false, withChase: true },
-    { key: 'thriceSnoozed', label: 'Snoozed 3+ times — decide', list: thriceSnoozed, withDue: false },
-    { key: 'carried3Days', label: 'Carried 3+ days — still today?', list: carried3Days, withDue: false },
-  ];
-
-  if (decisionCount) {
-    textParts.push(`NEEDS A DECISION (${decisionCount})`);
-    htmlParts.push(`<h3 style="margin:18px 0 8px 0;">Needs a decision (${decisionCount})</h3>`);
-
-    // Over-capacity sections render as note lines, not a task list.
-    if (overCapSections.length) {
-      textParts.push('Over capacity');
-      htmlParts.push(`<p style="margin:12px 0 4px 0;"><strong>Over capacity</strong></p>`);
-      htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-      for (const { section, count, cap } of overCapSections) {
-        const header = SECTION_HEADER_LABELS[section] || section;
-        textParts.push(`- ${header}: ${count} (cap ${cap})`);
-        htmlParts.push(`<li>${escapeHtml(header)}: ${count} (cap ${cap})</li>`);
-      }
-      htmlParts.push('</ul>');
-      textParts.push('');
-    }
-
-    for (const group of decisionGroups) {
-      if (!group.list.length) continue;
-      const shown = group.list.slice(0, DECISION_LIST_CAP);
-      const extra = group.list.length - shown.length;
-      textParts.push(`${group.label} (${group.list.length})`);
-      textParts.push(...shown.map((t) => renderDecisionTaskText(t, { timeZone, withDue: group.withDue, withChase: group.withChase, doneUrl: group.doneUrls ? group.doneUrls[t?.id] : null })));
-      if (extra > 0) textParts.push(`- +${extra} more`);
-      textParts.push('');
-
-      htmlParts.push(`<p style="margin:12px 0 4px 0;"><strong>${escapeHtml(group.label)}</strong> (${group.list.length})</p>`);
-      htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-      htmlParts.push(...shown.map((t) => renderDecisionTaskHtml(t, { timeZone, withDue: group.withDue, withChase: group.withChase, doneUrl: group.doneUrls ? group.doneUrls[t?.id] : null })));
-      if (extra > 0) htmlParts.push(`<li>+${extra} more</li>`);
-      htmlParts.push('</ul>');
-    }
-  }
-
-  // --- 4. Ideas to revisit ---
-  if (ideas.length) {
-    const shown = ideas.slice(0, IDEAS_CAP);
-    const extra = ideas.length - shown.length;
-    textParts.push(`IDEAS TO REVISIT (${ideas.length})`);
-    htmlParts.push(`<h3 style="margin:18px 0 8px 0;">Ideas to revisit (${ideas.length})</h3>`);
-    htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-    for (const idea of shown) {
-      const title = idea?.title || '(Untitled idea)';
-      const area = idea?.area ? ` (${idea.area})` : '';
-      textParts.push(`- ${title}${area}`);
-      const areaHtml = idea?.area ? ` <span style="color:#555;">(${escapeHtml(idea.area)})</span>` : '';
-      htmlParts.push(`<li>${escapeHtml(title)}${areaHtml}</li>`);
-    }
-    if (extra > 0) {
-      textParts.push(`- +${extra} more`);
-      htmlParts.push(`<li>+${extra} more</li>`);
-    }
+    htmlParts.push(`<p style="margin:0 0 4px 0;"><strong>${escapeHtml(title)}</strong></p>`);
+    htmlParts.push('<ul style="margin:0 0 16px 18px;padding:0;">');
+    htmlParts.push(...rows.map((t) => renderTaskHtml(t, dueLabelFor(t))));
+    if (extra > 0) htmlParts.push(`<li style="color:#555;">and ${extra} more in Planner</li>`);
     htmlParts.push('</ul>');
-    textParts.push('');
+  };
+
+  if (mustDo.length) addSection('Must Do', mustDo);
+  if (rest.length) addSection(mustDo.length ? 'Also today' : 'Today', rest);
+  if (overdueTasks.length) {
+    const shown = overdueTasks.slice(0, OVERDUE_CAP);
+    addSection(`Overdue (${overdueTasks.length})`, shown, {
+      dueDates: true,
+      extra: overdueTasks.length - shown.length,
+    });
   }
 
-  // --- 5. Projects needing a next action (Wave 5) ---
-  if (stalledProjects.length) {
-    const shown = stalledProjects.slice(0, STALLED_PROJECTS_CAP);
-    const extra = stalledProjects.length - shown.length;
-    textParts.push(`PROJECTS NEEDING A NEXT ACTION (${stalledProjects.length})`);
-    textParts.push(...shown.map((p) => renderStalledProjectText(p, { timeZone, todayDateKey: today })));
-    if (extra > 0) textParts.push(`- +${extra} more`);
-    textParts.push('');
-
-    htmlParts.push(`<h3 style="margin:18px 0 8px 0;">Projects needing a next action (${stalledProjects.length})</h3>`);
-    htmlParts.push('<ul style="margin:0 0 8px 18px;padding:0;">');
-    htmlParts.push(...shown.map((p) => renderStalledProjectHtml(p, { timeZone, todayDateKey: today })));
-    if (extra > 0) htmlParts.push(`<li>+${extra} more</li>`);
-    htmlParts.push('</ul>');
-  }
-
-  // --- 6. Single app link ---
   textParts.push(`Open Planner: ${dashboardLink}`);
-  htmlParts.push(`<p style="margin:18px 0 0 0;"><a href="${escapeHtml(dashboardLink)}">Open Planner</a></p>`);
+  htmlParts.push(`<p style="margin:0;"><a href="${escapeHtml(dashboardLink)}">Open Planner</a></p>`);
 
   return {
     subject,
     text: textParts.join('\n'),
     html: htmlParts.join('\n'),
   };
-}
-
-// --- Route-facing adapter --------------------------------------------------
-
-// Fallback for a plain (non-digest-carrying) call: group the today-tasks array
-// by section and treat the overdue array as the only decision lens available.
-function buildLegacyData({ dueToday, overdue }) {
-  const todayTasks = Array.isArray(dueToday) ? dueToday : [];
-  return {
-    todayBySection: groupTodayBySection(todayTasks),
-    carried: { mustDoCarried: 0, thisWeekCarried: 0 },
-    decisions: {
-      inbox: [],
-      snoozedToday: [],
-      overdue: Array.isArray(overdue) ? overdue : [],
-      overCapSections: [],
-      staleWaiting: [],
-      thriceSnoozed: [],
-      carried3Days: [],
-    },
-    ideas: [],
-    stalledProjects: [],
-  };
-}
-
-/**
- * Route-facing builder. Renders the assembled `digest` from fetchOutstandingTasks;
- * falls back to a degraded brief built from the plain arrays when no digest is
- * supplied (defensive / legacy callers).
- */
-export function buildDailyTaskEmail({ todayDateKey, digest, dueToday, overdue, inboxCount, dashboardUrl, timeZone } = {}) {
-  const base = digest || buildLegacyData({ dueToday, overdue, inboxCount });
-
-  return buildDigestEmail({
-    ...base,
-    todayDateKey: todayDateKey || base.todayDateKey,
-    dashboardUrl,
-    timeZone,
-  });
 }

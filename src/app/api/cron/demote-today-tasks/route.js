@@ -3,20 +3,12 @@ import { verifyCronAuth, claimCronRun, updateCronRun } from '@/lib/cronAuth';
 import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
 import { getLondonDateKey } from '@/lib/timezone';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
-import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
 import { resolveDigestUserId } from '@/services/dailyTaskEmailService';
 import { computeSortOrder } from '@/lib/sortOrder';
 import { STATE, TODAY_SECTION } from '@/lib/constants';
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
+// The evening tidy runs silently: its "Daily Review" email was retired on
+// 29 Sep 2026 at the owner's request. The carry-forward itself is unchanged.
 export async function GET(request) {
   try {
     const auth = verifyCronAuth(request);
@@ -96,7 +88,7 @@ export async function GET(request) {
 
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')
-      .select('id, name, due_date, today_section, carried_count, projects(name)')
+      .select('id, today_section, carried_count')
       .eq('state', 'today')
       .eq('user_id', userId);
 
@@ -186,67 +178,15 @@ export async function GET(request) {
       }
     }
 
-    const fromEmail = (
-      process.env.DAILY_TASK_EMAIL_FROM ||
-      process.env.MICROSOFT_USER_EMAIL ||
-      ''
-    ).trim();
-    const toEmail = (
-      process.env.DIGEST_USER_EMAIL ||
-      process.env.DAILY_TASK_EMAIL_TO ||
-      ''
-    ).trim();
-
-    let emailStatus = 'no_email';
-    if (fromEmail && toEmail && movedTasks.length > 0) {
-      const taskListHtml = movedTasks
-        .map((t) => {
-          const projectName = t.projects?.name ? ` (${escapeHtml(t.projects.name)})` : '';
-          const dueDate = t.due_date ? ` &mdash; due ${escapeHtml(t.due_date)}` : '';
-          return `<li>${escapeHtml(t.name)}${projectName}${dueDate}</li>`;
-        })
-        .join('\n');
-
-      const keptNote = keptTasks.length > 0
-        ? ` ${keptTasks.length} Must Do task${keptTasks.length !== 1 ? 's' : ''} stayed in Today.`
-        : '';
-      const subject = `Daily Review: ${keptTasks.length} kept in Today, ${movedTasks.length} moved to This Week`;
-      const html = `<p>${movedTasks.length} unfinished task${movedTasks.length !== 1 ? 's' : ''} moved from Today to This Week.${keptNote}</p>\n<ul>\n${taskListHtml}\n</ul>`;
-      const text = `${movedTasks.length} moved to This Week, ${keptTasks.length} kept in Today.\n` + movedTasks
-        .map((t) => {
-          const projectName = t.projects?.name ? ` (${t.projects.name})` : '';
-          const dueDate = t.due_date ? ` - due ${t.due_date}` : '';
-          return `- ${t.name}${projectName}${dueDate}`;
-        })
-        .join('\n');
-
-      try {
-        await sendMicrosoftEmail({
-          fromUser: fromEmail,
-          to: toEmail,
-          subject,
-          html,
-          text,
-        });
-        emailStatus = 'sent';
-      } catch (emailError) {
-        console.error('Demote today email failed:', emailError);
-        emailStatus = 'failed';
-      }
-    }
-
     // FF-050: a run where any task update failed is 'partial', not 'success',
     // with the failures recorded in the error column for diagnosis.
     const hasUpdateFailures = failedUpdates.length > 0;
-    const finalStatus = emailStatus === 'failed' || hasUpdateFailures ? 'partial' : 'success';
+    const finalStatus = hasUpdateFailures ? 'partial' : 'success';
     const runErrors = [];
     if (hasUpdateFailures) {
       runErrors.push(
         `${failedUpdates.length} of ${tasks.length} task update(s) failed: ${failedUpdates.join('; ')}`
       );
-    }
-    if (emailStatus === 'failed') {
-      runErrors.push('email send failed');
     }
     try {
       await updateCronRun({
@@ -263,7 +203,7 @@ export async function GET(request) {
     }
 
     return NextResponse.json(
-      { kept: keptTasks.length, moved: movedTasks.length, emailStatus },
+      { kept: keptTasks.length, moved: movedTasks.length },
       { status: 200 }
     );
   } catch (error) {

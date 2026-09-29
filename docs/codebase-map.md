@@ -30,10 +30,10 @@ Reference material moved out of `CLAUDE.md` on 2026-09-04 so that file holds onl
 
 | Path | Schedule | Job |
 |------|----------|-----|
-| `/api/cron/daily-task-email` | 07:00 and 08:00 | Morning digest email, sent inside the London send window |
+| `/api/cron/daily-task-email` | 07:00 and 08:00 | Morning email (today's plan and overdue only), sent inside the London send window, weekdays |
 | `/api/cron/office365-sync` | every 5 minutes | Mirror active projects to Microsoft To Do |
-| `/api/cron/demote-today-tasks` | 18:55 and 19:55 | Evening demotion of Today tasks |
-| `/api/cron/demote-week-tasks` | 18:55 and 19:55 | Evening demotion of This Week tasks |
+| `/api/cron/demote-today-tasks` | 18:55 and 19:55 | Evening demotion of Today tasks (no email) |
+| `/api/cron/demote-week-tasks` | 18:55 and 19:55 | Sunday demotion of stale This Week tasks (no email) |
 | `/api/cron/morning-autopilot` | 04:00 and 05:00 | Morning autopilot |
 | `/api/cron/reconcile-attachments` | 03:00 Sunday | Reconcile Storage objects with `attachments` rows |
 
@@ -56,7 +56,7 @@ Each job appears twice because Vercel cron runs in UTC and the app works in Euro
 | `src/lib/cronAuth.js` | `verifyCronAuth`, `claimCronRun`, London-time helpers |
 | `src/lib/rpc.js` | `callRpc`, `mapRpcError` |
 | `src/lib/rateLimiter.js` | In-memory limiter, `getClientIdentifier(request, userId)` |
-| `src/lib/emailActionToken.js` | Signed one-click email action tokens |
+| `src/lib/emailActionToken.js` | Signed one-click email action tokens (verify only: the morning email stopped signing them on 29 Sep 2026) |
 | `src/lib/microsoftGraph.js` | App-only Graph token and `sendMicrosoftEmail` |
 | `src/lib/office365/` | OAuth and Graph calls for the To Do sync |
 | `src/lib/dateUtils.js`, `src/lib/timezone.js` | Date formatting, Europe/London handling |

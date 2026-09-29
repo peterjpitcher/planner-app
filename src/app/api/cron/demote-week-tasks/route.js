@@ -3,19 +3,11 @@ import { verifyCronAuth, getLondonDayOfWeek, claimCronRun, updateCronRun } from 
 import { getTimeZoneParts, LONDON_TIME_ZONE } from '@/lib/timezone';
 import { getLondonDateKey } from '@/lib/timezone';
 import { getSupabaseServiceRole } from '@/lib/supabaseServiceRole';
-import { sendMicrosoftEmail } from '@/lib/microsoftGraph';
 import { resolveDigestUserId } from '@/services/dailyTaskEmailService';
 import { updateTask } from '@/services/taskService';
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
+// The Sunday tidy runs silently: its "Weekly Review" email was retired on
+// 29 Sep 2026 at the owner's request. The move to Backlog itself is unchanged.
 export async function GET(request) {
   try {
     const auth = verifyCronAuth(request);
@@ -125,7 +117,7 @@ export async function GET(request) {
 
     const { data: tasks, error: fetchError } = await supabase
       .from('tasks')
-      .select('id, name, due_date, carried_section, projects(name)')
+      .select('id, carried_section')
       .eq('state', 'this_week')
       .eq('user_id', userId)
       .lt('entered_state_at', weekendStartKey);
@@ -187,64 +179,15 @@ export async function GET(request) {
       }
     }
 
-    const fromEmail = (
-      process.env.DAILY_TASK_EMAIL_FROM ||
-      process.env.MICROSOFT_USER_EMAIL ||
-      ''
-    ).trim();
-    const toEmail = (
-      process.env.DIGEST_USER_EMAIL ||
-      process.env.DAILY_TASK_EMAIL_TO ||
-      ''
-    ).trim();
-
-    let emailStatus = 'no_email';
-    if (fromEmail && toEmail && demotedTasks.length > 0) {
-      const taskListHtml = demotedTasks
-        .map((t) => {
-          const projectName = t.projects?.name ? ` (${escapeHtml(t.projects.name)})` : '';
-          const dueDate = t.due_date ? ` &mdash; due ${escapeHtml(t.due_date)}` : '';
-          return `<li>${escapeHtml(t.name)}${projectName}${dueDate}</li>`;
-        })
-        .join('\n');
-
-      const subject = `Weekly Review: ${demotedTasks.length} task${demotedTasks.length !== 1 ? 's' : ''} moved from This Week to Backlog`;
-      const html = `<p>${subject}</p>\n<ul>\n${taskListHtml}\n</ul>`;
-      const text = demotedTasks
-        .map((t) => {
-          const projectName = t.projects?.name ? ` (${t.projects.name})` : '';
-          const dueDate = t.due_date ? ` - due ${t.due_date}` : '';
-          return `- ${t.name}${projectName}${dueDate}`;
-        })
-        .join('\n');
-
-      try {
-        await sendMicrosoftEmail({
-          fromUser: fromEmail,
-          to: toEmail,
-          subject,
-          html,
-          text,
-        });
-        emailStatus = 'sent';
-      } catch (emailError) {
-        console.error('Demote week email failed:', emailError);
-        emailStatus = 'failed';
-      }
-    }
-
     // FF-050: a run where any task update failed is 'partial', not 'success',
     // with the failures recorded in the error column for diagnosis.
     const hasUpdateFailures = failedUpdates.length > 0;
-    const finalStatus = emailStatus === 'failed' || hasUpdateFailures ? 'partial' : 'success';
+    const finalStatus = hasUpdateFailures ? 'partial' : 'success';
     const runErrors = [];
     if (hasUpdateFailures) {
       runErrors.push(
         `${failedUpdates.length} of ${tasks.length} task update(s) failed: ${failedUpdates.join('; ')}`
       );
-    }
-    if (emailStatus === 'failed') {
-      runErrors.push('email send failed');
     }
     try {
       await updateCronRun({
@@ -261,7 +204,7 @@ export async function GET(request) {
     }
 
     return NextResponse.json(
-      { demoted: demotedTasks.length, emailStatus },
+      { demoted: demotedTasks.length },
       { status: 200 }
     );
   } catch (error) {
