@@ -187,7 +187,7 @@ export async function GET(request) {
       return NextResponse.json({ sent: false, reason: 'weekend' }, { status: 200 });
     }
 
-    const { dueToday, overdue, inboxCount, digest } = await fetchOutstandingTasks({
+    const { dueToday, overdue } = await fetchOutstandingTasks({
       supabase,
       userId,
       todayDateKey: runDateKey,
@@ -195,10 +195,8 @@ export async function GET(request) {
 
     const email = buildDailyTaskEmail({
       todayDateKey: runDateKey,
-      digest,
       dueToday,
       overdue,
-      inboxCount,
       dashboardUrl: process.env.DIGEST_DASHBOARD_URL,
       timeZone: digestTimeZone,
     });

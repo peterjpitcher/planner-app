@@ -1,3 +1,16 @@
+# Stop the evening and Sunday emails; simplify the morning email (29 Sep 2026)
+
+Peter asked to stop the end-of-day and end-of-week emails and make the morning email simple and to the point. The evening and Sunday tidy jobs keep running; only their emails stop.
+
+- [x] Evening tidy (`demote-today-tasks`): remove the "Daily Review" email, keep the carry-forward.
+- [x] Sunday tidy (`demote-week-tasks`): remove the "Weekly Review" email, keep the move to Backlog.
+- [x] Morning email: today's plan (Must Do, then the rest) and overdue only; drop chips, carried counts, decision lenses, ideas, stalled projects and the action buttons (never used: 0 taps in `email_action_tokens`). Drop the queries nothing reads.
+- [x] Rewrite the digest tests; add tests that the tidy jobs send no email.
+- [x] Lint, `npm test`, `npm run test:utc`, build; render a preview with fixture data.
+- [ ] Ship on Peter's yes: PR, merge, verify the deployment.
+
+Result: lint clean, 878 tests pass in London and UTC, build clean. Preview rendered from live tasks (5 Must Do, 19 overdue). Left in place: `/api/actions/[token]` and `emailActionToken.js` still verify old links but nothing signs new ones; removal is a separate change.
+
 # Jordan drafts in Outlook; Follow-ups retired from Planner (18 Sep 2026)
 
 Spec: `docs/superpowers/specs/2026-09-18-jordan-outlook-drafts-design.md`. Plans in `docs/superpowers/plans/2026-09-18-jordan-plan-*.md`: A is Jordan's runtime (in `/Users/peterpitcher/Cursor/1 My Agents`), B removes Follow-ups from Planner, C archives and drops the table.

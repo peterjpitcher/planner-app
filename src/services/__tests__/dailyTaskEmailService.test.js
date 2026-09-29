@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { buildDigestEmail, buildDailyTaskEmail } from '../dailyTaskEmailService';
+import { buildDailyTaskEmail, fetchOutstandingTasks } from '../dailyTaskEmailService';
 
-// A4 — proposal-style morning digest. These tests exercise the PURE builder
-// (buildDigestEmail) and the route-facing adapter (buildDailyTaskEmail) with
-// hand-built data structures. No Supabase, no Graph — nothing is ever sent.
+// The morning email, simple and to the point since 29 Sep 2026: today's plan and
+// overdue tasks, nothing else. The builder is pure, so these tests pass plain
+// arrays. Nothing is ever sent.
 
-const TODAY = '2026-07-10';
+const TODAY = '2026-09-29'; // a Tuesday
 const TZ = 'Europe/London';
+// Month abbreviations come from the runtime's ICU data: newer builds write "Sept"
+// for September, older ones "Sep", so date assertions accept either.
 const DASHBOARD = 'https://planner.example.com';
 
 function task(overrides = {}) {
@@ -20,378 +22,201 @@ function task(overrides = {}) {
     entered_state_at: overrides.entered_state_at ?? null,
     created_at: overrides.created_at ?? null,
     sort_order: overrides.sort_order ?? null,
-    projects: overrides.projects ?? { name: overrides.projectName || 'Project X' },
+    projects: 'projectName' in overrides ? { name: overrides.projectName } : null,
     ...overrides,
   };
 }
 
-function baseData(overrides = {}) {
-  return {
+function build({ dueToday = [], overdue = [] } = {}) {
+  return buildDailyTaskEmail({
     todayDateKey: TODAY,
     timeZone: TZ,
     dashboardUrl: DASHBOARD,
-    todayBySection: { must_do: [], good_to_do: [], quick_wins: [] },
-    carried: { mustDoCarried: 0, thisWeekCarried: 0 },
-    decisions: {
-      inbox: [],
-      snoozedToday: [],
-      overdue: [],
-      overCapSections: [],
-      staleWaiting: [],
-      thriceSnoozed: [],
-      carried3Days: [],
-    },
-    ideas: [],
-    ...overrides,
-  };
+    dueToday,
+    overdue,
+  });
 }
 
-describe('buildDigestEmail — decision dedup', () => {
-  it('lists and counts a task matching multiple lenses only once (highest precedence)', () => {
-    const shared = task({ id: 'dup-1', name: 'Chase invoice', state: 'this_week', today_section: null, due_date: '2026-07-01' });
-    const email = buildDigestEmail(baseData({
-      decisions: {
-        inbox: [],
-        snoozedToday: [{ ...shared }],   // also matches overdue below
-        overdue: [{ ...shared }],
-        overCapSections: [],
-        staleWaiting: [],
-        thriceSnoozed: [{ ...shared }],  // and thrice-snoozed
-        carried3Days: [],
-      },
-    }));
-    expect(email).not.toBeNull();
-    // Appears once across the whole "Needs a decision" block...
-    const occurrences = email.text.split('Chase invoice').length - 1;
-    expect(occurrences).toBe(1);
-    // ...and the headline count treats it as a single decision.
-    expect(email.text).toContain('NEEDS A DECISION (1)');
+function overdueTask(n) {
+  return task({ id: `o${n}`, name: `Late ${n}`, state: 'backlog', due_date: `2026-09-${String(10 + n).padStart(2, '0')}` });
+}
+
+describe('morning email: when it sends', () => {
+  it('returns null when nothing is planned and nothing is overdue', () => {
+    expect(build()).toBeNull();
+  });
+
+  it('sends when only overdue tasks exist', () => {
+    const email = build({ overdue: [overdueTask(1)] });
+    expect(email.subject).toMatch(/^Planner: 1 overdue \(Tue 29 Sept?\)$/);
+    expect(email.text).toContain('OVERDUE (1)');
   });
 });
 
-describe('buildDigestEmail — empty state', () => {
-  it('returns null when there is nothing to send', () => {
-    expect(buildDigestEmail(baseData())).toBeNull();
+describe('morning email: subject', () => {
+  it('counts today and overdue, with the date so days do not thread together', () => {
+    const email = build({
+      dueToday: [
+        task({ name: 'A', today_section: 'must_do' }),
+        task({ name: 'B', today_section: 'quick_wins' }),
+      ],
+      overdue: [overdueTask(1), overdueTask(2)],
+    });
+    expect(email.subject).toMatch(/^Planner: 2 tasks today, 2 overdue \(Tue 29 Sept?\)$/);
   });
 
-  it('sends when only ideas are due for review', () => {
-    const email = buildDigestEmail(baseData({ ideas: [{ title: 'Rethink onboarding', area: 'Growth' }] }));
-    expect(email).not.toBeNull();
-    expect(email.subject).toContain('1 idea to revisit');
-    expect(email.text).toContain('Rethink onboarding');
-  });
-
-  it('sends when only This Week carried items exist (no today tasks)', () => {
-    const email = buildDigestEmail(baseData({ carried: { mustDoCarried: 0, thisWeekCarried: 2 } }));
-    expect(email).not.toBeNull();
-    expect(email.text).toContain('2 items currently carried in This Week');
+  it('uses the singular for one task', () => {
+    const email = build({ dueToday: [task({ name: 'A', today_section: 'must_do' })] });
+    expect(email.subject).toMatch(/^Planner: 1 task today \(Tue 29 Sept?\)$/);
   });
 });
 
-describe('buildDigestEmail — Your day section', () => {
-  it('renders all three sections including undated tasks with project and chips', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: {
-        must_do: [task({ name: 'Ship release', today_section: 'must_do', chips: ['urgent'], projectName: 'Launch' })],
-        good_to_do: [task({ name: 'Review PR', today_section: 'good_to_do' })],
-        quick_wins: [task({ name: 'Reply to Sam', today_section: 'quick_wins', due_date: null })],
-      },
-    }));
-    expect(email.text).toContain('Must Do (1)');
-    expect(email.text).toContain('Good to Do (1)');
-    expect(email.text).toContain('Quick Wins (1)');
-    expect(email.text).toContain('Ship release (Launch) — Urgent');
-    expect(email.text).toContain('Reply to Sam (Project X)');
-    expect(email.html).toContain('Your day (3)');
-    expect(email.html).toContain('[Urgent]');
+describe("morning email: today's plan", () => {
+  it('lists Must Do first, then Good to Do and Quick Wins under "Also today"', () => {
+    const email = build({
+      dueToday: [
+        task({ name: 'Quick one', today_section: 'quick_wins' }),
+        task({ name: 'Nice to have', today_section: 'good_to_do' }),
+        task({ name: 'Ship release', today_section: 'must_do', projectName: 'Launch' }),
+      ],
+    });
+    const lines = email.text.split('\n');
+    expect(lines.slice(0, 6)).toEqual([
+      'MUST DO',
+      '- Ship release (Launch)',
+      '',
+      'ALSO TODAY',
+      '- Nice to have',
+      '- Quick one',
+    ]);
+    expect(email.html).toContain('<strong>Must Do</strong>');
+    expect(email.html).toContain('<strong>Also today</strong>');
+  });
+
+  it('heads the list "Today" when there is no Must Do', () => {
+    const email = build({ dueToday: [task({ name: 'Nice to have', today_section: 'good_to_do' })] });
+    expect(email.text.startsWith('TODAY\n- Nice to have')).toBe(true);
+    expect(email.text).not.toContain('ALSO TODAY');
   });
 
   it('orders tasks within a section by the F1 priority comparator', () => {
-    // blocks_others outranks urgent, so B renders before A despite input order.
-    const email = buildDigestEmail(baseData({
-      todayBySection: {
-        must_do: [
-          task({ id: 'a', name: 'Task A', today_section: 'must_do', chips: ['urgent'] }),
-          task({ id: 'b', name: 'Task B', today_section: 'must_do', chips: ['blocks_others'] }),
-        ],
-        good_to_do: [],
-        quick_wins: [],
-      },
-    }));
+    // blocks_others outranks urgent, so B comes before A despite input order.
+    const email = build({
+      dueToday: [
+        task({ id: 'a', name: 'Task A', today_section: 'must_do', chips: ['urgent'] }),
+        task({ id: 'b', name: 'Task B', today_section: 'must_do', chips: ['blocks_others'] }),
+      ],
+    });
     expect(email.text.indexOf('Task B')).toBeLessThan(email.text.indexOf('Task A'));
   });
 
-  it('omits empty Today subsections cleanly', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: {
-        must_do: [task({ name: 'Only must do', today_section: 'must_do' })],
-        good_to_do: [],
-        quick_wins: [],
-      },
-    }));
-    expect(email.text).toContain('Must Do (1)');
-    expect(email.text).not.toContain('Good to Do');
-    expect(email.text).not.toContain('Quick Wins');
+  it('shows no chips and no placeholder for a task without a project', () => {
+    const email = build({ dueToday: [task({ name: 'Solo', today_section: 'must_do', chips: ['urgent'] })] });
+    expect(email.text).toContain('- Solo\n');
+    expect(email.text).not.toContain('Urgent');
+    expect(email.text).not.toContain('Unassigned');
   });
 });
 
-describe('buildDigestEmail — Needs a decision section', () => {
-  it('renders each exception group with its label', () => {
-    const email = buildDigestEmail(baseData({
-      decisions: {
-        inbox: [task({ name: 'Captured note', state: 'backlog', today_section: null })],
-        snoozedToday: [task({ name: 'Snoozed back', state: 'this_week', today_section: null })],
-        overdue: [task({ name: 'Late thing', state: 'this_week', today_section: null, due_date: '2026-07-01' })],
-        overCapSections: [{ section: 'must_do', count: 7, cap: 5 }],
-        staleWaiting: [task({ name: 'Waiting reply', state: 'waiting', today_section: null })],
-        thriceSnoozed: [task({ name: 'Thrice deferred', state: 'backlog', today_section: null })],
-        carried3Days: [task({ name: 'Carried task', today_section: 'must_do' })],
-      },
-    }));
-    expect(email.text).toContain('Inbox — awaiting triage');
-    expect(email.text).toContain('Snooze returns today');
-    expect(email.text).toContain('Overdue');
-    expect(email.text).toContain('Late thing (Project X) — due');
-    expect(email.text).toContain('Over capacity');
-    expect(email.text).toContain('Must Do: 7 (cap 5)');
-    expect(email.text).toContain('Waiting — needs a chase');
-    expect(email.text).toContain('Snoozed 3+ times — decide');
-    expect(email.text).toContain('Carried 3+ days — still today?');
+describe('morning email: overdue', () => {
+  it('shows the first five with due dates, then a count of the rest', () => {
+    const overdue = Array.from({ length: 8 }, (_, i) => overdueTask(i + 1));
+    const email = build({ overdue });
+    expect(email.text).toContain('OVERDUE (8)');
+    expect(email.text).toMatch(/- Late 1, due Fri 11 Sept?\n/);
+    expect(email.text).toMatch(/- Late 5, due Tue 15 Sept?\n/);
+    expect(email.text).not.toContain('Late 6');
+    expect(email.text).toContain('- and 3 more in Planner');
+    expect(email.html).toContain('and 3 more in Planner');
   });
 
-  it('truncates a long sub-list with "+N more"', () => {
-    const inbox = Array.from({ length: 7 }, (_, i) =>
-      task({ id: `inbox-${i}`, name: `Inbox ${i}`, state: 'backlog', today_section: null })
-    );
-    const email = buildDigestEmail(baseData({ decisions: { ...baseData().decisions, inbox } }));
-    expect(email.text).toContain('Inbox — awaiting triage (7)');
-    expect(email.text).toContain('+2 more'); // cap is 5
-    expect(email.html).toContain('<li>+2 more</li>');
+  it('writes single-digit days without a leading zero', () => {
+    const email = build({ overdue: [task({ name: 'Early', state: 'backlog', due_date: '2026-09-04' })] });
+    expect(email.text).toMatch(/- Early, due Fri 4 Sept?\n/);
   });
 
-  it('omits the whole Needs a decision section when empty', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: { must_do: [task({ name: 'x', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
-    }));
-    expect(email.text).not.toContain('NEEDS A DECISION');
+  it('has no "more" line when everything fits', () => {
+    const email = build({ overdue: [overdueTask(1), overdueTask(2)] });
+    expect(email.text).not.toContain('more in Planner');
   });
 });
 
-describe('buildDigestEmail — Ideas + carried-forward', () => {
-  it('renders the carried-forward summary line', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: { must_do: [task({ name: 'x', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
-      carried: { mustDoCarried: 2, thisWeekCarried: 3 },
-    }));
-    expect(email.text).toContain('Carried forward: 2 Must Do carried from yesterday; 3 items currently carried in This Week.');
+describe('morning email: stays short', () => {
+  it('carries only the plan, overdue and one link', () => {
+    const email = build({
+      dueToday: [task({ name: 'A', today_section: 'must_do', carried_count: 4, chips: ['urgent'] })],
+      overdue: [overdueTask(1)],
+    });
+    for (const gone of ['Needs a decision', 'Carried', 'Ideas', 'Inbox', 'Snooze', 'Waiting', 'Confirm', 'Projects needing', '/api/actions/']) {
+      expect(email.text).not.toContain(gone);
+      expect(email.html).not.toContain(gone);
+    }
+    expect(email.text.endsWith(`Open Planner: ${DASHBOARD}/dashboard`)).toBe(true);
+    expect(email.html).toContain(`<a href="${DASHBOARD}/dashboard">Open Planner</a>`);
   });
 
-  it('truncates ideas beyond the cap', () => {
-    const ideas = Array.from({ length: 6 }, (_, i) => ({ title: `Idea ${i}`, area: 'Area' }));
-    const email = buildDigestEmail(baseData({ ideas }));
-    expect(email.text).toContain('Ideas to revisit'.toUpperCase());
-    expect(email.text).toContain('+1 more');
-  });
-
-  it('omits ideas section when there are no ideas', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: { must_do: [task({ name: 'x', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
-    }));
-    expect(email.text).not.toContain('IDEAS TO REVISIT');
-  });
-});
-
-describe('buildDigestEmail — subject counts', () => {
-  it('reflects today count and decision count', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: {
-        must_do: [task({ name: 'a', today_section: 'must_do' }), task({ name: 'b', today_section: 'must_do' })],
-        good_to_do: [],
-        quick_wins: [task({ name: 'c', today_section: 'quick_wins' })],
-      },
-      decisions: {
-        ...baseData().decisions,
-        inbox: [task({ name: 'i1', state: 'backlog', today_section: null })],
-        overdue: [task({ name: 'o1', state: 'this_week', today_section: null, due_date: '2026-07-01' })],
-      },
-    }));
-    expect(email.subject).toBe('Planner: 3 tasks today, 2 to decide (Fri, 10 Jul 2026)');
-  });
-
-  it('uses singular "task" for a single today item', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: { must_do: [task({ name: 'a', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
-    }));
-    expect(email.subject).toContain('1 task today');
-  });
-});
-
-describe('buildDigestEmail — HTML escaping', () => {
-  it('escapes task and project names', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: {
-        must_do: [task({ name: '<script>alert(1)</script>', today_section: 'must_do', projectName: 'A & B' })],
-        good_to_do: [],
-        quick_wins: [],
-      },
-    }));
-    expect(email.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(email.html).toContain('A &amp; B');
-    expect(email.html).not.toContain('<script>alert(1)</script>');
-  });
-
-  it('escapes idea titles and areas', () => {
-    const email = buildDigestEmail(baseData({ ideas: [{ title: 'Idea <b>bold</b>', area: 'R&D' }] }));
-    expect(email.html).toContain('Idea &lt;b&gt;bold&lt;/b&gt;');
-    expect(email.html).toContain('R&amp;D');
-  });
-});
-
-describe('buildDigestEmail — Projects needing a next action (Wave 5)', () => {
-  function stalledProject(overrides = {}) {
-    return {
-      projectId: overrides.projectId || Math.random().toString(36).slice(2),
-      name: overrides.name || 'A project',
-      area: overrides.area ?? null,
-      lastActivityAt: overrides.lastActivityAt ?? '2026-07-01T00:00:00Z',
-      stalled: true,
-      ...overrides,
-    };
-  }
-
-  it('renders the stalled-projects section with name, area and last-touched', () => {
-    const email = buildDigestEmail(baseData({
-      stalledProjects: [
-        stalledProject({ name: 'Website revamp', area: 'Growth', lastActivityAt: '2026-06-20T00:00:00Z' }),
+  it('renders no undefined, NaN, Invalid Date or em dash from fixture data', () => {
+    const email = build({
+      dueToday: [
+        task({ name: 'A', today_section: 'must_do', projectName: 'P' }),
+        task({ name: 'B', today_section: 'good_to_do' }),
       ],
-    }));
-    expect(email).not.toBeNull();
-    expect(email.text).toContain('PROJECTS NEEDING A NEXT ACTION (1)');
-    expect(email.text).toContain('Website revamp (Growth) — last touched');
-    expect(email.html).toContain('Projects needing a next action (1)');
-    expect(email.html).toContain('Website revamp');
-  });
-
-  it('sends when the ONLY content is stalled projects (null-guard)', () => {
-    const email = buildDigestEmail(baseData({
-      stalledProjects: [stalledProject({ name: 'Lonely project' })],
-    }));
-    expect(email).not.toBeNull();
-    expect(email.text).toContain('Lonely project');
-  });
-
-  it('omits the stalled-projects section when there are none', () => {
-    const email = buildDigestEmail(baseData({
-      todayBySection: { must_do: [task({ name: 'x', today_section: 'must_do' })], good_to_do: [], quick_wins: [] },
-      stalledProjects: [],
-    }));
-    expect(email.text).not.toContain('PROJECTS NEEDING A NEXT ACTION');
-    expect(email.html).not.toContain('Projects needing a next action');
-  });
-
-  it('truncates a long stalled-projects list with "+N more"', () => {
-    const stalledProjects = Array.from({ length: 7 }, (_, i) =>
-      stalledProject({ projectId: `p-${i}`, name: `Project ${i}` })
-    );
-    const email = buildDigestEmail(baseData({ stalledProjects }));
-    expect(email.text).toContain('PROJECTS NEEDING A NEXT ACTION (7)');
-    expect(email.text).toContain('+2 more'); // cap is 5
-    expect(email.html).toContain('<li>+2 more</li>');
-  });
-
-  it('escapes stalled-project names and areas', () => {
-    const email = buildDigestEmail(baseData({
-      stalledProjects: [stalledProject({ name: '<b>Proj</b>', area: 'R&D' })],
-    }));
-    expect(email.html).toContain('&lt;b&gt;Proj&lt;/b&gt;');
-    expect(email.html).toContain('R&amp;D');
-    expect(email.html).not.toContain('<b>Proj</b>');
+      overdue: Array.from({ length: 7 }, (_, i) => overdueTask(i + 1)),
+    });
+    for (const part of [email.subject, email.text, email.html]) {
+      expect(part).not.toMatch(/undefined|NaN|Invalid Date|null/);
+      expect(part).not.toContain(String.fromCharCode(0x2014));
+    }
   });
 });
 
-describe('buildDigestEmail — signed email actions (Wave 8)', () => {
-  it('renders the confirm-plan button and per-overdue Done links when actions are present', () => {
-    const overdueTask = task({
-      id: 'ov-1', name: 'Late thing', state: 'this_week', today_section: null, due_date: '2026-07-01',
+describe('morning email: HTML escaping', () => {
+  it('escapes task and project names', () => {
+    const email = build({
+      dueToday: [task({ name: '<script>x</script>', today_section: 'must_do', projectName: 'A & B' })],
     });
-    const email = buildDigestEmail(baseData({
-      decisions: { ...baseData().decisions, overdue: [overdueTask] },
-      actions: {
-        confirmPlanUrl: 'https://planner.example.com/api/actions/tok-confirm',
-        doneUrls: { 'ov-1': 'https://planner.example.com/api/actions/tok-done' },
-      },
-    }));
-    expect(email).not.toBeNull();
-    // Confirm-plan button (HTML + text).
-    expect(email.html).toContain('Confirm today');
-    expect(email.html).toContain('/api/actions/tok-confirm');
-    expect(email.text).toContain('/api/actions/tok-confirm');
-    // Per-task Done link on the overdue item (HTML + text).
-    expect(email.html).toContain('/api/actions/tok-done');
-    expect(email.html).toContain('[Done]');
-    expect(email.text).toContain('/api/actions/tok-done');
-  });
-
-  it('renders no action buttons or links when actions are absent (feature off)', () => {
-    const overdueTask = task({
-      id: 'ov-2', name: 'Late thing', state: 'this_week', today_section: null, due_date: '2026-07-01',
-    });
-    const email = buildDigestEmail(baseData({
-      decisions: { ...baseData().decisions, overdue: [overdueTask] },
-    }));
-    expect(email).not.toBeNull();
-    expect(email.html).not.toContain('/api/actions/');
-    expect(email.html).not.toContain('Confirm today');
-    expect(email.html).not.toContain('[Done]');
-    expect(email.text).not.toContain('/api/actions/');
+    expect(email.html).toContain('&lt;script&gt;x&lt;/script&gt;');
+    expect(email.html).toContain('A &amp; B');
+    expect(email.html).not.toContain('<script>');
   });
 });
 
-describe('buildDailyTaskEmail — route-facing adapter', () => {
-  it('renders the assembled digest passed by fetchOutstandingTasks', () => {
-    const digest = {
-      todayDateKey: TODAY,
-      todayBySection: {
-        must_do: [task({ name: 'Ship it', today_section: 'must_do' })],
-        good_to_do: [],
-        quick_wins: [],
-      },
-      carried: { mustDoCarried: 0, thisWeekCarried: 0 },
-      decisions: {
-        inbox: [], snoozedToday: [], overdue: [], overCapSections: [],
-        staleWaiting: [], thriceSnoozed: [], carried3Days: [],
-      },
-      ideas: [],
-    };
+// A minimal PostgREST stand-in: each query resolves to whatever `resolve`
+// returns for its filters.
+function fakeSupabase(resolve) {
+  return {
+    from() {
+      const filters = {};
+      const query = {
+        select() { return query; },
+        eq(key, value) { filters[key] = value; return query; },
+        lt(key, value) { filters[`${key}<`] = value; return query; },
+        not() { return query; },
+        or() { return query; },
+        order() { return query; },
+        then(onFulfilled, onRejected) {
+          return Promise.resolve(resolve(filters)).then(onFulfilled, onRejected);
+        },
+      };
+      return query;
+    },
+  };
+}
 
-    const email = buildDailyTaskEmail({
-      todayDateKey: TODAY,
-      digest,
-      // dueToday/overdue are still forwarded for the run-tracking counts, but the
-      // digest is what renders — pass a deliberately different array to prove the
-      // digest (not the legacy fallback) is used.
-      dueToday: [task({ name: 'IGNORED legacy row', today_section: 'quick_wins' })],
-      overdue: [],
-      inboxCount: 0,
-      dashboardUrl: DASHBOARD,
-      timeZone: TZ,
-    });
-    expect(email).not.toBeNull();
-    expect(email.text).toContain('Ship it (Project X)');
-    expect(email.text).not.toContain('IGNORED legacy row');
-    expect(email.subject).toContain('1 task today');
+describe('fetchOutstandingTasks', () => {
+  it('returns the Today tasks and the overdue tasks', async () => {
+    const supabase = fakeSupabase((filters) => (filters.state === 'today'
+      ? { data: [{ id: 't1' }], error: null }
+      : { data: [{ id: 'o1' }], error: null }));
+    const result = await fetchOutstandingTasks({ supabase, userId: 'u1', todayDateKey: TODAY });
+    expect(result).toEqual({ dueToday: [{ id: 't1' }], overdue: [{ id: 'o1' }] });
   });
 
-  it('falls back to a degraded brief from plain arrays when no digest is attached', () => {
-    const email = buildDailyTaskEmail({
-      todayDateKey: TODAY,
-      dueToday: [task({ name: 'Plain today', today_section: 'good_to_do' })],
-      overdue: [task({ name: 'Plain overdue', state: 'this_week', today_section: null, due_date: '2026-07-01' })],
-      inboxCount: 0,
-      dashboardUrl: DASHBOARD,
-      timeZone: TZ,
-    });
-    expect(email.text).toContain('Plain today (Project X)');
-    expect(email.text).toContain('Plain overdue');
+  it('throws rather than send a partial email when the overdue query fails', async () => {
+    const supabase = fakeSupabase((filters) => (filters.state === 'today'
+      ? { data: [{ id: 't1' }], error: null }
+      : { data: null, error: { message: 'boom' } }));
+    await expect(fetchOutstandingTasks({ supabase, userId: 'u1', todayDateKey: TODAY }))
+      .rejects.toThrow('Unable to fetch overdue tasks: boom');
   });
 });
