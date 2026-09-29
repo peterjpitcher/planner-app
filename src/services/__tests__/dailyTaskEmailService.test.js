@@ -119,15 +119,27 @@ describe("morning email: today's plan", () => {
 });
 
 describe('morning email: overdue', () => {
-  it('shows the first five with due dates, then a count of the rest', () => {
+  it('shows the five most recently due, newest first, then a count of the rest', () => {
+    // Passed oldest first (due 11 to 18 Sep) to prove the builder reorders.
     const overdue = Array.from({ length: 8 }, (_, i) => overdueTask(i + 1));
     const email = build({ overdue });
     expect(email.text).toContain('OVERDUE (8)');
-    expect(email.text).toMatch(/- Late 1, due Fri 11 Sept?\n/);
-    expect(email.text).toMatch(/- Late 5, due Tue 15 Sept?\n/);
-    expect(email.text).not.toContain('Late 6');
+    expect(email.text).toMatch(/- Late 8, due Fri 18 Sept?\n/);
+    expect(email.text).toMatch(/- Late 4, due Mon 14 Sept?\n/);
+    expect(email.text.indexOf('Late 8')).toBeLessThan(email.text.indexOf('Late 4'));
+    for (const hidden of ['Late 1', 'Late 2', 'Late 3']) expect(email.text).not.toContain(hidden);
     expect(email.text).toContain('- and 3 more in Planner');
     expect(email.html).toContain('and 3 more in Planner');
+  });
+
+  it('lists tasks due the same day in the order they were created', () => {
+    const email = build({
+      overdue: [
+        task({ name: 'Second', state: 'backlog', due_date: '2026-09-20', created_at: '2026-09-02T09:00:00Z' }),
+        task({ name: 'First', state: 'backlog', due_date: '2026-09-20', created_at: '2026-09-01T09:00:00Z' }),
+      ],
+    });
+    expect(email.text.indexOf('First')).toBeLessThan(email.text.indexOf('Second'));
   });
 
   it('writes single-digit days without a leading zero', () => {

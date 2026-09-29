@@ -112,9 +112,7 @@ export async function fetchOutstandingTasks({ supabase, userId, todayDateKey }) 
       .eq('user_id', userId)
       .lt('due_date', today)
       .not('state', 'in', closedStatesFilter([STATE.TODAY]))
-      .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
-      .order('due_date', { ascending: true })
-      .order('created_at', { ascending: true }),
+      .or(`snoozed_until.is.null,snoozed_until.lte.${today}`),
   ]);
 
   if (todayResult.error) {
@@ -153,7 +151,7 @@ function renderTaskHtml(task, dueLabel) {
  * @param {object} data
  * @param {string} [data.todayDateKey] London date, YYYY-MM-DD
  * @param {object[]} [data.dueToday] every Today-state task
- * @param {object[]} [data.overdue] overdue tasks outside Today, oldest first
+ * @param {object[]} [data.overdue] overdue tasks outside Today, in any order
  * @param {string} [data.dashboardUrl]
  * @param {string} [data.timeZone]
  */
@@ -161,7 +159,15 @@ export function buildDailyTaskEmail({ todayDateKey, dueToday, overdue, dashboard
   const zone = timeZone || LONDON_TIME_ZONE;
   const today = todayDateKey || getLondonDateKey();
   const todayTasks = Array.isArray(dueToday) ? dueToday : [];
-  const overdueTasks = Array.isArray(overdue) ? overdue : [];
+  // Newest overdue first, so the capped list shows what has just slipped rather
+  // than the same long-ignored tasks every morning. Same due date: oldest
+  // created first.
+  const overdueTasks = (Array.isArray(overdue) ? [...overdue] : []).sort((a, b) => {
+    const dueA = normalizeDueDate(a?.due_date) || '';
+    const dueB = normalizeDueDate(b?.due_date) || '';
+    if (dueA !== dueB) return dueA < dueB ? 1 : -1;
+    return String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+  });
 
   // Must Do first, then Good to Do, then Quick Wins, each ranked by the F1
   // comparator so the email matches the order the app would suggest.
