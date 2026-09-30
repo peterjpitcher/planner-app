@@ -1,3 +1,18 @@
+# Remove the signed email action links (30 Sep 2026)
+
+PR #48 stopped the morning email signing action tokens, so the verifier, its route and its public middleware exception are dead code. Branch `chore/remove-email-action-links`.
+
+- [x] Grep: nothing outside the route and the token module signs or verifies tokens; the digest test's check that `/api/actions/` is absent from the email stays.
+- [x] Live, read only: `email_action_tokens` has 0 rows, no views, foreign keys, functions or triggers depend on it.
+- [x] Remove `src/app/api/actions/[token]/route.js`, `src/lib/emailActionToken.js` and its 11 tests; drop `api/actions` from the middleware matcher.
+- [x] Remove `EMAIL_ACTION_SECRET` from `.env.example` and CLAUDE.md; update CLAUDE.md, `docs/codebase-map.md` and the allowlist note on `email_action_tokens`.
+- [x] Lint, `npm test`, `npm run test:utc`, build; smoke test the built app's route protection.
+- [ ] Push and open the PR (needs Peter's yes); merge on or after 1 Oct, once the last signed links (29 Sep 08:00, 48 hours) have expired.
+- [ ] Remove `EMAIL_ACTION_SECRET` from Vercel after the merge (Peter).
+- [ ] Archive-then-drop `email_action_tokens` via prod-migrate, and remove its allowlist entry (needs Peter's yes).
+
+Results: lint clean; 868 tests pass and 2 skip in London and UTC (the 11 token tests are gone); build passes. Built app: `/api/actions/old.token` now redirects to `/login` like any protected path, `/login` 200, cron and health routes still reach their own secret checks (401).
+
 # Stop the evening and Sunday emails; simplify the morning email (29 Sep 2026)
 
 Peter asked to stop the end-of-day and end-of-week emails and make the morning email simple and to the point. The evening and Sunday tidy jobs keep running; only their emails stop.
