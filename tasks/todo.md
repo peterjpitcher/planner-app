@@ -7,9 +7,12 @@ PR #48 stopped the morning email signing action tokens, so the verifier, its rou
 - [x] Remove `src/app/api/actions/[token]/route.js`, `src/lib/emailActionToken.js` and its 11 tests; drop `api/actions` from the middleware matcher.
 - [x] Remove `EMAIL_ACTION_SECRET` from `.env.example` and CLAUDE.md; update CLAUDE.md, `docs/codebase-map.md` and the allowlist note on `email_action_tokens`.
 - [x] Lint, `npm test`, `npm run test:utc`, build; smoke test the built app's route protection.
-- [ ] Push and open the PR (needs Peter's yes); merge on or after 1 Oct, once the last signed links (29 Sep 08:00, 48 hours) have expired.
+- [x] Push and open the PR on Peter's yes (30 Sep): PR #49. Merge on or after 1 Oct 08:00, once the last signed links (29 Sep 08:00, 48 hours) have expired.
 - [ ] Remove `EMAIL_ACTION_SECRET` from Vercel after the merge (Peter).
-- [ ] Archive-then-drop `email_action_tokens` via prod-migrate, and remove its allowlist entry (needs Peter's yes).
+- [x] Draft the retirement on Peter's yes (30 Sep), branch `chore/retire-email-action-tokens` stacked on #49: `20260930133014_retire_email_action_tokens.sql` (guards, refuse if any row, drop; no empty archive table), `supabase/restore/restore_email_action_tokens.sql`, throwaway-database test, allowlist entry removed, docs updated.
+- [ ] Apply to live with `npx supabase db push` after #49 is deployed (needs Peter's yes to the approval packet), then verify, run the live anon check, open and merge the PR.
+
+Retirement results: `run-retire-email-action-tokens.sh` on a throwaway PostgreSQL 17 cluster, 36 checks pass (setup matches the live catalogue; a row, a view, a function, a foreign key and a trigger each stop it with nothing changed; the drop; the restore with service_role-only grants; the drop again). `db push --dry-run` against live lists only this file. Lint, `npm test` and `npm run test:utc` pass.
 
 Results: lint clean; 868 tests pass and 2 skip in London and UTC (the 11 token tests are gone); build passes. Built app: `/api/actions/old.token` now redirects to `/login` like any protected path, `/login` 200, cron and health routes still reach their own secret checks (401).
 

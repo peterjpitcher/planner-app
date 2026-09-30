@@ -315,14 +315,6 @@ export const ANON_ALLOWLIST = [
   },
   {
     kind: 'table',
-    name: 'email_action_tokens',
-    privileges: SUPABASE_DEFAULT_TABLE_GRANT,
-    why: `${RLS_DENY_ALL} Unused: it backed the single-use jti for the signed email action `
-      + 'links, whose /api/actions route has been removed. Remove this entry when the '
-      + 'table is archived and dropped.',
-  },
-  {
-    kind: 'table',
     name: 'event_reminder_runs',
     privileges: SUPABASE_DEFAULT_TABLE_GRANT,
     why: `${RLS_DENY_ALL} Written only by cron through the service-role client.`,
