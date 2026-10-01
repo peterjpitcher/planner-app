@@ -23,7 +23,7 @@ Reference material moved out of `CLAUDE.md` on 2026-09-04 so that file holds onl
 
 - Data: `tasks` (+ `batch`, `sort-order`), `projects` (+ `[id]`, `radar`, `[id]/impact`), `customers` (+ `triage`, `[id]/overview`, `timeline`, `impact`, `facts`), `contacts`, `notes` (+ `batch`), `ideas` (+ `[id]/promote`), `journal/entries` (+ `cleanup`), `journal/summary`, `attachments` (`upload-url`, `[id]/finalise`, `[id]/url`), `search`, `unfiled`, `areas`, `completed-items`, `user-settings`, `automations`, `autopilot/clear`, `planning-candidates`, `planning-sessions`, `planning/ai-draft`.
 - Auth: `auth/[...nextauth]`, plus the development/admin-gated `auth/debug-session`, `auth/session-test`, `auth/verify-config`, `debug-env` and `admin/migrate`.
-- Public by design (see `src/middleware.js`): `actions/[token]`, `cron/*`, `health/app`, `health/supabase`, `integrations/office365/callback`.
+- Public by design (see `src/middleware.js`): `cron/*`, `health/app`, `health/supabase`, `integrations/office365/callback`.
 - Office 365: `integrations/office365/connect`, `callback`, `status`, `sync`, `disconnect`.
 
 ## Cron jobs (`vercel.json`, schedules are UTC)
@@ -56,7 +56,6 @@ Each job appears twice because Vercel cron runs in UTC and the app works in Euro
 | `src/lib/cronAuth.js` | `verifyCronAuth`, `claimCronRun`, London-time helpers |
 | `src/lib/rpc.js` | `callRpc`, `mapRpcError` |
 | `src/lib/rateLimiter.js` | In-memory limiter, `getClientIdentifier(request, userId)` |
-| `src/lib/emailActionToken.js` | Signed one-click email action tokens (verify only: the morning email stopped signing them on 29 Sep 2026) |
 | `src/lib/microsoftGraph.js` | App-only Graph token and `sendMicrosoftEmail` |
 | `src/lib/office365/` | OAuth and Graph calls for the To Do sync |
 | `src/lib/dateUtils.js`, `src/lib/timezone.js` | Date formatting, Europe/London handling |
@@ -73,7 +72,7 @@ Each job appears twice because Vercel cron runs in UTC and the app works in Euro
 
 ## Database
 
-- Core tables: `projects`, `tasks`, `notes`, `ideas`, `journal_entries`, `user_settings`, `planning_sessions`, `cron_runs`, `daily_task_email_runs`, `email_action_tokens`.
+- Core tables: `projects`, `tasks`, `notes`, `ideas`, `journal_entries`, `user_settings`, `planning_sessions`, `cron_runs`, `daily_task_email_runs`. `email_action_tokens` is unused since the signed email links were removed (0 rows ever) and awaits an archive-then-drop.
 - Customers (September 2026): `customers`, `customer_facts`, `contacts`, `project_contacts`, `stakeholder_resolutions`, `projects_stakeholders_archive`.
 - Files: `attachments` rows plus the private Storage bucket `attachments` (25 MB per file, 2 GB per user, reconciled weekly by cron).
 - Office 365: `office365_connections`, `office365_project_lists`, `office365_task_items`.

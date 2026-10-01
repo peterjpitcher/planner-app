@@ -317,10 +317,9 @@ export const ANON_ALLOWLIST = [
     kind: 'table',
     name: 'email_action_tokens',
     privileges: SUPABASE_DEFAULT_TABLE_GRANT,
-    why: `${RLS_DENY_ALL} This is the one to watch: it backs the single-use jti for the `
-      + 'HMAC-signed tap-to-confirm links on the public /api/actions route. Read access '
-      + 'for anon would be a route to replaying somebody else\'s email action, so the '
-      + 'zero-policy state here is load-bearing rather than incidental.',
+    why: `${RLS_DENY_ALL} Unused: it backed the single-use jti for the signed email action `
+      + 'links, whose /api/actions route has been removed. Remove this entry when the '
+      + 'table is archived and dropped.',
   },
   {
     kind: 'table',

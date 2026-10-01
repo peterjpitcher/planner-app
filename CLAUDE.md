@@ -32,7 +32,7 @@ Route, service, key-file, cron and table reference: **`docs/codebase-map.md`**. 
 
 - JWT session, 90-day `maxAge`, refreshed every 12 hours. `useSecureCookies` only in production: secure cookies over `http://localhost` are never stored, which produced a "login works but you stay on /login" loop.
 - The `jwt` callback deliberately ignores `trigger === 'update'`. Spreading the client-supplied session over the token let any signed-in caller reissue their own cookie with a different `id` and `email`. Never copy identity fields from a session update.
-- `src/middleware.js` protects everything except `/login`, `/api/auth/*`, `/api/actions/*`, `/api/cron/*`, `/api/health/*`, `/api/debug-env` and the Office 365 callback. `/api/actions/*` must stay public: the one-click email links carry their own HMAC, expiry and single-use `jti`, and gating them redirected the tap to `/login` and left the token in the login URL and browser history.
+- `src/middleware.js` protects everything except `/login`, `/api/auth/*`, `/api/cron/*`, `/api/health/*`, `/api/debug-env` and the Office 365 callback. The public `/api/actions/*` one-click email links were removed once the morning email stopped using them; if a signed-link route ever returns, it must be public (gating one redirected the tap to `/login` and left the token in the login URL and browser history) and carry its own HMAC, expiry and single-use `jti`.
 - **RLS is effectively bypassed** (every route uses the service-role client), so security rests entirely on the session check plus an explicit `user_id` ownership check in the route or service. A new route needs both.
 - Cron routes use `verifyCronAuth` (`CRON_SECRET` as `x-cron-secret` or Bearer, or `CRON_MANUAL_TOKEN`); production fails closed without a secret, and the spoofable `x-vercel-cron` header is not trusted (FF-018). Health routes need `HEALTHCHECK_SECRET`. Debug and admin routes are gated on `isDevelopment()` and `isAdminSession()`.
 - Rate limiting is in-memory, per Vercel instance (accepted tech debt). After auth, always key it with `getClientIdentifier(request, userId)`; IP headers are spoofable.
@@ -65,7 +65,7 @@ Route, service, key-file, cron and table reference: **`docs/codebase-map.md`**. 
 ## Integrations
 
 - **Microsoft Graph, two ways.** Per-user OAuth mirrors active projects only (Open, In Progress, On Hold) to To Do lists named "Customer: Project"; tokens live in Supabase Vault. Closing a project deletes its remote list. Never delete local tasks because their remote list disappeared (FF-012). App-only client credentials send the morning digest from `MICROSOFT_USER_EMAIL`. There is no Resend here.
-- **Morning email** (`dailyTaskEmailService`): since 29 September 2026 it is deliberately short, today's plan (Must Do, then the rest) and overdue tasks (newest five, then a count), with no action buttons; do not grow it back into a digest. `isLondonWeekend` keeps it off at weekends. The evening and Sunday tidy jobs send no email. `/api/actions/[token]` still honours old signed links, but nothing signs new ones.
+- **Morning email** (`dailyTaskEmailService`): since 29 September 2026 it is deliberately short, today's plan (Must Do, then the rest) and overdue tasks (newest five, then a count), with no action buttons; do not grow it back into a digest. `isLondonWeekend` keeps it off at weekends. The evening and Sunday tidy jobs send no email. The signed one-click action links (`/api/actions/[token]`, `emailActionToken.js`, `EMAIL_ACTION_SECRET`) are gone; the `email_action_tokens` table is unused and awaits an archive-then-drop.
 - **Cron.** Vercel cron runs in UTC, so each job is listed twice in `vercel.json` an hour apart and the route checks the London hour or send window; `claimCronRun` (unique `cron_runs(operation, run_date)`) makes the second firing a no-op.
 - **Attachments.** Private Storage bucket `attachments`. `auth.uid()` is NULL under NextAuth, so storage policies cannot help: the server mints a signed upload URL, the browser uploads with `src/lib/supabaseBrowser.js`, then `finalise` confirms the object. That is the only client-side Supabase use; never add another (the unused `src/contexts/SupabaseContext.js` must not become one).
 - **OpenAI** powers the AI day-planner draft, journal summaries and journal cleanup.
@@ -81,7 +81,6 @@ NEXTAUTH_SECRET, NEXTAUTH_URL, NEXTAUTH_URL_PRODUCTION
 ADMIN_USER_IDS, ADMIN_EMAILS
 CRON_SECRET, CRON_MANUAL_TOKEN, HEALTHCHECK_SECRET
 OPENAI_API_KEY, JOURNAL_CLEANUP_MODEL
-EMAIL_ACTION_SECRET
 MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID, MICROSOFT_USER_EMAIL, OFFICE365_AUTO_SYNC_MINUTES
 DAILY_TASK_EMAIL_FROM / TO / HOUR / MINUTE / WINDOW_MINUTES / TIME_ZONE, DIGEST_USER_EMAIL, DIGEST_USER_ID, DIGEST_DASHBOARD_URL
 ```
