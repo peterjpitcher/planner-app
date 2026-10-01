@@ -72,7 +72,7 @@ Each job appears twice because Vercel cron runs in UTC and the app works in Euro
 
 ## Database
 
-- Core tables: `projects`, `tasks`, `notes`, `ideas`, `journal_entries`, `user_settings`, `planning_sessions`, `cron_runs`, `daily_task_email_runs`. `email_action_tokens` is unused since the signed email links were removed (0 rows ever) and awaits an archive-then-drop.
+- Core tables: `projects`, `tasks`, `notes`, `ideas`, `journal_entries`, `user_settings`, `planning_sessions`, `cron_runs`, `daily_task_email_runs`. `email_action_tokens` was dropped empty by `20260930133014`; `supabase/restore/restore_email_action_tokens.sql` recreates it.
 - Customers (September 2026): `customers`, `customer_facts`, `contacts`, `project_contacts`, `stakeholder_resolutions`, `projects_stakeholders_archive`.
 - Files: `attachments` rows plus the private Storage bucket `attachments` (25 MB per file, 2 GB per user, reconciled weekly by cron).
 - Office 365: `office365_connections`, `office365_project_lists`, `office365_task_items`.
